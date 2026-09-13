@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { useAppState } from '@/lib/AppStateContext';
+import { apiFetch, ApiError } from '@/lib/api';
 import * as T from '@/lib/theme';
 import { MOBILE_BREAK } from '@/lib/theme';
 
@@ -13,18 +15,34 @@ const FIELD_LABEL = { fontSize: 12.5, fontWeight: 600, color: T.TEXT_LABEL, marg
 const REQUIRED = <span style={{ color: '#DC2626' }}>*</span>;
 const PRIMARY_BTN = { height: 40, borderRadius: 8, background: '#0F766E', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 4 };
 
-function Field({ label, required, value }) {
+function Field({ label, required, value, onChange, type = 'text', placeholder }) {
   return (
     <div>
       <div style={FIELD_LABEL}>{label}{required && REQUIRED}</div>
-      <div style={FIELD}>{value}</div>
+      <input aria-label={label} type={type} value={value} onChange={(e) => onChange?.(e.target.value)} placeholder={placeholder} style={{ ...FIELD, width: '100%', outline: 'none' }} />
     </div>
   );
 }
 
 export default function AuthScreen({ mode }) {
-  const { vw, nav } = useAppState();
+  const { vw, nav, showToast } = useAppState();
   const mobile = vw <= MOBILE_BREAK;
+  const [form, setForm] = useState({ businessName: '', fullName: '', email: '', password: '', phone: '', confirmPassword: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const set = (name) => (value) => setForm((current) => ({ ...current, [name]: value }));
+  const submit = async (event) => {
+    event.preventDefault(); setSubmitting(true);
+    try {
+      if (mode === 'login') await apiFetch('/v1/auth/login', { method: 'POST', body: { email: form.email, password: form.password } });
+      if (mode === 'signup') {
+        if (form.password !== form.confirmPassword) throw new Error('Passwords do not match');
+        await apiFetch('/v1/auth/signup', { method: 'POST', body: { businessName: form.businessName, fullName: form.fullName, email: form.email, password: form.password } });
+      }
+      if (mode === 'forgot') { await apiFetch('/v1/auth/forgot-password', { method: 'POST', body: { email: form.email } }); showToast('If the account exists, a reset link has been sent.'); return; }
+      nav('dashboard');
+    } catch (error) { showToast(error instanceof ApiError ? error.message : error.message || 'Unable to continue', 'error'); }
+    finally { setSubmitting(false); }
+  };
 
   return (
     <div style={{ minHeight: '100vh', display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.05fr .95fr', position: 'relative' }}>
@@ -75,21 +93,14 @@ export default function AuthScreen({ mode }) {
           boxShadow: '0 1px 1px rgba(15,23,42,.05), 0 24px 60px rgba(6,12,10,.35)',
           padding: '32px 34px 30px',
         }}>
-          {mode === 'login' && (
+          <form onSubmit={submit}>{mode === 'login' && (
             <>
               <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: T.TEXT }}>Sign in</div>
               <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4 }}>Access your shipping workspace</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 22 }}>
-                <Field label="Work email" required value="ops@karmaliving.in" />
-                <div>
-                  <div style={FIELD_LABEL}>Password{REQUIRED}</div>
-                  <div style={FIELD}>••••••••••••</div>
-                </div>
-                <div>
-                  <div style={FIELD_LABEL}>User role</div>
-                  <div style={{ ...FIELD, justifyContent: 'space-between', cursor: 'pointer', color: T.TEXT_LABEL }}>Owner <span style={{ opacity: .5 }}>▾</span></div>
-                </div>
-                <div onClick={() => nav('dashboard')} style={PRIMARY_BTN}>Sign In</div>
+                <Field label="Work email" required value={form.email} onChange={set('email')} placeholder="you@company.com" />
+                <Field label="Password" required type="password" value={form.password} onChange={set('password')} />
+                <button type="submit" disabled={submitting} style={{ ...PRIMARY_BTN, width: '100%', border: 0, opacity: submitting ? .7 : 1 }}>{submitting ? 'Signing in…' : 'Sign In'}</button>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
                   <span onClick={() => nav('forgot')} style={{ fontSize: 12, color: '#0F766E', fontWeight: 600, cursor: 'pointer' }}>Forgot Password</span>
                   <span style={{ fontSize: 12, color: T.TEXT_SECONDARY }}>New here? <span onClick={() => nav('signup')} style={{ color: '#0F766E', fontWeight: 600, cursor: 'pointer' }}>Sign Up</span></span>
@@ -102,11 +113,12 @@ export default function AuthScreen({ mode }) {
               <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: T.TEXT }}>Create account</div>
               <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4 }}>Set up your seller workspace</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 22 }}>
-                <Field label="Business name" required value="Karma Living Retail Pvt. Ltd." />
-                <Field label="Work email" required value="ops@karmaliving.in" />
-                <Field label="Phone number" required value="+91 80456 11902" />
-                <Field label="Password" required value="••••••••••••" />
-                <div onClick={() => nav('dashboard')} style={PRIMARY_BTN}>Create account</div>
+                <Field label="Business name" required value={form.businessName} onChange={set('businessName')} />
+                <Field label="Your name" required value={form.fullName} onChange={set('fullName')} />
+                <Field label="Work email" required value={form.email} onChange={set('email')} />
+                <Field label="Password" required type="password" value={form.password} onChange={set('password')} />
+                <Field label="Confirm password" required type="password" value={form.confirmPassword} onChange={set('confirmPassword')} />
+                <button type="submit" disabled={submitting} style={{ ...PRIMARY_BTN, width: '100%', border: 0, opacity: submitting ? .7 : 1 }}>{submitting ? 'Creating…' : 'Create account'}</button>
                 <div style={{ textAlign: 'center', fontSize: 12, color: T.TEXT_SECONDARY }}>Already on NEXGO? <span onClick={() => nav('login')} style={{ color: '#0F766E', fontWeight: 600, cursor: 'pointer' }}>Sign in</span></div>
               </div>
             </>
@@ -116,12 +128,12 @@ export default function AuthScreen({ mode }) {
               <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: T.TEXT }}>Reset your password</div>
               <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4, lineHeight: 1.6 }}>Enter your work email and we'll send a link to reset your password.</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 22 }}>
-                <Field label="Work email" required value="ops@karmaliving.in" />
-                <div onClick={() => nav('reset')} style={PRIMARY_BTN}>Send reset link</div>
+                <Field label="Work email" required value={form.email} onChange={set('email')} />
+                <button type="submit" disabled={submitting} style={{ ...PRIMARY_BTN, width: '100%', border: 0 }}>{submitting ? 'Sending…' : 'Send reset link'}</button>
                 <div onClick={() => nav('login')} style={{ textAlign: 'center', fontSize: 12, color: T.TEXT_SECONDARY, cursor: 'pointer' }}>← Back to sign in</div>
               </div>
             </>
-          )}
+          )}</form>
           {mode === 'reset' && (
             <>
               <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: T.TEXT }}>Set a new password</div>
