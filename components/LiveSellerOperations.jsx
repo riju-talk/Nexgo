@@ -1,0 +1,66 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { motion } from 'motion/react';
+import { apiFetch, ApiError } from '@/lib/api';
+import { useAppState } from '@/lib/AppStateContext';
+import * as T from '@/lib/theme';
+
+const CARD = {
+  background: 'linear-gradient(165deg, var(--nx-glass-1) 0%, var(--nx-glass-2) 100%)',
+  backdropFilter: 'blur(18px) saturate(160%)',
+  border: '1px solid var(--nx-glass-border)',
+  borderRadius: 14,
+  boxShadow: '0 12px 30px rgba(15,31,61,.08)',
+};
+
+const money = (paise = 0) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(paise) / 100);
+const date = (value) => value ? new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value)) : 'Just now';
+const title = (value = '') => value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+function Pill({ children, tone = 'neutral' }) {
+  const colors = tone === 'good' ? [T.GREEN, `${T.GREEN}14`] : tone === 'warn' ? [T.AMBER, `${T.AMBER}14`] : tone === 'bad' ? [T.RED, `${T.RED}14`] : [T.TEXT_SECONDARY, T.SURFACE_SOFT];
+  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, width: 'fit-content', padding: '4px 8px', borderRadius: 99, color: colors[0], background: colors[1], fontSize: 11.5, fontWeight: 750, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: 99, background: colors[0] }} />{children}</span>;
+}
+
+function Action({ children, onClick, primary = false, disabled = false }) {
+  return <motion.button whileTap={disabled ? undefined : { scale: .97 }} onClick={onClick} disabled={disabled} style={{ minHeight: 32, padding: '0 11px', borderRadius: 8, border: `1px solid ${primary ? T.NAVY : T.INPUT_BORDER}`, background: primary ? T.NAVY : T.SURFACE, color: primary ? '#fff' : T.TEXT, fontSize: 12, fontWeight: 720, cursor: disabled ? 'wait' : 'pointer', opacity: disabled ? .6 : 1 }}>{children}</motion.button>;
+}
+
+function Empty({ kind, onLogin }) {
+  return <div style={{ ...CARD, padding: '54px 22px', textAlign: 'center' }}><div style={{ margin: '0 auto 14px', width: 42, height: 42, borderRadius: 14, display: 'grid', placeItems: 'center', background: 'rgba(0,179,164,.13)', color: T.ACCENT, fontSize: 20 }}>⌁</div><div style={{ color: T.TEXT, fontSize: 17, fontWeight: 760 }}>No live {kind} yet</div><p style={{ margin: '7px auto 18px', maxWidth: 400, color: T.TEXT_SECONDARY, fontSize: 13.5, lineHeight: 1.6 }}>Create data from the operational flow and it will appear here automatically.</p>{onLogin && <Action primary onClick={onLogin}>Sign in to load live data</Action>}</div>;
+}
+
+function Loading() { return <div style={{ ...CARD, minHeight: 250, display: 'grid', placeItems: 'center', color: T.TEXT_MUTED, fontSize: 13.5 }}><span className="nxc-live-ping" style={{ width: 9, height: 9, marginRight: 9, display: 'inline-block', borderRadius: 9, background: T.ACCENT }} />Loading live operations</div>; }
+
+function OperationsTable({ id, rows, onAction, actionBusy, mobile }) {
+  const config = useMemo(() => ({
+    orders: { headers: ['Order', 'Customer', 'Payment', 'Value', 'State', ''], render: (r) => [<b>{r.order_number}</b>, <><b>{r.customer_name}</b><small>{r.customer_city} · {r.customer_pincode}</small></>, <Pill tone={r.payment_mode === 'cod' ? 'warn' : 'good'}>{r.payment_mode?.toUpperCase()}</Pill>, money(r.subtotal_paise), <Pill tone={r.state === 'booked' ? 'good' : r.state === 'cancelled' ? 'bad' : 'neutral'}>{title(r.state)}</Pill>, r.state === 'new' ? <Action onClick={() => onAction(r, 'ready')}>Ready to ship</Action> : null] },
+    shipments: { headers: ['AWB', 'Order', 'Courier', 'Charge', 'State', ''], render: (r) => [<b style={{ fontFamily: T.MONO }}>{r.awb}</b>, r.order_number, <><b>{r.courier_name}</b><small>{r.service_name}</small></>, money(r.shipping_charge_paise), <Pill tone={r.state === 'delivered' ? 'good' : r.state === 'ndr' || r.state === 'rto' ? 'warn' : 'neutral'}>{title(r.state)}</Pill>, <Action onClick={() => onAction(r, 'label')} disabled={actionBusy === r.id}>Get label</Action>] },
+    ndr: { headers: ['AWB', 'Order', 'Reason', 'Opened', 'Status', ''], render: (r) => [<b style={{ fontFamily: T.MONO }}>{r.awb}</b>, r.order_number, <><b>{title(r.reason_code || 'Delivery exception')}</b><small>{r.customer_note || 'Customer action required'}</small></>, date(r.opened_at), <Pill tone={r.state === 'open' ? 'warn' : 'good'}>{title(r.state)}</Pill>, r.state === 'open' ? <div style={{ display: 'flex', gap: 6 }}><Action onClick={() => onAction(r, 'reattempt')} disabled={actionBusy === r.id}>Reattempt</Action><Action onClick={() => onAction(r, 'rto')} disabled={actionBusy === r.id}>RTO</Action></div> : null] },
+  })[id], [id, onAction, actionBusy]);
+
+  if (mobile) return <div style={{ display: 'grid', gap: 10 }}>{rows.map((row) => { const cells = config.render(row); return <div key={row.id} style={{ ...CARD, padding: 14 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><div>{cells[0]}<div style={{ marginTop: 5, color: T.TEXT_SECONDARY, fontSize: 12.5 }}>{typeof cells[1] === 'string' ? cells[1] : ''}</div></div>{cells[4]}</div><div style={{ marginTop: 13, paddingTop: 12, borderTop: `1px solid ${T.DIVIDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>{cells[2]}<div>{cells[5]}</div></div></div>; })}</div>;
+  return <div style={{ ...CARD, overflow: 'hidden' }}><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 780, borderCollapse: 'collapse' }}><thead><tr>{config.headers.map((header) => <th key={header} style={{ padding: '11px 15px', textAlign: 'left', background: T.TABLE_HEAD, color: T.TEXT_MUTED, fontSize: 10.5, letterSpacing: '.075em', textTransform: 'uppercase' }}>{header}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}>{config.render(row).map((cell, i) => <td key={i} style={{ padding: '13px 15px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{typeof cell === 'string' || typeof cell === 'number' ? <span style={{ fontWeight: i === 0 ? 700 : 520 }}>{cell}</span> : cell}</td>)}</tr>)}</tbody></table></div></div>;
+}
+
+function Wallet({ mobile }) {
+  const { nav } = useAppState();
+  const [wallet, setWallet] = useState(null); const [ledger, setLedger] = useState([]); const [error, setError] = useState(null);
+  const load = useCallback(async () => { try { const [w, l] = await Promise.all([apiFetch('/v1/wallet'), apiFetch('/v1/wallet/ledger')]); setWallet(w); setLedger(l.items || []); } catch (e) { setError(e); } }, []);
+  useEffect(() => { load(); }, [load]);
+  if (!wallet && !error) return <Loading />;
+  if (error) return <Empty kind="wallet activity" onLogin={error instanceof ApiError && error.status === 401 ? () => nav('login') : null} />;
+  return <><div style={{ ...CARD, padding: mobile ? 16 : 20, display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}><div><div style={{ color: T.TEXT_MUTED, fontSize: 11.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase' }}>Available wallet balance</div><div style={{ marginTop: 7, color: T.TEXT, fontSize: 30, fontWeight: 780, letterSpacing: '-.045em' }}>{money(wallet.balancePaise)}</div><div style={{ marginTop: 5, color: T.TEXT_SECONDARY, fontSize: 13 }}>Live balance across shipping charges and recharges</div></div><Action primary onClick={() => nav('recharges')}>Recharge wallet</Action></div>{ledger.length ? <div style={{ ...CARD, overflow: 'hidden' }}><div style={{ padding: '14px 16px', fontSize: 14, fontWeight: 750, color: T.TEXT }}>Recent ledger activity</div>{ledger.map((row) => { const credit = ['credit', 'release'].includes(row.entry_type); return <div key={row.id} style={{ padding: '13px 16px', display: 'grid', gridTemplateColumns: mobile ? '1fr auto' : '130px 1fr auto', gap: 12, alignItems: 'center', borderTop: `1px solid ${T.DIVIDER}` }}><span style={{ color: T.TEXT_MUTED, fontSize: 12 }}>{date(row.created_at)}</span><div><b style={{ color: T.TEXT_LABEL, fontSize: 13 }}>{row.description || title(row.reference_type)}</b><small style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontFamily: T.MONO }}>{row.reference_id?.slice(0, 12)}</small></div><b style={{ color: credit ? T.GREEN : T.RED, fontSize: 13 }}>{credit ? '+' : '−'}{money(row.amount_paise)}</b></div>; })}</div> : <Empty kind="wallet entries" />}</>;
+}
+
+export default function LiveSellerOperations({ activeId, mobile }) {
+  const { nav, showToast } = useAppState();
+  const [rows, setRows] = useState(null); const [error, setError] = useState(null); const [actionBusy, setActionBusy] = useState('');
+  const load = useCallback(async () => { setError(null); try { const data = await apiFetch(`/v1/${activeId}`); setRows(data.items || []); } catch (e) { setError(e); } }, [activeId]);
+  useEffect(() => { if (activeId !== 'wallet') load(); }, [activeId, load]);
+  const act = useCallback(async (row, action) => { setActionBusy(row.id); try { if (action === 'ready') { await apiFetch(`/v1/orders/${row.id}/state`, { method: 'PATCH', body: { state: 'ready_to_ship' } }); showToast(`${row.order_number} is ready to ship`); await load(); } if (action === 'reattempt' || action === 'rto') { await apiFetch(`/v1/ndr/${row.id}`, { method: 'PATCH', body: { action } }); showToast(action === 'reattempt' ? 'Reattempt requested' : 'RTO requested'); await load(); } if (action === 'label') { await apiFetch(`/v1/shipments/${row.id}/label`, { method: 'POST' }); showToast('Label generation started. It will be ready shortly.'); } } catch (e) { showToast(e instanceof ApiError ? e.message : 'Action could not be completed', 'error'); } finally { setActionBusy(''); } }, [load, showToast]);
+  if (activeId === 'wallet') return <div style={{ flex: 1, padding: mobile ? '14px 12px 42px' : '18px 22px 48px' }}><Wallet mobile={mobile} /></div>;
+  const label = activeId === 'ndr' ? 'NDR cases' : activeId;
+  return <div style={{ flex: 1, padding: mobile ? '14px 12px 42px' : '18px 22px 48px' }}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 13 }}><div style={{ color: T.TEXT_SECONDARY, fontSize: 13 }}>{rows ? `${rows.length} live ${label} in your workspace` : 'Connecting to your operational workspace'}</div><Action onClick={load}>Refresh</Action></div>{!rows && !error && <Loading />}{error && <Empty kind={label} onLogin={error instanceof ApiError && error.status === 401 ? () => nav('login') : null} />}{rows && !rows.length && <Empty kind={label} />}{rows && rows.length > 0 && <OperationsTable id={activeId} rows={rows} onAction={act} actionBusy={actionBusy} mobile={mobile} />}</div>;
+}

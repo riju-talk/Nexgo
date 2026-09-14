@@ -11,6 +11,8 @@ import AccountConfiguration from './AccountConfiguration';
 import AdminDashboard from './AdminDashboard';
 import AdminPageHeader from './AdminPageHeader';
 import AdminUtilityPage from './AdminUtilityPage';
+import LiveSellerOperations from './LiveSellerOperations';
+import LiveAdminQueues from './LiveAdminQueues';
 
 export default function AppPage({ id, isDashboard = false }) {
   const { vw } = useAppState();
@@ -23,6 +25,8 @@ export default function AppPage({ id, isDashboard = false }) {
   const isAccountConfig = id === 'account-config';
   const isAdminOverview = id === 'a-overview';
   const isAdminPage = id.startsWith('a-');
+  const isLiveSellerPage = ['orders', 'shipments', 'ndr', 'wallet'].includes(id);
+  const isLiveAdminPage = ['a-sellers', 'a-shipments', 'a-ndr', 'a-couriers'].includes(id);
   const isAdminUtility = isAdminPage && !isAdminOverview && !hasTable;
 
   return (
@@ -31,7 +35,9 @@ export default function AppPage({ id, isDashboard = false }) {
       {isAdminPage && !isAdminOverview && <AdminPageHeader activeId={id} phone={phone} />}
       {isAdminOverview && <AdminDashboard mobile={mobile} phone={phone} />}
       {isDashboard && !isAdminOverview && <DashboardContent mobile={mobile} narrow={narrow} phone={phone} />}
-      {hasTable && !isAdminOverview && <TablePage activeId={id} mobile={mobile} phone={phone} />}
+      {isLiveSellerPage && <LiveSellerOperations activeId={id} mobile={mobile} />}
+      {isLiveAdminPage && <LiveAdminQueues activeId={id} mobile={mobile} />}
+      {hasTable && !isAdminOverview && !isLiveSellerPage && !isLiveAdminPage && <TablePage activeId={id} mobile={mobile} phone={phone} />}
       {hasForm && <FormPage activeId={id} mobile={mobile} phone={phone} />}
       {isAdminUtility && <AdminUtilityPage activeId={id} mobile={mobile} />}
       {isAccountConfig && <AccountConfiguration mobile={mobile} phone={phone} />}

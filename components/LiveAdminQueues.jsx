@@ -1,0 +1,33 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { motion } from 'motion/react';
+import { adminApi, ApiError } from '@/lib/api';
+import { useAppState } from '@/lib/AppStateContext';
+import * as T from '@/lib/theme';
+
+const CARD = { background: 'var(--ops-surface)', border: '1px solid var(--ops-border)', borderRadius: 16, boxShadow: 'var(--ops-shadow)' };
+const title = (value = '') => value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+const money = (paise = 0) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(paise) / 100);
+
+function Badge({ children, tone = 'neutral' }) { const map = tone === 'ok' ? ['#137D50', '#E8F7EF'] : tone === 'warn' ? ['#9B6500', '#FFF5DF'] : tone === 'bad' ? ['#B23A2B', '#FFF0EE'] : ['var(--ops-muted)', 'var(--ops-surface-soft)']; return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 8px', borderRadius: 99, color: map[0], background: map[1], fontSize: 11.5, fontWeight: 750, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: 9, background: map[0] }} />{children}</span>; }
+function Button({ children, onClick, disabled }) { return <motion.button whileTap={disabled ? undefined : { scale: .97 }} disabled={disabled} onClick={onClick} style={{ minHeight: 31, padding: '0 10px', border: '1px solid var(--ops-border)', borderRadius: 8, background: 'var(--ops-surface)', color: 'var(--ops-heading)', fontSize: 12, fontWeight: 720, cursor: disabled ? 'wait' : 'pointer', opacity: disabled ? .55 : 1 }}>{children}</motion.button>; }
+
+export default function LiveAdminQueues({ activeId, mobile }) {
+  const { nav, showToast } = useAppState();
+  const [items, setItems] = useState(null); const [error, setError] = useState(null); const [busy, setBusy] = useState('');
+  const kind = activeId.replace('a-', '');
+  const loader = useMemo(() => ({ sellers: adminApi.sellers, shipments: adminApi.shipments, ndr: adminApi.ndr, couriers: adminApi.couriers })[kind], [kind]);
+  const load = useCallback(async () => { setError(null); try { const data = await loader(); setItems(data.items || []); } catch (e) { setError(e); } }, [loader]);
+  useEffect(() => { load(); }, [load]);
+  const changeState = async (row, state) => { setBusy(row.id); try { await adminApi.setSellerState(row.id, state, 'Updated from operations queue'); showToast(`${row.legal_name} is now ${state}`); await load(); } catch (e) { showToast(e instanceof ApiError ? e.message : 'Seller state could not be changed', 'error'); } finally { setBusy(''); } };
+  const columns = { sellers: ['Seller', 'KYC', 'Orders', 'Shipments', 'State', ''], shipments: ['AWB', 'Seller', 'Order', 'Charge', 'Status'], ndr: ['AWB', 'Seller', 'Reason', 'State'], couriers: ['Courier', 'Integration', 'Services', 'COD'] }[kind];
+  const cells = (r) => {
+    if (kind === 'sellers') return [<><b>{r.legal_name}</b><small>{r.slug}</small></>, <Badge tone={r.kyc_status === 'verified' ? 'ok' : 'warn'}>{title(r.kyc_status)}</Badge>, r.order_count, r.shipment_count, <Badge tone={r.state === 'active' ? 'ok' : r.state === 'suspended' ? 'bad' : 'warn'}>{title(r.state)}</Badge>, r.state === 'active' ? <Button disabled={busy === r.id} onClick={() => changeState(r, 'suspended')}>Suspend</Button> : r.state === 'suspended' ? <Button disabled={busy === r.id} onClick={() => changeState(r, 'active')}>Restore</Button> : null];
+    if (kind === 'shipments') return [<b style={{ fontFamily: T.MONO }}>{r.awb}</b>, r.seller_name, r.order_number, money(r.shipping_charge_paise), <Badge tone={r.state === 'delivered' ? 'ok' : r.state === 'ndr' || r.state === 'rto' ? 'warn' : 'neutral'}>{title(r.state)}</Badge>];
+    if (kind === 'ndr') return [<b style={{ fontFamily: T.MONO }}>{r.awb}</b>, r.seller_name, <><b>{title(r.reason_code || 'Exception')}</b><small>{r.order_number}</small></>, <Badge tone={r.state === 'open' ? 'warn' : 'ok'}>{title(r.state)}</Badge>];
+    return [<><b>{r.name}</b><small>{r.code}</small></>, <Badge tone={r.integration_state === 'live' ? 'ok' : 'warn'}>{title(r.integration_state)}</Badge>, r.services?.map((s) => s.name).join(', ') || 'No services', r.supports_cod ? <Badge tone="ok">Enabled</Badge> : <Badge>Off</Badge>];
+  };
+  const empty = <div style={{ ...CARD, padding: 48, textAlign: 'center', color: 'var(--ops-muted)', fontSize: 13.5 }}>{error instanceof ApiError && error.status === 401 ? <><div>Sign in as a platform administrator to load this live queue.</div><div style={{ marginTop: 15 }}><Button onClick={() => nav('admin-login')}>Admin sign in</Button></div></> : `No live ${kind} to show yet.`}</div>;
+  return <div style={{ padding: mobile ? '14px 12px 42px' : '18px 22px 48px', maxWidth: 1560, margin: '0 auto' }}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 13 }}><span style={{ color: 'var(--ops-muted)', fontSize: 13 }}>{items ? `${items.length} live records` : 'Connecting to platform operations'}</span><Button onClick={load}>Refresh</Button></div>{!items && !error ? <div style={{ ...CARD, minHeight: 220, display: 'grid', placeItems: 'center', color: 'var(--ops-muted)' }}>Loading live queue</div> : error || !items?.length ? empty : <div style={{ ...CARD, overflow: 'hidden' }}><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse' }}><thead><tr>{columns.map((x) => <th key={x} style={{ padding: '11px 15px', background: 'var(--ops-surface-soft)', textAlign: 'left', color: 'var(--ops-muted)', fontSize: 10.5, letterSpacing: '.075em', textTransform: 'uppercase' }}>{x}</th>)}</tr></thead><tbody>{items.map((row) => <tr key={row.id}>{cells(row).map((cell, index) => <td key={index} style={{ padding: '13px 15px', borderTop: '1px solid var(--ops-divider)', color: 'var(--ops-text)', fontSize: 13, fontWeight: typeof cell === 'string' || typeof cell === 'number' ? 560 : 400 }}>{cell}</td>)}</tr>)}</tbody></table></div></div>}</div>;
+}

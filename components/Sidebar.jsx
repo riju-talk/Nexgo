@@ -164,7 +164,7 @@ export default function Sidebar({ activeId, mobile }) {
               {hasChildren && open && (
                 <div style={{ margin: '2px 0 5px 24px', padding: '2px 0 2px 13px', borderLeft: '1px solid var(--nx-side-edge)', animation: 'nxc-expand .12s ease-out' }}>
                   {children.map(([childLabel, childId]) => (
-                    <div key={childId} onClick={() => nav(childId)} className="nxc-nav-row" style={{ padding: '7px 9px', borderRadius: 7, margin: '1px 0', cursor: 'pointer', fontSize: 13, fontWeight: childId === activeId ? 650 : 500, color: childId === activeId ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: childId === activeId ? 'var(--nx-side-active)' : undefined }}>{childLabel}</div>
+                    <div key={`${childId}-${childLabel}`} onClick={() => nav(childId)} className="nxc-nav-row" style={{ padding: '7px 9px', borderRadius: 7, margin: '1px 0', cursor: 'pointer', fontSize: 13, fontWeight: childId === activeId ? 650 : 500, color: childId === activeId ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: childId === activeId ? 'var(--nx-side-active)' : undefined }}>{childLabel}</div>
                   ))}
                   {id === 'exceptions' && (
                     <div style={{ marginTop: 7, paddingTop: 8, borderTop: '1px solid var(--nx-side-edge)' }}>
