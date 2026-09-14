@@ -13,7 +13,7 @@ const summarize = async (client: Pool | PoolClient, sellerId?: string) => {
     client.query(`SELECT state,count(*)::int AS count FROM shipments ${scope} GROUP BY state`, args),
     client.query(`SELECT state,count(*)::int AS count FROM ndr_cases ${scope} GROUP BY state`, args),
     client.query<{ value: string }>(`SELECT COALESCE(SUM(shipping_charge_paise),0)::bigint AS value FROM shipments ${scope}`, args),
-    client.query<{ day: string; orders: number; delivered: number }>(`WITH days AS (SELECT generate_series(current_date-interval '6 days',current_date,interval '1 day')::date day) SELECT to_char(days.day,'DD Mon') AS day, COALESCE((SELECT count(*) FROM orders o WHERE o.created_at::date=days.day ${sellerId ? 'AND o.seller_id=$1' : ''}),0)::int orders, COALESCE((SELECT count(*) FROM shipments s WHERE s.created_at::date=days.day AND s.state='delivered' ${sellerId ? 'AND s.seller_id=$1' : ''}),0)::int delivered FROM days ORDER BY days.day`, args),
+    client.query<{ day: string; orders: number; delivered: number }>(`WITH days AS (SELECT generate_series(current_date-interval '6 days',current_date,interval '1 day')::date AS day) SELECT to_char(days.day,'DD Mon') AS day, COALESCE((SELECT count(*) FROM orders o WHERE o.created_at::date=days.day ${sellerId ? 'AND o.seller_id=$1' : ''}),0)::int orders, COALESCE((SELECT count(*) FROM shipments s WHERE s.created_at::date=days.day AND s.state='delivered' ${sellerId ? 'AND s.seller_id=$1' : ''}),0)::int delivered FROM days ORDER BY days.day`, args),
   ]);
   const by = (rows: { state: string; count: number }[]) => Object.fromEntries(rows.map((x) => [x.state, Number(x.count)]));
   const orderBy = by(orders.rows), shipmentBy = by(shipments.rows), ndrBy = by(ndr.rows);
