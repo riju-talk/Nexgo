@@ -39,6 +39,13 @@ export default function AuthScreen({ mode }) {
         await apiFetch('/v1/auth/signup', { method: 'POST', body: { businessName: form.businessName, fullName: form.fullName, email: form.email, password: form.password } });
       }
       if (mode === 'forgot') { await apiFetch('/v1/auth/forgot-password', { method: 'POST', body: { email: form.email } }); showToast('If the account exists, a reset link has been sent.'); return; }
+      if (mode === 'reset') {
+        const token = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('token');
+        if (!token) throw new Error('This reset link is missing its security token. Request a new one.');
+        if (form.password !== form.confirmPassword) throw new Error('Passwords do not match');
+        await apiFetch('/v1/auth/reset-password', { method: 'POST', body: { token, password: form.password } });
+        showToast('Password reset. Please sign in.'); nav('login'); return;
+      }
       nav('dashboard');
     } catch (error) { showToast(error instanceof ApiError ? error.message : error.message || 'Unable to continue', 'error'); }
     finally { setSubmitting(false); }
@@ -135,15 +142,15 @@ export default function AuthScreen({ mode }) {
             </>
           )}</form>
           {mode === 'reset' && (
-            <>
+            <form onSubmit={submit}>
               <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: T.TEXT }}>Set a new password</div>
-              <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4 }}>For ops@karmaliving.in</div>
+              <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4 }}>Choose a strong password for your workspace.</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 22 }}>
-                <Field label="New password" required value="••••••••••••••••" />
-                <Field label="Confirm new password" required value="••••••••••••••••" />
-                <div onClick={() => nav('dashboard')} style={PRIMARY_BTN}>Reset password and sign in</div>
+                <Field label="New password" required type="password" value={form.password} onChange={set('password')} />
+                <Field label="Confirm new password" required type="password" value={form.confirmPassword} onChange={set('confirmPassword')} />
+                <button type="submit" disabled={submitting} style={{ ...PRIMARY_BTN, width: '100%', border: 0, opacity: submitting ? .7 : 1 }}>{submitting ? 'Resetting…' : 'Reset password and sign in'}</button>
               </div>
-            </>
+            </form>
           )}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 22, paddingTop: 16, borderTop: `1px solid ${T.DIVIDER}` }}>
             {SWITCHER.map(([label, id]) => (
