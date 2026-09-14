@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { METRICS, PIPELINE, QUEUE, TREND_A, TREND_B, COURIER_PERF } from '@/lib/data';
 import { spark } from '@/lib/charts';
@@ -10,13 +10,18 @@ import ScenicBackdrop from './ScenicBackdrop';
 import DashboardStatCard from './DashboardStatCard';
 import DashboardStatCardModal from './DashboardStatCardModal';
 import TrendChart from './TrendChart';
+import { apiFetch } from '@/lib/api';
 
 export default function DashboardContent({ mobile, narrow, phone }) {
   const { kpis, stage, setStage, expanded, toggleExpanded, queueTab, setQueueTab, setDrawerOpen } = useAppState();
   const [expandedCardId, setExpandedCardId] = useState(null);
+  const [live, setLive] = useState(null);
+  useEffect(() => { apiFetch('/v1/analytics/dashboard').then(setLive).catch(() => {}); }, []);
+  const formatMoney = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((value || 0) / 100);
+  const liveValues = live ? { order_volume: String(live.metrics.orderVolume), in_transit: String(live.metrics.inTransit), delivery_rate: `${live.metrics.deliveryRate}%`, ndr_rate: `${live.metrics.ndrRate}%`, rto_rate: `${live.metrics.rtoRate}%`, revenue: formatMoney(live.metrics.shippingSpendPaise) } : {};
 
   const statCards = METRICS.filter((m) => kpis.indexOf(m[0]) >= 0 && m[2] === 'Card').map((m, i) => ({
-    id: m[0], label: m[1], value: m[4], delta: m[5], sub: m[7], seed: i * 2 + 1,
+    id: m[0], label: m[1], value: liveValues[m[0]] ?? m[4], delta: live ? 'Live data' : m[5], sub: live ? 'Current workspace' : m[7], seed: i * 2 + 1,
     deltaColor: m[6] === 'up' ? T.GREEN : m[6] === 'down' ? T.RED : T.MUTE,
     sparkPath: spark(i * 2 + 1),
     sparkColor: m[6] === 'up' ? T.ACCENT : m[6] === 'down' ? '#D9A79E' : '#BDB8AC',
@@ -29,7 +34,8 @@ export default function DashboardContent({ mobile, narrow, phone }) {
   const chartColCount = [showTrend, showCourier, showCod].filter(Boolean).length;
   const chartCols = mobile ? '1fr' : chartColCount ? [showTrend ? '1.7fr' : null, showCourier ? '1fr' : null, showCod ? '1fr' : null].filter(Boolean).join(' ') : '1fr';
 
-  const total = PIPELINE.reduce((a, p) => a + p[1], 0);
+  const dashboardPipeline = live ? PIPELINE.map(([label, count, color]) => [label, live.pipeline[label.toLowerCase().replaceAll(' ', '_')] ?? count, color]) : PIPELINE;
+  const total = dashboardPipeline.reduce((a, p) => a + p[1], 0);
   const statCols = mobile ? 'repeat(2,minmax(0,1fr))' : narrow ? 'repeat(3,minmax(0,1fr))' : 'repeat(5,minmax(0,1fr))';
   const pipeCols = phone ? 'repeat(2,minmax(0,1fr))' : mobile ? 'repeat(3,minmax(0,1fr))' : narrow ? 'repeat(5,minmax(0,1fr))' : 'repeat(9,minmax(0,1fr))';
   const pagePad = phone ? 12 : mobile ? 16 : 22;
@@ -69,7 +75,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
             <div style={{ fontSize: 13.5, fontWeight: 700, color: '#0E5049', cursor: 'pointer' }}>Export →</div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: pipeCols, gap: phone ? 8 : 10, padding: phone ? 10 : 14 }}>
-            {PIPELINE.map(([label, count, color]) => {
+            {dashboardPipeline.map(([label, count, color]) => {
               const on = stage === label;
               const pct = (count / total) * 100;
               return (
@@ -214,7 +220,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
                   <div>150</div><div>100</div><div>50</div><div>0</div>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <TrendChart seriesA={TREND_A} seriesB={TREND_B} />
+                  <TrendChart seriesA={live ? live.trend.map((x) => x.orders) : TREND_A} seriesB={live ? live.trend.map((x) => x.delivered) : TREND_B} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: T.MONO, fontSize: 11, color: T.TEXT_FAINT, marginTop: 7 }}>
                     <div>05 AUG</div><div>12 AUG</div><div>19 AUG</div><div>26 AUG</div><div>03 SEP</div>
                   </div>

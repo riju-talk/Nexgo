@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { line } from '@/lib/charts';
 import * as T from '@/lib/theme';
 
-const W = 720, H = 200, MAX = 150;
+const W = 720, H = 200;
 
 function dateAt(i) {
   const d = new Date(2026, 7, 5);
@@ -18,6 +18,7 @@ export default function TrendChart({ seriesA, seriesB, labelA = 'ORDERS', labelB
   const [hover, setHover] = useState(null); // { i, x }
 
   const n = seriesA.length;
+  const MAX = Math.max(1, ...seriesA, ...seriesB) * 1.15;
   const xAt = (i) => (i / (n - 1)) * W;
   const yAt = (v) => H - 2 - (v / MAX) * (H - 6);
 

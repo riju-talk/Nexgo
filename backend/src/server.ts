@@ -29,6 +29,7 @@ import { invoiceRoutes } from './routes/invoices.js';
 import { codRemittanceRoutes } from './routes/codRemittance.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { pickupRoutes } from './routes/pickups.js';
+import { analyticsRoutes } from './routes/analytics.js';
 
 const app = Fastify({ logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' }, requestIdHeader: 'x-request-id' });
 await app.register(helmet, { contentSecurityPolicy: false });
@@ -67,6 +68,7 @@ await app.register(invoiceRoutes);
 await app.register(codRemittanceRoutes);
 await app.register(integrationRoutes);
 await app.register(pickupRoutes);
+await app.register(analyticsRoutes);
 await app.register(teamRoutes);
 await app.register(passwordResetRoutes);
 await app.register(sessionRoutes);
