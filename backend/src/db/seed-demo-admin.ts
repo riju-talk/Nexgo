@@ -1,0 +1,3 @@
+import argon2 from 'argon2';
+import { db } from './client.js';
+async function main(){const email='demo-admin@nexgo.local';const hash=await argon2.hash('NexgoAdmin2026!',{type:argon2.argon2id});const user=await db.query<{id:string}>(`INSERT INTO users (email,password_hash,full_name) VALUES ($1,$2,'Demo Platform Admin') ON CONFLICT (email) DO UPDATE SET password_hash=EXCLUDED.password_hash RETURNING id`,[email,hash]);await db.query(`INSERT INTO platform_admins (user_id,role,mfa_required) VALUES ($1,'super_admin',false) ON CONFLICT (user_id) DO UPDATE SET role='super_admin',mfa_required=false`,[user.rows[0].id]);console.log('Demo admin ready');await db.end();}main().catch(async e=>{console.error(e);await db.end();process.exit(1)});

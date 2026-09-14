@@ -11,6 +11,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "seed:admin": "tsx src/db/seed-admin.ts",
     "seed:demo-network": "tsx src/db/seed-demo-network.ts",
+    "seed:demo-admin": "tsx src/db/seed-demo-admin.ts",
     "check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
