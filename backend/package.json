@@ -10,6 +10,7 @@
     "start:worker": "node dist/worker.js",
     "migrate": "tsx src/db/migrate.ts",
     "seed:admin": "tsx src/db/seed-admin.ts",
+    "seed:demo-network": "tsx src/db/seed-demo-network.ts",
     "check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
