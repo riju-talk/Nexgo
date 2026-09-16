@@ -31,6 +31,7 @@ import { integrationRoutes } from './routes/integrations.js';
 import { pickupRoutes } from './routes/pickups.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { workspaceRoutes } from './routes/workspace.js';
+import { locationRoutes } from './routes/locations.js';
 
 const app = Fastify({ logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' }, requestIdHeader: 'x-request-id' });
 await app.register(helmet, { contentSecurityPolicy: false });
@@ -71,6 +72,7 @@ await app.register(integrationRoutes);
 await app.register(pickupRoutes);
 await app.register(analyticsRoutes);
 await app.register(workspaceRoutes);
+await app.register(locationRoutes);
 await app.register(teamRoutes);
 await app.register(passwordResetRoutes);
 await app.register(sessionRoutes);
