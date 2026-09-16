@@ -7,12 +7,13 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAppState } from '@/lib/AppStateContext';
 import { pathFor } from '@/lib/routes';
 import * as T from '@/lib/theme';
+import { adminApi } from '@/lib/api';
 
 const GROUPS = [
   ['Overview', [['Dashboard', 'a-overview', '▦']]],
   ['Users', [['All sellers', 'a-sellers', '◎'], ['KYC verification', 'a-kyc', '◈'], ['Wallets', 'a-wallets', '₹'], ['Credit limits', 'a-credit', '⊞']]],
   ['Couriers', [['Partners', 'a-couriers', '◌'], ['Zone mapping', 'a-zones', '⌘'], ['SLA settings', 'a-sla', '◫'], ['Performance', 'a-performance', '▥']]],
-  ['Shipments', [['All shipments', 'a-shipments', '□'], ['NDR centre', 'a-ndr', '!'], ['RTO centre', 'a-rto', '↩'], ['Pickups', 'a-pickups', '⌁']]],
+  ['Shipments', [['All orders', 'a-orders', '▤'], ['All shipments', 'a-shipments', '□'], ['NDR centre', 'a-ndr', '!'], ['RTO centre', 'a-rto', '↩'], ['Pickups', 'a-pickups', '⌁']]],
   ['Finance', [['COD settlements', 'a-cod', '₹'], ['Invoices', 'a-invoices', '▤'], ['GST reports', 'a-gst', '▧']]],
   ['Reports', [['Revenue', 'a-revenue', '↗'], ['SLA', 'a-sla-report', '◷'], ['Courier analytics', 'a-analytics', '◉']]],
   ['Support centre', [['Tickets', 'a-tickets', '◌'], ['Live chat', 'a-live-chat', '◍'], ['Escalations', 'a-escalations', '↑'], ['Courier disputes', 'a-disputes', '◇']]],
@@ -51,9 +52,9 @@ function AdminNav({ mobile }) {
         <span><b style={{ display: 'block', color: 'var(--nx-side-text)', fontSize: 11.5, lineHeight: 1.2 }}>Platform healthy</b><span style={{ display: 'block', marginTop: 3, color: 'var(--nx-side-sub)', fontSize: 10.5 }}>99.4% API availability</span></span>
       </Link>
       <div style={{ margin: '0 8px 16px', paddingTop: 12, borderTop: '1px solid var(--nx-side-edge)' }}>
-        <Link href="/admin/login" onClick={() => { window.localStorage.removeItem('nx-admin-session'); mobile && setNavOpen(false); }} style={{ height: 38, padding: '0 10px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: 'var(--nx-side-sub)', fontSize: 13, fontWeight: 650 }}>
+        <a href="/admin/login" onClick={(e) => { e.preventDefault(); adminApi.logout().finally(() => { window.location.href = '/admin/login'; }); }} style={{ height: 38, padding: '0 10px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: 'var(--nx-side-sub)', fontSize: 13, fontWeight: 650, cursor: 'pointer' }}>
           <span style={{ width: 15, textAlign: 'center', color: T.ACCENT, fontSize: 14 }}>↗</span> Exit operations
-        </Link>
+        </a>
       </div>
       <style jsx>{`
         .admin-nav-link { transition: background .16s ease, border-color .16s ease, transform .16s ease; }
@@ -70,11 +71,15 @@ export default function AdminShell({ children }) {
   const { vw, navOpen, setNavOpen, setPaletteOpen, theme, toggleTheme, showToast } = useAppState();
   const [sessionReady, setSessionReady] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [admin, setAdmin] = useState(null);
   const mobile = vw <= T.MOBILE_BREAK;
   const dark = theme === 'dark';
   useEffect(() => {
-    if (window.localStorage.getItem('nx-admin-session') === 'active') setSessionReady(true);
-    else router.replace('/admin/login');
+    let cancelled = false;
+    adminApi.me()
+      .then((me) => { if (!cancelled) { setAdmin(me); setSessionReady(true); } })
+      .catch(() => { if (!cancelled) router.replace('/admin/login'); });
+    return () => { cancelled = true; };
   }, [router]);
   const opsTheme = {
     '--ops-bg': 'var(--nx-paper)', '--ops-surface': 'var(--nx-card-sheen-1)', '--ops-surface-soft': 'var(--nx-surface-soft)',
@@ -99,8 +104,8 @@ export default function AdminShell({ children }) {
             <div style={{ padding: '5px 10px', border: '1px solid var(--ops-border)', borderRadius: 8, background: 'var(--ops-surface)', fontSize: 12.5, color: 'var(--ops-muted)' }}>Tue, 09 Sep 2026</div>
             <motion.button whileTap={{ scale: .92 }} onClick={() => showToast('3 operational alerts are ready for review')} aria-label="Open notifications" style={{ position: 'relative', width: 31, height: 31, display: 'grid', placeItems: 'center', border: 0, borderRadius: 8, background: 'transparent', color: T.ACCENT, fontSize: 17, cursor: 'pointer' }}>♧<span className="nxc-live-ping" style={{ position: 'absolute', top: 5, right: 3, width: 7, height: 7, borderRadius: '50%', background: '#E83D57' }} /><span style={{ position: 'absolute', top: 5, right: 3, width: 7, height: 7, borderRadius: '50%', background: '#E83D57', border: '2px solid var(--ops-surface)' }} /></motion.button>
             <div style={{ position: 'relative' }}>
-              <button onClick={() => setProfileOpen(!profileOpen)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 0, border: 0, background: 'transparent', cursor: 'pointer', textAlign: 'left' }}><div style={{ width: 33, height: 33, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'linear-gradient(145deg,#1C5476,#00A99C)', color: '#fff', fontSize: 11, fontWeight: 800 }}>SA</div><div><div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ops-text)' }}>Saanvi Arora</div><div style={{ fontSize: 11, color: 'var(--ops-muted)', marginTop: 2 }}>Platform admin</div></div></button>
-              {profileOpen && <motion.div initial={{ opacity: 0, y: -5, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', bounce: 0, duration: .22 }} style={{ position: 'absolute', top: 42, right: 0, width: 210, padding: 8, border: '1px solid var(--ops-border)', borderRadius: 11, background: 'var(--ops-surface)', boxShadow: '0 15px 35px rgba(9,28,48,.18)' }}><div style={{ padding: '8px 9px 10px', borderBottom: '1px solid var(--ops-divider)' }}><b style={{ display: 'block', color: 'var(--ops-heading)', fontSize: 12.5 }}>Platform administrator</b><span style={{ display: 'block', marginTop: 3, color: 'var(--ops-muted)', fontSize: 11 }}>Full operational access</span></div><button onClick={() => { window.localStorage.removeItem('nx-admin-session'); router.push('/admin/login'); }} style={{ width: '100%', marginTop: 5, padding: '9px', border: 0, borderRadius: 7, background: 'transparent', color: T.RED, textAlign: 'left', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>Exit operations</button></motion.div>}
+              <button onClick={() => setProfileOpen(!profileOpen)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 0, border: 0, background: 'transparent', cursor: 'pointer', textAlign: 'left' }}><div style={{ width: 33, height: 33, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'linear-gradient(145deg,#1C5476,#00A99C)', color: '#fff', fontSize: 11, fontWeight: 800 }}>{(admin?.fullName || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</div><div><div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ops-text)' }}>{admin?.fullName || 'Loading…'}</div><div style={{ fontSize: 11, color: 'var(--ops-muted)', marginTop: 2 }}>{admin?.role?.replace(/_/g, ' ') || ''}</div></div></button>
+              {profileOpen && <motion.div initial={{ opacity: 0, y: -5, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', bounce: 0, duration: .22 }} style={{ position: 'absolute', top: 42, right: 0, width: 210, padding: 8, border: '1px solid var(--ops-border)', borderRadius: 11, background: 'var(--ops-surface)', boxShadow: '0 15px 35px rgba(9,28,48,.18)' }}><div style={{ padding: '8px 9px 10px', borderBottom: '1px solid var(--ops-divider)' }}><b style={{ display: 'block', color: 'var(--ops-heading)', fontSize: 12.5 }}>{admin?.email}</b><span style={{ display: 'block', marginTop: 3, color: 'var(--ops-muted)', fontSize: 11 }}>{admin?.role?.replace(/_/g, ' ')}</span></div><button onClick={() => adminApi.logout().finally(() => { window.location.href = '/admin/login'; })} style={{ width: '100%', marginTop: 5, padding: '9px', border: 0, borderRadius: 7, background: 'transparent', color: T.RED, textAlign: 'left', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>Exit operations</button></motion.div>}
             </div>
           </div>}
         </header>

@@ -29,6 +29,40 @@ const zoneInput = z.object({
 
 export async function adminOperationsRoutes(app: FastifyInstance) {
   // --- Seller lifecycle -----------------------------------------------
+  app.get('/v1/admin/wallets', { preHandler: requirePlatformAdmin }, async () => {
+    const result = await db.query(
+      `SELECT s.id, s.legal_name, s.state,
+        COALESCE(SUM(CASE WHEN w.entry_type IN ('credit','release') THEN w.amount_paise WHEN w.entry_type IN ('debit','hold') THEN -w.amount_paise ELSE w.amount_paise END), 0)::bigint AS balance_paise,
+        COUNT(w.id)::int AS entry_count, MAX(w.created_at) AS last_activity_at
+       FROM sellers s LEFT JOIN wallet_entries w ON w.seller_id=s.id
+       GROUP BY s.id ORDER BY balance_paise ASC, s.legal_name LIMIT 200`,
+    );
+    return { items: result.rows };
+  });
+
+  app.get('/v1/admin/pickups', { preHandler: requirePlatformAdmin }, async () => {
+    const result = await db.query(
+      `SELECT p.id, p.state, p.requested_for, p.created_at, s.legal_name AS seller_name, w.name AS warehouse_name, cp.name AS courier_name
+       FROM pickup_requests p JOIN sellers s ON s.id=p.seller_id JOIN warehouses w ON w.id=p.warehouse_id
+       LEFT JOIN courier_providers cp ON cp.id=p.courier_provider_id
+       ORDER BY p.requested_for DESC, p.created_at DESC LIMIT 200`,
+    );
+    return { items: result.rows };
+  });
+
+  app.get('/v1/admin/orders', { preHandler: requirePlatformAdmin }, async (request) => {
+    const q = z.object({ state: z.enum(['new', 'ready_to_ship', 'booked', 'cancelled']).optional(), orderFlow: z.enum(['forward', 'reverse', 'dropship', 'ship_now']).optional(), sellerId: uuid.optional(), limit: z.coerce.number().int().min(1).max(200).default(100) }).parse(request.query);
+    const result = await db.query(
+      `SELECT o.id, o.order_number, o.order_flow, o.notes, o.state, o.payment_mode, o.subtotal_paise, o.total_weight_g, o.created_at,
+              s.legal_name AS seller_name, c.full_name AS customer_name, c.city AS customer_city, c.pincode AS customer_pincode
+       FROM orders o JOIN sellers s ON s.id = o.seller_id JOIN customers c ON c.id = o.customer_id
+       WHERE ($1::order_state IS NULL OR o.state = $1) AND ($2::order_flow IS NULL OR o.order_flow = $2) AND ($3::uuid IS NULL OR o.seller_id = $3)
+       ORDER BY o.created_at DESC LIMIT $4`,
+      [q.state ?? null, q.orderFlow ?? null, q.sellerId ?? null, q.limit],
+    );
+    return { items: result.rows };
+  });
+
   app.get('/v1/admin/sellers', { preHandler: requirePlatformAdmin }, async (request) => {
     const q = pageQuery.parse(request.query);
     const result = await db.query(

@@ -26,8 +26,28 @@ export function clearCsrfCookie(reply: FastifyReply) {
 // Webhook routes (Razorpay/couriers) are exempt by construction — they never
 // carry a session cookie, so there is no session to forge a request against,
 // and they're authenticated by HMAC signature instead.
+//
+// Session-establishing routes are exempt too, and deliberately by exact path
+// rather than "no nx_session cookie present": a browser can easily be
+// carrying a stale, already-expired, or already-revoked session cookie
+// (closed tab without logging out, a session that later expired server-side)
+// while hitting login/signup/reset again. Keying the exemption off cookie
+// *presence* would then demand a CSRF header the client never had a reason
+// to fetch, on the exact request meant to establish a fresh session — an
+// entirely legitimate flow, not an edge case.
+const CSRF_EXEMPT_PATHS = new Set([
+  '/v1/auth/login',
+  '/v1/auth/signup',
+  '/v1/auth/forgot-password',
+  '/v1/auth/reset-password',
+  '/v1/admin/auth/login',
+  '/v1/admin/auth/mfa',
+  '/v1/team/invitations/accept',
+]);
+
 export function requireCsrfHeader(request: FastifyRequest, reply: FastifyReply, done: (err?: Error) => void) {
   if (!MUTATING_METHODS.has(request.method) || request.url.startsWith('/v1/webhooks/')) return done();
+  if (CSRF_EXEMPT_PATHS.has(request.url.split('?')[0])) return done();
   if (!request.cookies.nx_session) return done(); // no session cookie => nothing to forge
   const cookieToken = request.cookies[CSRF_COOKIE];
   const headerToken = request.headers['x-csrf-token'];

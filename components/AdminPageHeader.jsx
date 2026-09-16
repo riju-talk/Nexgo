@@ -6,6 +6,7 @@ import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
 const CONTEXT = {
+  'a-orders': ['Order intake', 'New seller orders and return pickups are visible as soon as they are created', 'Review order intake', '#00A99C'],
   'a-sellers': ['Seller health', '218 onboarding journeys need review', 'Review onboarding', '#315F93'],
   'a-shipments': ['Network pulse', '18.6k shipments are in an exception state', 'Open exceptions', '#B23A2B'],
   'a-couriers': ['Partner health', '2 courier partners are below SLA guardrails', 'View partner health', '#8A5A00'],

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
 import { requireSeller } from './seller.js';
-const input = z.object({ provider: z.enum(['shopify', 'woocommerce', 'amazon', 'custom']), displayName: z.string().trim().min(2).max(120) });
+const input = z.object({ provider: z.enum(['shopify', 'woocommerce', 'amazon', 'magento', 'opencart', 'custom']), displayName: z.string().trim().min(2).max(120) });
 function p(r: FastifyRequest) { if (!r.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 }); return r.principal; }
 export async function integrationRoutes(app: FastifyInstance) {
   app.get('/v1/channels', { preHandler: requireSeller }, async (request) => { const x=p(request); return withSellerTransaction(x.sellerId, async c => ({ items:(await c.query('SELECT id,provider,display_name,state,last_synced_at,last_error,created_at FROM channel_connections WHERE seller_id=$1 ORDER BY created_at DESC',[x.sellerId])).rows })); });

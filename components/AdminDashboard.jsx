@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useAppState } from '@/lib/AppStateContext';
+import { adminApi } from '@/lib/api';
 import * as T from '@/lib/theme';
 
 const SPRING = { type: 'spring', bounce: 0, duration: 0.28 };
@@ -96,15 +97,27 @@ function Donut() {
 
 export default function AdminDashboard({ mobile, phone }) {
   const [range, setRange] = useState('This week');
+  const [live, setLive] = useState(null);
   const { theme } = useAppState();
   const dark = theme === 'dark';
+  useEffect(() => { adminApi.dashboardAnalytics().then(setLive).catch(() => {}); }, []);
+  const metrics = live ? [
+    ['▦', 'Total orders', Number(live.metrics?.orderVolume || 0).toLocaleString('en-IN'), 'Live platform intake', '#E8EEF7', '#1C5476'],
+    ['₹', 'Shipping spend', `₹${(Number(live.metrics?.shippingSpendPaise || 0) / 100).toLocaleString('en-IN')}`, 'Booked shipment charges', '#E8F8F1', '#0F9C61'],
+    ['◌', 'Orders in transit', Number(live.metrics?.inTransit || 0).toLocaleString('en-IN'), 'Live shipment states', '#FFF0E4', '#D87620'],
+    ['◎', 'Active sellers', Number(live.activeSellers || 0).toLocaleString('en-IN'), 'Live platform accounts', '#E7F8F5', '#008F84'],
+    ['▣', 'Open NDR cases', Number(live.ndrOpen || 0).toLocaleString('en-IN'), 'Needs operational action', '#E8EEF7', '#3C6094'],
+    ['!', 'NDR rate', `${Number(live.metrics?.ndrRate || 0).toFixed(1)}%`, 'Across booked shipments', '#FFF0F2', '#E3435B'],
+    ['↩', 'RTO rate', `${Number(live.metrics?.rtoRate || 0).toFixed(1)}%`, 'Across booked shipments', '#FFF4E9', '#D9781E'],
+    ['✓', 'System health', '99.95%', 'All systems operational', '#E9F8EF', '#169C60'],
+  ] : METRICS;
   const pad = phone ? 13 : mobile ? 18 : 26;
   const metricCols = phone ? 'repeat(2,minmax(0,1fr))' : mobile ? 'repeat(4,minmax(150px,1fr))' : 'repeat(auto-fit,minmax(145px,1fr))';
   const selectRange = <motion.button whileTap={{ scale: .96 }} onClick={() => setRange(range === 'This week' ? 'Last 30 days' : 'This week')} style={{ height: 29, padding: '0 9px', border: '1px solid var(--ops-border)', borderRadius: 7, background: 'var(--ops-surface)', color: 'var(--ops-muted)', fontSize: 11.5, cursor: 'pointer' }}>{range}⌄</motion.button>;
   return <div style={{ padding: `${phone ? 22 : 34}px ${pad}px 46px`, maxWidth: 1760, margin: '0 auto' }}>
     <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 18, marginBottom: 26, flexWrap: 'wrap' }}><div><div style={{ fontSize: 29, lineHeight: 1.05, fontWeight: 780, letterSpacing: '-.035em', color: 'var(--ops-heading)' }}>Platform dashboard</div><div style={{ marginTop: 8, fontSize: 14, color: 'var(--ops-muted)' }}>A calm view of sellers, couriers, finance, and customer support.</div></div><motion.button whileTap={{ scale: .97 }} style={{ height: 36, padding: '0 13px', border: '1px solid rgba(0,179,164,.32)', borderRadius: 9, background: 'rgba(0,179,164,.08)', color: T.ACCENT, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>⚙ Customise dashboard</motion.button></div>
 
-    <section style={{ display: 'grid', gridTemplateColumns: metricCols, gap: 14, overflowX: mobile && !phone ? 'auto' : 'visible' }}>{METRICS.map(([icon, label, value, delta, bg, color], i) => <motion.div key={label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING, delay: i * .035 }} whileHover={{ y: -3, boxShadow: '0 16px 30px rgba(28,49,69,.14)' }} style={{ minWidth: mobile && !phone ? 170 : 0, padding: '17px 16px 15px', border: '1px solid var(--ops-border)', borderRadius: 15, background: 'linear-gradient(145deg,var(--nx-card-sheen-top),var(--ops-surface))', boxShadow: 'var(--ops-shadow)', cursor: 'default' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ width: 31, height: 31, display: 'grid', placeItems: 'center', borderRadius: 9, background: dark ? `${color}24` : bg, color, fontWeight: 800 }}>{icon}</span><span style={{ fontSize: 12, color: 'var(--ops-muted)', fontWeight: 650 }}>{label}</span></div><div style={{ marginTop: 16, fontSize: 23, fontWeight: 780, letterSpacing: '-.04em', color: 'var(--ops-heading)' }}>{value}</div><div style={{ marginTop: 9, fontSize: 11, color: delta.includes('−') ? '#B23A2B' : color === '#3C6094' ? 'var(--ops-subtle)' : '#14724F', fontWeight: 650 }}>{delta} <span style={{ color: 'var(--ops-subtle)', fontWeight: 500 }}>{delta.includes('change') || delta.includes('operational') ? '' : 'vs previous day'}</span></div></motion.div>)}</section>
+    <section style={{ display: 'grid', gridTemplateColumns: metricCols, gap: 14, overflowX: mobile && !phone ? 'auto' : 'visible' }}>{metrics.map(([icon, label, value, delta, bg, color], i) => <motion.div key={label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING, delay: i * .035 }} whileHover={{ y: -3, boxShadow: '0 16px 30px rgba(28,49,69,.14)' }} style={{ minWidth: mobile && !phone ? 170 : 0, padding: '17px 16px 15px', border: '1px solid var(--ops-border)', borderRadius: 15, background: 'linear-gradient(145deg,var(--nx-card-sheen-top),var(--ops-surface))', boxShadow: 'var(--ops-shadow)', cursor: 'default' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ width: 31, height: 31, display: 'grid', placeItems: 'center', borderRadius: 9, background: dark ? `${color}24` : bg, color, fontWeight: 800 }}>{icon}</span><span style={{ fontSize: 12, color: 'var(--ops-muted)', fontWeight: 650 }}>{label}</span></div><div style={{ marginTop: 16, fontSize: 23, fontWeight: 780, letterSpacing: '-.04em', color: 'var(--ops-heading)' }}>{value}</div><div style={{ marginTop: 9, fontSize: 11, color: delta.includes('−') ? '#B23A2B' : color === '#3C6094' ? 'var(--ops-subtle)' : '#14724F', fontWeight: 650 }}>{delta} <span style={{ color: 'var(--ops-subtle)', fontWeight: 500 }}>{delta.includes('change') || delta.includes('operational') ? '' : 'vs previous day'}</span></div></motion.div>)}</section>
     <ControlDeck mobile={mobile} />
 
     <section style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.5fr 1.02fr .95fr', gap: 12, marginTop: 14 }}>

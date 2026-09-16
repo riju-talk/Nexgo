@@ -91,7 +91,10 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.code(204).send();
   });
 
-  app.get('/v1/admin/me', { preHandler: requirePlatformAdmin }, async (request) => ({ userId: request.adminPrincipal!.userId, role: request.adminPrincipal!.role }));
+  app.get('/v1/admin/me', { preHandler: requirePlatformAdmin }, async (request) => {
+    const row = await db.query<{ full_name: string; email: string }>('SELECT full_name, email FROM users WHERE id = $1', [request.adminPrincipal!.userId]);
+    return { userId: request.adminPrincipal!.userId, role: request.adminPrincipal!.role, fullName: row.rows[0]?.full_name ?? '', email: row.rows[0]?.email ?? '' };
+  });
 
   // Seller lifecycle (list/detail/state transitions) lives in adminOperations.ts
   // alongside the other cross-tenant queues, so it isn't split across two files.
@@ -175,11 +178,27 @@ export async function adminRoutes(app: FastifyInstance) {
       [sellerId, input.name, input.effectiveFrom ?? null, request.adminPrincipal!.userId],
     );
     const rateCardId = card.rows[0].id;
+    // A commercial edit is a new immutable snapshot. Start from the previous
+    // active card so changing one courier never accidentally removes all
+    // other seller options from the next quote.
+    await db.query(
+      `INSERT INTO rate_card_rates (rate_card_id, service_id, zone_code, min_weight_g, base_weight_g, base_price_paise,
+        additional_weight_g, additional_price_paise, cod_fee_paise, fuel_surcharge_bps)
+       SELECT $1, r.service_id, r.zone_code, r.min_weight_g, r.base_weight_g, r.base_price_paise,
+         r.additional_weight_g, r.additional_price_paise, r.cod_fee_paise, r.fuel_surcharge_bps
+       FROM rate_card_rates r
+       WHERE r.rate_card_id = (SELECT id FROM rate_cards WHERE seller_id=$2 AND state='active' AND id <> $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1)`,
+      [rateCardId, sellerId],
+    );
     for (const rate of input.rates) {
       await db.query(
         `INSERT INTO rate_card_rates (rate_card_id, service_id, zone_code, min_weight_g, base_weight_g, base_price_paise,
           additional_weight_g, additional_price_paise, cod_fee_paise, fuel_surcharge_bps)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (rate_card_id, service_id, zone_code, min_weight_g) DO UPDATE SET
+          base_weight_g=EXCLUDED.base_weight_g, base_price_paise=EXCLUDED.base_price_paise,
+          additional_weight_g=EXCLUDED.additional_weight_g, additional_price_paise=EXCLUDED.additional_price_paise,
+          cod_fee_paise=EXCLUDED.cod_fee_paise, fuel_surcharge_bps=EXCLUDED.fuel_surcharge_bps`,
         [rateCardId, rate.serviceId, rate.zoneCode, rate.minWeightG, rate.baseWeightG, rate.basePricePaise,
           rate.additionalWeightG, rate.additionalPricePaise, rate.codFeePaise, rate.fuelSurchargeBps],
       );

@@ -25,7 +25,7 @@ const ICONS = {
 // and deeper screens revealed only when that job is in focus.
 const MENU = [
   ['dashboard', 'Dashboard', 'dashboard', []],
-  ['intake', 'Orders Management', 'orders', [['All orders', 'orders'], ['Create forward order', 'b2c'], ['Bulk order upload', 'orders'], ['Reverse order', 'reverse']]],
+  ['intake', 'Orders Management', 'orders', [['All orders', 'orders'], ['Create forward order', 'b2c'], ['Bulk order upload', 'bulk-orders'], ['Reverse order', 'reverse']]],
   ['flight', 'Track', 'shipments', [['Shipments', 'shipments']]],
   ['reports', 'Reports', 'mis', [['MIS report', 'mis'], ['Weight discrepancies', 'weight'], ['NDR report', 'ndr']]],
   ['book', 'Tools', 'ratecalc', [['Rate calculator', 'ratecalc'], ['Rate card', 'ratecard'], ['Pincode serviceability', 'pincode']]],
