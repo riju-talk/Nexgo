@@ -31,7 +31,7 @@ export default function AppPage({ id, isDashboard = false }) {
   const isAdminPage = id.startsWith('a-');
   const isLiveSellerPage = ['orders', 'shipments', 'ndr', 'wallet'].includes(id);
   const isLiveAdminPage = ['a-sellers', 'a-shipments', 'a-ndr', 'a-couriers'].includes(id);
-  const isLiveCreateOrder = id === 'b2c';
+  const isLiveCreateOrder = ['b2c', 'reverse', 'dropship', 'shipnow'].includes(id);
   const isLiveSellerWorkspace = ['recharges', 'warehouse', 'profile', 'kyc', 'invoice', 'cod', 'shopify', 'woo', 'magento', 'amazon', 'ratecalc', 'ratecard', 'pincode'].includes(id);
   const isLiveAdminOperations = ['a-kyc', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
   const isLiveWorkspaceTool = ['courier-rules', 'label', 'printer', 'inv-settings', 'notifications', 'account-config', 'mis', 'weight', 'a-tickets'].includes(id);
@@ -45,7 +45,7 @@ export default function AppPage({ id, isDashboard = false }) {
       {isDashboard && !isAdminOverview && <DashboardContent mobile={mobile} narrow={narrow} phone={phone} />}
       {isLiveSellerPage && <LiveSellerOperations activeId={id} mobile={mobile} />}
       {isLiveAdminPage && <LiveAdminQueues activeId={id} mobile={mobile} />}
-      {isLiveCreateOrder && <LiveCreateOrder mobile={mobile} />}
+      {isLiveCreateOrder && <LiveCreateOrder mobile={mobile} flow={id === 'b2c' ? 'forward' : id === 'shipnow' ? 'ship_now' : id} />}
       {isLiveSellerWorkspace && <LiveSellerWorkspace activeId={id} mobile={mobile} />}
       {isLiveAdminOperations && <LiveAdminOperations activeId={id} mobile={mobile} />}
       {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
