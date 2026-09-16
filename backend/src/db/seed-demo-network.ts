@@ -18,7 +18,7 @@ async function main() {
     ids.push(service.rows[0].id);
     await db.query(`INSERT INTO seller_courier_access (seller_id,service_id,account_mode,state,cod_enabled,auto_assign_eligible) VALUES ($1,$2,'platform','enabled',true,true) ON CONFLICT (seller_id,service_id) DO UPDATE SET state='enabled',cod_enabled=true,auto_assign_eligible=true`, [sellerId, service.rows[0].id]);
   }
-  let card = await db.query<{ id: string }>(`SELECT id FROM rate_cards WHERE seller_id=$1 AND name='Demo admin rate card' ORDER BY created_at DESC LIMIT 1`, [sellerId]);
+  let card = await db.query<{ id: string }>(`SELECT id FROM rate_cards WHERE seller_id=$1 AND state='active' ORDER BY effective_from DESC, created_at DESC LIMIT 1`, [sellerId]);
   if (!card.rows[0]) card = await db.query<{ id: string }>(`INSERT INTO rate_cards (seller_id,name,state,effective_from) VALUES ($1,'Demo admin rate card','active',now()) RETURNING id`, [sellerId]);
   for (let i = 0; i < ids.length; i++) {
     const [, , , , base, additional] = partners[i];
