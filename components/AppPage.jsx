@@ -31,7 +31,7 @@ export default function AppPage({ id, isDashboard = false }) {
   const isLiveSellerPage = ['orders', 'shipments', 'ndr', 'wallet'].includes(id);
   const isLiveAdminPage = ['a-sellers', 'a-shipments', 'a-ndr', 'a-couriers'].includes(id);
   const isLiveCreateOrder = id === 'b2c';
-  const isLiveSellerWorkspace = ['recharges', 'warehouse', 'profile', 'kyc', 'invoice', 'cod', 'shopify', 'woo', 'magento', 'amazon'].includes(id);
+  const isLiveSellerWorkspace = ['recharges', 'warehouse', 'profile', 'kyc', 'invoice', 'cod', 'shopify', 'woo', 'magento', 'amazon', 'ratecalc', 'ratecard', 'pincode'].includes(id);
   const isLiveAdminOperations = ['a-kyc', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
   const isAdminUtility = isAdminPage && !isAdminOverview && !hasTable;
 
