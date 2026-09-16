@@ -16,6 +16,7 @@ import LiveAdminQueues from './LiveAdminQueues';
 import LiveCreateOrder from './LiveCreateOrder';
 import LiveSellerWorkspace from './LiveSellerWorkspace';
 import LiveAdminOperations from './LiveAdminOperations';
+import LiveWorkspaceTools from './LiveWorkspaceTools';
 
 export default function AppPage({ id, isDashboard = false }) {
   const { vw } = useAppState();
@@ -33,6 +34,7 @@ export default function AppPage({ id, isDashboard = false }) {
   const isLiveCreateOrder = id === 'b2c';
   const isLiveSellerWorkspace = ['recharges', 'warehouse', 'profile', 'kyc', 'invoice', 'cod', 'shopify', 'woo', 'magento', 'amazon', 'ratecalc', 'ratecard', 'pincode'].includes(id);
   const isLiveAdminOperations = ['a-kyc', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
+  const isLiveWorkspaceTool = ['courier-rules', 'label', 'printer', 'inv-settings', 'notifications', 'account-config', 'mis', 'weight', 'a-tickets'].includes(id);
   const isAdminUtility = isAdminPage && !isAdminOverview && !hasTable;
 
   return (
@@ -46,10 +48,11 @@ export default function AppPage({ id, isDashboard = false }) {
       {isLiveCreateOrder && <LiveCreateOrder mobile={mobile} />}
       {isLiveSellerWorkspace && <LiveSellerWorkspace activeId={id} mobile={mobile} />}
       {isLiveAdminOperations && <LiveAdminOperations activeId={id} mobile={mobile} />}
-      {hasTable && !isAdminOverview && !isLiveSellerPage && !isLiveAdminPage && !isLiveSellerWorkspace && <TablePage activeId={id} mobile={mobile} phone={phone} />}
-      {hasForm && !isLiveCreateOrder && !isLiveSellerWorkspace && <FormPage activeId={id} mobile={mobile} phone={phone} />}
-      {isAdminUtility && !isLiveAdminOperations && <AdminUtilityPage activeId={id} mobile={mobile} />}
-      {isAccountConfig && <AccountConfiguration mobile={mobile} phone={phone} />}
+      {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
+      {hasTable && !isAdminOverview && !isLiveSellerPage && !isLiveAdminPage && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <TablePage activeId={id} mobile={mobile} phone={phone} />}
+      {hasForm && !isLiveCreateOrder && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <FormPage activeId={id} mobile={mobile} phone={phone} />}
+      {isAdminUtility && !isLiveAdminOperations && !isLiveWorkspaceTool && <AdminUtilityPage activeId={id} mobile={mobile} />}
+      {isAccountConfig && !isLiveWorkspaceTool && <AccountConfiguration mobile={mobile} phone={phone} />}
     </>
   );
 }
