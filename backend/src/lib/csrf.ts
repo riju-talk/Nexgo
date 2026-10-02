@@ -8,7 +8,7 @@ const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 // Double-submit cookie CSRF defense, layered on top of (not instead of)
 // SameSite=Lax cookies. Lax already blocks the classic cross-site-fetch
 // CSRF case, but browser SameSite behavior on top-level navigations and
-// older browsers is inconsistent enough that AGENT.md calls for this as an
+// older browsers is inconsistent enough that docs/ENGINEERING_HANDOFF.md calls for this as an
 // explicit second layer. Issued alongside every session cookie; every
 // mutating request must echo it back in a header, which a cross-site page
 // cannot read (that's the whole mechanism — no server-side token storage

@@ -133,7 +133,7 @@ export default function AuthScreen({ mode }) {
           {mode === 'forgot' && (
             <>
               <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: T.TEXT }}>Reset your password</div>
-              <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4, lineHeight: 1.6 }}>Enter your work email and we'll send a link to reset your password.</div>
+              <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4, lineHeight: 1.6 }}>Enter your work email and we&apos;ll send a link to reset your password.</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 22 }}>
                 <Field label="Work email" required value={form.email} onChange={set('email')} />
                 <button type="submit" disabled={submitting} style={{ ...PRIMARY_BTN, width: '100%', border: 0 }}>{submitting ? 'Sending…' : 'Send reset link'}</button>

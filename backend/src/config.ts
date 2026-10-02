@@ -27,3 +27,16 @@ const schema = z.object({
 });
 
 export const config = schema.parse(process.env);
+
+// The defaults above are committed to the repo, so they are public. Refuse to
+// boot a production process that is still relying on any of them — an unset
+// RAZORPAY_WEBHOOK_SECRET would let anyone forge wallet-credit webhooks.
+if (config.NODE_ENV === 'production') {
+  const publicDefaults: Array<[keyof typeof config, string]> = [
+    ['MINIO_ACCESS_KEY', 'nexgo_local'],
+    ['MINIO_SECRET_KEY', 'nexgo_local_only_change_me'],
+    ['RAZORPAY_WEBHOOK_SECRET', 'local-development-razorpay-webhook-secret'],
+  ];
+  const insecure = publicDefaults.filter(([key, value]) => config[key] === value).map(([key]) => key);
+  if (insecure.length) throw new Error(`Refusing to start in production with development defaults for: ${insecure.join(', ')}`);
+}

@@ -94,13 +94,13 @@ Say this precisely:
 If the frontend is unavailable:
 
 ```bash
-cd /Users/aryanarora/Desktop/nextgo
-npm run dev -- -p 3021
+# from the repository root
+npm run dev
 ```
 
 If the API is unavailable:
 
 ```bash
-cd /Users/aryanarora/Desktop/nextgo/backend
+cd backend
 npm run dev
 ```

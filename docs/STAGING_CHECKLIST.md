@@ -16,13 +16,13 @@
 
 ## Security
 
-- [x] Row-level security enabled on every seller-owned table, verified by direct cross-seller access attempts (see `AGENT.md` items 10, 13).
-- [x] CSRF double-submit cookie enforced on every mutating request, verified with a real 403-then-201 test (`AGENT.md` item 21).
-- [x] Rate limiting live on every auth endpoint (`AGENT.md` item 22).
-- [x] TOTP MFA for platform admins, verified end-to-end including wrong-code and challenge-replay rejection (`AGENT.md` item 20).
+- [x] Row-level security enabled on every seller-owned table, verified by direct cross-seller access attempts (see `ENGINEERING_HANDOFF.md` items 10, 13).
+- [x] CSRF double-submit cookie enforced on every mutating request, verified with a real 403-then-201 test (`ENGINEERING_HANDOFF.md` item 21).
+- [x] Rate limiting live on every auth endpoint (`ENGINEERING_HANDOFF.md` item 22).
+- [x] TOTP MFA for platform admins, verified end-to-end including wrong-code and challenge-replay rejection (`ENGINEERING_HANDOFF.md` item 20).
 - [x] Provider credentials and KYC bank details encrypted at rest with AES-256-GCM (local key) — **must move to AWS KMS envelope encryption before production**, per `AWS_BACKEND_PLAN.md` phase 1/3. Local key is explicitly documented as dev-only in `src/lib/crypto.ts`.
 - [ ] Independent penetration test. **Not started** — per `AWS_BACKEND_PLAN.md` phase 10, this happens once staging is live with realistic data, not against a local dev database.
-- [ ] Dependency vulnerability scan resolved: `minio` package has 4 moderate transitive vulnerabilities (see `AGENT.md` "Known pre-existing issue"). Needs a deliberate decision by whoever owns that dependency, not a silent downgrade.
+- [ ] Dependency vulnerability scan resolved: `minio` package has 4 moderate transitive vulnerabilities (see `ENGINEERING_HANDOFF.md` "Known pre-existing issue"). Needs a deliberate decision by whoever owns that dependency, not a silent downgrade.
 - [ ] Secrets rotation exercise (rotate `LOCAL_ENCRYPTION_KEY` equivalent in AWS Secrets Manager, confirm no downtime). Requires AWS environment.
 
 ## Application correctness

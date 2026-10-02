@@ -1,11 +1,36 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { DEFAULTS } from './data';
 import { pathFor } from './routes';
 
 const AppStateContext = createContext(null);
+
+// Viewport width as an external store: no setState-in-effect, and the server
+// snapshot keeps SSR on the desktop layout until the client hydrates.
+const subscribeResize = (cb) => {
+  window.addEventListener('resize', cb);
+  return () => window.removeEventListener('resize', cb);
+};
+const getViewportWidth = () => window.innerWidth;
+const getServerViewportWidth = () => 1440;
+
+// Sidebar preference lives in localStorage; `storage` covers other tabs and
+// notifySidebar() covers writes from this tab.
+const SIDEBAR_KEY = 'nx-sidebar-collapsed';
+const sidebarListeners = new Set();
+const notifySidebar = () => sidebarListeners.forEach((cb) => cb());
+const subscribeSidebar = (cb) => {
+  sidebarListeners.add(cb);
+  window.addEventListener('storage', cb);
+  return () => {
+    sidebarListeners.delete(cb);
+    window.removeEventListener('storage', cb);
+  };
+};
+const getSidebarCollapsed = () => window.localStorage.getItem(SIDEBAR_KEY) === 'true';
+const getServerSidebarCollapsed = () => false;
 
 export function AppStateProvider({ children }) {
   const router = useRouter();
@@ -20,27 +45,13 @@ export function AppStateProvider({ children }) {
   const [queueTab, setQueueTab] = useState('All');
   const [resolution, setResolution] = useState(0);
   const [navOpen, setNavOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const sidebarCollapsed = useSyncExternalStore(subscribeSidebar, getSidebarCollapsed, getServerSidebarCollapsed);
   const [tab, setTabState] = useState({});
-  const [vw, setVw] = useState(1440);
+  const vw = useSyncExternalStore(subscribeResize, getViewportWidth, getServerViewportWidth);
   const [theme, setThemeState] = useState('light');
   const [toast, setToast] = useState(null);
 
-  useEffect(() => {
-    setVw(window.innerWidth);
-    const onResize = () => setVw(window.innerWidth);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  useEffect(() => {
-    if (window.localStorage.getItem('nx-sidebar-collapsed') === 'true') setSidebarCollapsed(true);
-  }, []);
-
-  useEffect(() => {
-    setThemeState('light');
-    document.documentElement.setAttribute('data-theme', 'light');
-  }, []);
+  // Light is the fixed default (4161b36); app/layout.js applies it before hydration.
 
   const setTheme = useCallback((next) => {
     setThemeState(next);
@@ -109,11 +120,8 @@ export function AppStateProvider({ children }) {
   }, []);
 
   const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed((previous) => {
-      const next = !previous;
-      window.localStorage.setItem('nx-sidebar-collapsed', String(next));
-      return next;
-    });
+    window.localStorage.setItem(SIDEBAR_KEY, String(!getSidebarCollapsed()));
+    notifySidebar();
   }, []);
 
   const showToast = useCallback((message, tone = 'success') => {

@@ -17,7 +17,7 @@ channel connection/job models; and a database-backed worker.
 Not yet production-complete: real provider adapters, file/label generation, jobs beyond
 the deterministic local channel-sync handler, payment/COD/invoices, KYC/admin operations,
 team security, frontend API wiring, AWS deployment, and test/security gates. Read
-`AGENT.md` before making changes: it contains ownership, constraints, and the two-week plan.
+`ENGINEERING_HANDOFF.md` before making changes: it contains ownership, constraints, and the two-week plan.
 
 ## Local development stack
 

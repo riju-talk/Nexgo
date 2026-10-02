@@ -54,6 +54,12 @@ Set a strong `LOCAL_ADMIN_PASSWORD` in `backend/.env`, then run `npm run
 seed:admin`. The command is deliberately blocked in production. It creates or
 updates a local `super_admin` and can sign in through `POST /v1/admin/auth/login`.
 
-The next implementation slice is provider adapters and tracking ingestion,
-followed by secure seller-owned credentials, labels/manifests, NDR, and the
-wallet ledger.
+This file covers the original foundation. Later work (KYC, wallet recharge,
+invoices, COD remittance, team invitations, password reset, sessions, admin
+TOTP, CSRF, rate limiting, manifests, audit/job/webhook visibility) is listed
+item by item in `docs/ENGINEERING_HANDOFF.md`, which is the source of truth
+for what is implemented and verified.
+
+In production (`NODE_ENV=production`) the API refuses to start while MinIO
+keys or the Razorpay webhook secret are still the committed development
+defaults.

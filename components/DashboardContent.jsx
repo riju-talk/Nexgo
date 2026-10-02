@@ -12,6 +12,10 @@ import DashboardStatCardModal from './DashboardStatCardModal';
 import TrendChart from './TrendChart';
 import { apiFetch } from '@/lib/api';
 
+function GlassSheen() {
+  return <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 1, background: 'var(--nx-glass-border)' }} />;
+}
+
 export default function DashboardContent({ mobile, narrow, phone }) {
   const { kpis, stage, setStage, expanded, toggleExpanded, queueTab, setQueueTab, setDrawerOpen } = useAppState();
   const [expandedCardId, setExpandedCardId] = useState(null);
@@ -50,7 +54,6 @@ export default function DashboardContent({ mobile, narrow, phone }) {
     borderRadius: 14,
     boxShadow: '0 1px 1px rgba(15,23,20,.05), 0 10px 28px rgba(15,23,20,.10)',
   };
-  const GlassSheen = () => <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 1, background: 'var(--nx-glass-border)' }} />;
 
   return (
     <div style={{ flex: 1, padding: '0 0 48px', position: 'relative' }}>

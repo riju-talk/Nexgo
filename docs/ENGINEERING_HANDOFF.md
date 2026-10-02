@@ -6,19 +6,17 @@ production build, not an MVP mock.
 
 ## Current state
 
-- Branch: `backend/seller-admin-foundation`.
+- Branch: `main` (`backend/seller-admin-foundation` has been fully merged).
 - API: Fastify/TypeScript in `backend/`, local port 4010.
 - Local services: PostgreSQL 16, Redis, MinIO, Mailpit in `compose.backend.yml`.
 - Start: `docker compose -f compose.backend.yml up -d`; `cd backend && npm run migrate`;
   run `npm run dev` and `npm run worker` in separate terminals.
 - Main database is PostgreSQL; AWS target is RDS PostgreSQL. Never replace it with a
   frontend mock database.
-- `admin@nexgo.local` now has TOTP enrolled (from testing item 20) — logging in
-  requires a code, not just the password. Local-only secret, safe to share here:
-  `OAZCKWX6PXRQCMGEULML2NUUPIBW5GTK` (add it to any authenticator app, or compute
-  a code directly against `/v1/admin/mfa` — see `src/lib/totp.ts`). To remove MFA
-  and go back to password-only, clear the three `totp_*` columns on that
-  `platform_admins` row.
+- An admin account with TOTP enrolled needs a code at login, not just the password.
+  Enrol through `/v1/admin/mfa` (see `src/lib/totp.ts`). To return a local admin to
+  password-only, clear the three `totp_*` columns on its `platform_admins` row.
+  Never commit TOTP secrets to the repo, local or otherwise.
 - Every mutating request (POST/PUT/PATCH/DELETE, except `/v1/webhooks/*`) now
   needs an `x-csrf-token` header matching the `nx_csrf` cookie issued at login —
   the frontend's fetch wrapper needs to read that cookie and attach the header,

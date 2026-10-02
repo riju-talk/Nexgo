@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable react/jsx-key -- cell arrays are positional; each cell is keyed by its <td> when rendered */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
@@ -20,7 +21,7 @@ export default function LiveAdminQueues({ activeId, mobile }) {
   const kind = activeId.replace('a-', '');
   const loader = useMemo(() => ({ sellers: adminApi.sellers, orders: adminApi.orders, shipments: adminApi.shipments, ndr: adminApi.ndr, rto: () => adminApi.shipments({ state: 'rto' }), pickups: adminApi.pickups, couriers: adminApi.couriers })[kind], [kind]);
   const load = useCallback(async () => { setError(null); try { const data = await loader(); setItems(data.items || []); } catch (e) { setError(e); } }, [loader]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load]); // eslint-disable-line react-hooks/set-state-in-effect -- async fetch on mount; state is set after the await
   const changeState = async (row, state) => { setBusy(row.id); try { await adminApi.setSellerState(row.id, state, 'Updated from operations queue'); showToast(`${row.legal_name} is now ${state}`); await load(); } catch (e) { showToast(e instanceof ApiError ? e.message : 'Seller state could not be changed', 'error'); } finally { setBusy(''); } };
   const columns = { sellers: ['Seller', 'KYC', 'Orders', 'Shipments', 'State', ''], orders: ['Order', 'Seller', 'Customer', 'Flow', 'Value', 'State'], shipments: ['AWB', 'Seller', 'Order', 'Charge', 'Status'], rto: ['AWB', 'Seller', 'Order', 'Charge', 'Status'], pickups: ['Seller', 'Warehouse', 'Courier', 'Requested for', 'Status'], ndr: ['AWB', 'Seller', 'Reason', 'State'], couriers: ['Courier', 'Integration', 'Services', 'COD'] }[kind];
   const cells = (r) => {
