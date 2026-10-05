@@ -1,0 +1,75 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e419] [cursor=pointer]:
+        - generic [ref=e420]: "N"
+        - generic [ref=e421]: NEXGO
+        - button "Collapse navigation" [ref=e424]
+      - generic [ref=e10]:
+        - generic [ref=e428]: Main menu
+        - generic [ref=e429]: Dashboard
+        - generic [ref=e436] [cursor=pointer]:
+          - generic [ref=e440]: Orders Management
+          - generic [ref=e441]: ›
+        - generic [ref=e442]: Track
+        - generic [ref=e449]:
+          - generic [active] [ref=e450] [cursor=pointer]:
+            - generic [ref=e454]: Reports
+            - generic [ref=e455]: ›
+          - generic [ref=e456]:
+            - generic [ref=e457] [cursor=pointer]: MIS reports
+            - generic [ref=e458] [cursor=pointer]: NDR report
+            - generic [ref=e459] [cursor=pointer]: Weight discrepancy
+        - generic [ref=e461] [cursor=pointer]:
+          - generic [ref=e465]: Tools
+          - generic [ref=e466]: ›
+        - generic [ref=e468] [cursor=pointer]:
+          - generic [ref=e472]: Marketplace
+          - generic [ref=e473]: ›
+        - generic [ref=e475] [cursor=pointer]:
+          - generic [ref=e479]: Billing
+          - generic [ref=e480]: ›
+        - generic [ref=e482] [cursor=pointer]:
+          - generic [ref=e486]: Control Tower
+          - generic [ref=e487]: ›
+        - generic [ref=e489] [cursor=pointer]:
+          - generic [ref=e493]: Settings
+          - generic [ref=e494]: ›
+      - generic [ref=e75]:
+        - generic [ref=e495]: "?"
+        - generic [ref=e496]:
+          - generic [ref=e497]: Not signed in
+          - generic [ref=e498]: Sign in to continue
+        - generic "Sign out" [ref=e499] [cursor=pointer]: ↪
+    - generic [ref=e81]:
+      - generic [ref=e82]:
+        - generic [ref=e500]:
+          - generic [ref=e501]: ⌁
+          - generic [ref=e502]:
+            - generic [ref=e536]: Track
+            - generic [ref=e539]: Track shipments
+        - generic [ref=e87] [cursor=pointer]:
+          - text: Run a command, jump to a screen, or paste an AWB
+          - generic [ref=e543]: ⌘ K
+        - generic [ref=e504]:
+          - generic "Open wallet" [ref=e505] [cursor=pointer]:
+            - generic [ref=e506]: ₹
+            - generic [ref=e507]:
+              - generic [ref=e508]: Balance
+              - generic [ref=e509]: —
+          - generic [ref=e544]:
+            - generic [ref=e545]:
+              - generic [ref=e546]: Not signed in
+              - generic [ref=e547]: Sign in to continue
+            - generic [ref=e548]: "?"
+      - generic [ref=e549]:
+        - generic [ref=e550]:
+          - generic [ref=e551]: Track
+          - generic [ref=e553]: Track shipments
+          - generic [ref=e554]: Every booked shipment with its live courier scans
+        - generic [ref=e555]: + Ship now
+      - generic [ref=e524]:
+        - text: Sign in to track your shipments.
+        - button "Sign in" [ref=e525] [cursor=pointer]
+  - button "Open Next.js Dev Tools" [ref=e531] [cursor=pointer]
+  - alert [ref=e535]: "NEXGO: Multi-courier shipping platform"

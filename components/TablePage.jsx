@@ -12,8 +12,8 @@ const CARD = {
   position: 'relative',
   background: 'var(--nx-surface)',
   border: '1px solid var(--nx-border)',
-  borderRadius: 10,
-  boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)',
+  borderRadius: 12,
+  boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 10px 28px rgba(20,44,66,.055)',
 };
 const ADMIN_CARD = {
   position: 'relative',
@@ -102,10 +102,10 @@ export default function TablePage({ activeId, mobile, phone }) {
   // secondary panel below a dashboard. Context remains in AdminPageHeader.
   const directTable = admin;
 
-  const pagePad = phone ? 12 : mobile ? 16 : 22;
+  const pagePad = phone ? 12 : mobile ? 16 : 28;
 
   return (
-    <div style={{ flex: 1, padding: `${phone ? 12 : 20}px ${pagePad}px 48px`, position: 'relative' }}>
+    <div style={{ flex: 1, padding: `${phone ? 14 : 24}px ${pagePad}px 52px`, position: 'relative' }}>
       <ScenicBackdrop mode="workspace" />
       <div style={{ position: 'relative', zIndex: 1, maxWidth: admin ? 1560 : undefined, margin: admin ? '0 auto' : undefined }}>
       {t.stats && !directTable && (
@@ -149,7 +149,7 @@ export default function TablePage({ activeId, mobile, phone }) {
                   style={{ position: 'relative', padding: '13px 12px 11px', color: on ? T.TEXT : T.TEXT_SECONDARY, fontSize: 13.5, fontWeight: on ? 600 : 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}
                 >
                   {label}
-                  <div style={{ fontSize: 11.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', background: on ? 'rgba(0,179,164,.16)' : T.DIVIDER, color: on ? '#0E5049' : '#6B6659', padding: '1px 6px', borderRadius: 10 }}>{count}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', background: on ? 'rgba(0,215,195,.18)' : T.DIVIDER, color: on ? '#0E5049' : '#6B6659', padding: '1px 6px', borderRadius: 10 }}>{count}</div>
                   {on && (
                     <motion.div
                       layoutId={`tab-underline-${activeId}`}
@@ -245,7 +245,7 @@ export default function TablePage({ activeId, mobile, phone }) {
         .nxc-btn:hover { background: var(--nx-surface-soft); border-color: var(--nx-menu-border); }
         .nxc-tab:hover { color: var(--nx-text); }
         .nxc-row { transition: background 100ms ease-out; }
-        .nxc-row:hover { background: rgba(0,179,164,.08); }
+        .nxc-row:hover { background: rgba(0,215,195,.09); }
       `}</style>
     </div>
   );

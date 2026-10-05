@@ -21,7 +21,7 @@ export default function ComingSoon({ name, blurb, mobile }) {
       </div>
       <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'start center', paddingTop: mobile ? 70 : 90 }}>
         <div style={{ ...CARD, padding: '26px 30px', textAlign: 'center', maxWidth: 400, boxShadow: '0 18px 44px rgba(15,31,61,.14)' }}>
-          <div style={{ display: 'inline-flex', padding: '4px 10px', borderRadius: 99, fontSize: 11, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: T.ACCENT, background: 'rgba(0,179,164,.12)' }}>Phase 2</div>
+          <div style={{ display: 'inline-flex', padding: '4px 10px', borderRadius: 99, fontSize: 11, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: T.ACCENT, background: 'rgba(0,215,195,.12)' }}>Phase 2</div>
           <div style={{ marginTop: 12, color: T.TEXT, fontSize: 18, fontWeight: 760 }}>{name} is coming soon</div>
           <p style={{ margin: '8px 0 18px', color: T.TEXT_SECONDARY, fontSize: 13.5, lineHeight: 1.55 }}>{blurb}</p>
           <button onClick={() => nav('orders')} style={{ height: 34, padding: '0 14px', borderRadius: 8, border: `1px solid ${T.NAVY}`, background: T.NAVY, color: '#fff', fontWeight: 720, fontSize: 12.5, cursor: 'pointer' }}>Back to all orders</button>

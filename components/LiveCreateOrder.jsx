@@ -277,7 +277,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
           {canQuote && !quotes.length ? <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>{quotesLoaded ? 'No courier enabled for your account serves this pincode and weight.' : 'Fetching rates…'}</span> : (
             <div style={{ display: 'grid', gap: 8 }}>
               {quotes.slice(0, 4).map((q, i) => (
-                <div key={`${q.provider.code}:${q.service.code}`} style={{ padding: '9px 11px', border: `1px solid ${i === 0 ? T.ACCENT : T.BORDER}`, borderRadius: 9, background: i === 0 ? 'rgba(0,179,164,.08)' : T.SURFACE, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <div key={`${q.provider.code}:${q.service.code}`} style={{ padding: '9px 11px', border: `1px solid ${i === 0 ? T.ACCENT : T.BORDER}`, borderRadius: 9, background: i === 0 ? 'rgba(0,215,195,.08)' : T.SURFACE, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                   <span><b style={{ display: 'block', fontSize: 12.5, color: T.TEXT }}>{q.provider.name}{i === 0 && <span style={{ color: T.ACCENT }}> · Cheapest</span>}</b><span style={{ fontSize: 11.5, color: T.TEXT_MUTED }}>{q.service.name}</span></span>
                   <b style={{ fontSize: 14, color: T.TEXT }}>₹{q.price.total.toFixed(2)}</b>
                 </div>

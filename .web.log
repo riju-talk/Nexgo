@@ -88,3 +88,182 @@
  GET /shipments 200 in 104ms (next.js: 18ms, application-code: 86ms)
  GET /tools/rate-calculator 200 in 49ms (next.js: 14ms, application-code: 35ms)
  GET /dashboard 200 in 210ms (next.js: 102ms, application-code: 108ms)
+ GET /orders 200 in 114ms (next.js: 72ms, application-code: 41ms)
+✓ Compiled in 224ms
+ GET /orders 200 in 57ms (next.js: 15ms, application-code: 42ms)
+ GET /shipments 200 in 249ms (next.js: 18ms, application-code: 230ms)
+ GET /tools/rate-calculator 200 in 178ms (next.js: 21ms, application-code: 157ms)
+ GET /dashboard 200 in 161ms (next.js: 100ms, application-code: 60ms)
+✓ Compiled in 66ms
+ GET /tools/rate-calculator 200 in 182ms (next.js: 16ms, application-code: 166ms)
+ GET /dashboard 200 in 125ms (next.js: 15ms, application-code: 110ms)
+ GET /shipments 200 in 124ms (next.js: 60ms, application-code: 64ms)
+ GET /orders 200 in 123ms (next.js: 85ms, application-code: 38ms)
+✓ Compiled in 75ms
+ GET /shipments 200 in 198ms (next.js: 69ms, application-code: 129ms)
+ GET /orders 200 in 201ms (next.js: 32ms, application-code: 169ms)
+ GET /tools/rate-calculator 200 in 101ms (next.js: 16ms, application-code: 85ms)
+ GET /dashboard 200 in 101ms (next.js: 66ms, application-code: 35ms)
+ GET /shipments 200 in 49ms (next.js: 15ms, application-code: 34ms)
+ GET /mis 200 in 45ms (next.js: 18ms, application-code: 27ms)
+ GET /tools/rate-card 200 in 37ms (next.js: 13ms, application-code: 24ms)
+✓ Compiled in 213ms
+ GET /dashboard 200 in 92ms (next.js: 13ms, application-code: 79ms)
+ GET /tools/rate-card 200 in 47ms (next.js: 14ms, application-code: 33ms)
+ GET /tools/rate-calculator 200 in 108ms (next.js: 13ms, application-code: 95ms)
+ GET /shipments 200 in 63ms (next.js: 11ms, application-code: 52ms)
+ GET /dashboard 200 in 255ms (next.js: 88ms, application-code: 167ms)
+ GET /orders 200 in 92ms (next.js: 52ms, application-code: 40ms)
+ GET /orders/reverse 200 in 1053ms (next.js: 998ms, application-code: 55ms)
+ GET /shipments 200 in 74ms (next.js: 35ms, application-code: 39ms)
+[browser] Encountered a script tag while rendering React component. Scripts inside React components are never executed when rendering on the client. Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template). 
+[browser] Uncaught Error: Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <ScrollAndMaybeFocusHandler cacheNode={{rsc:{...}, ...}}>
+      <InnerScrollHandlerNew focusAndScrollRef={{scrollRef:null, ...}} cacheNode={{rsc:{...}, ...}}>
+        <ErrorBoundary errorComponent={undefined} errorStyles={undefined} errorScripts={undefined}>
+          <LoadingBoundary name="/" loading={null}>
+            <HTTPAccessFallbackBoundary notFound={{...}} forbidden={undefined} unauthorized={undefined}>
+              <HTTPAccessFallbackErrorBoundary pathname="/tools/rat..." notFound={{...}} forbidden={undefined} ...>
+                <RedirectBoundary>
+                  <RedirectErrorBoundary router={{...}}>
+                    <InnerLayoutRouter url="/tools/rat..." tree={[...]} params={{}} cacheNode={{rsc:{...}, ...}} ...>
+                      <SegmentViewNode type="layout" pagePath="(app)/layo...">
+                        <SegmentTrieNode>
+                        <script>
+                        <script>
+                        <AppGroupLayout>
+                          <AppShell>
+                            <div
+                              style={{
++                               --ac: "#00B3A4"
+-                               --ac: "#00B3A4"
++                               height: "100vh"
++                               minHeight: 0
++                               minWidth: 0
++                               overflow: "hidden"
++                               background: "var(--nx-paper)"
++                               color: "var(--nx-text)"
+-                               color: "var(--nx-text)"
+-                               min-height: "100vh"
+-                               min-width: "0px"
+-                               overflow-x: "hidden"
+-                               background-image: ""
+-                               background-position-x: ""
+-                               background-position-y: ""
+-                               background-size: ""
+-                               background-repeat: ""
+-                               background-attachment: ""
+-                               background-origin: ""
+-                               background-clip: ""
+-                               background-color: ""
+                              }}
+                            >
+                              <div
+                                style={{
++                                 height: "100%"
++                                 display: "flex"
+-                                 display: "flex"
++                                 minHeight: 0
+                                }}
+                              >
+                                <MobileOverlay>
+                                <Sidebar activeId="ratecalc" mobile={false}>
+                                  <motion.div style={{...}} animate={{width:272}} transition={{type:"spring", ...}}>
+                                    <div
+                                      style={{
++                                       width: undefined
++                                       flex: "0 0 auto"
++                                       background: "var(--nx-side-bg)"
++                                       position: "sticky"
+-                                       position: "sticky"
++                                       left: "auto"
+-                                       left: "auto"
++                                       top: 0
+-                                       top: "0px"
++                                       height: "100vh"
+-                                       height: "100vh"
++                                       minHeight: 0
++                                       zIndex: 30
++                                       display: "flex"
+-                                       display: "flex"
++                                       flexDirection: "column"
++                                       overflow: "hidden"
+-                                       flex-grow: "0"
+-                                       flex-shrink: "0"
+-                                       flex-basis: "auto"
+-                                       background-image: ""
+-                                       background-position-x: ""
+-                                       background-position-y: ""
+-                                       background-size: ""
+-                                       background-repeat: ""
+-                                       background-attachment: ""
+-                                       background-origin: ""
+-                                       background-clip: ""
+-                                       background-color: ""
+-                                       z-index: "30"
+-                                       flex-direction: "column"
+-                                       overflow-x: "hidden"
+-                                       overflow-y: "hidden"
+                                      }}
+                                      ref={function useMotionRef.useCallback}
+                                    >
+                                      <motion.div whileTap={{scale:0.98}} transition={{duration:0.1}} ...>
+                                        <div onClick={function onClick} tabIndex={0} style={{height:68, ...}} ...>
+                                          <div>
+                                          <div>
++                                         <div style={{marginLeft:"auto"}} className="jsx-222603abf056b691">
+-                                         <button
+-                                           aria-label="Collapse navigation"
+-                                           title="Collapse navigation"
+-                                           tabindex="0"
+-                                           style={{width:"25px",height:"25px",padding-top:"0px",padding-right:"0px",padding-bottom:"0px", ...}}
+-                                         >
+                                      ...
+                                ...
+                    ...
+        ...
+
+    at <unknown> (https://react.dev/link/hydration-mismatch)
+    at div (<anonymous>)
+    at Sidebar (components/Sidebar.jsx:152:21)
+    at AppShell (components/AppShell.jsx:27:9)
+    at AppGroupLayout (app\(app)\layout.js:4:10)
+  150 |         <div style={{ width: 31, height: 31, background: T.ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, color: '#06212C', borderRadius: 9, clipPath: 'polygon(0 0,100% 0,1...
+  151 |         <div style={{ minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 750, letterSpacing: '.13em', color: 'var(--nx-side-text)', lineHeight: 1 }}>NEXGO</div></div>
+> 152 |         {!mobile && <div style={{ marginLeft: 'auto' }}><CollapseControl collapsed={false} onClick={(event) => { event.stopPropagation(); toggleSidebar(); }} /></div>}
+      |                     ^
+  153 |       </motion.div>
+  154 |
+  155 |       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 8px 18px' }}>
+✓ Compiled in 513ms
+ GET /shipments 200 in 82ms (next.js: 17ms, application-code: 65ms)
+ GET /tools/rate-card 200 in 76ms (next.js: 25ms, application-code: 51ms)
+ GET /shipments 200 in 58ms (next.js: 10ms, application-code: 49ms)
+ GET /mis 200 in 533ms (next.js: 328ms, application-code: 205ms)
+ GET /ndr 200 in 455ms (next.js: 395ms, application-code: 60ms)
+ GET /weight-discrepancies 200 in 212ms (next.js: 152ms, application-code: 59ms)
+ GET /tools/rate-calculator 200 in 167ms (next.js: 110ms, application-code: 57ms)
+ GET /tools/rate-card 200 in 154ms (next.js: 104ms, application-code: 50ms)
+ GET /tools/rate-calculator 200 in 86ms (next.js: 10ms, application-code: 75ms)
+ GET /tools/rate-calculator 200 in 75ms (next.js: 23ms, application-code: 52ms)
+ GET /tools/pincode-serviceability 200 in 2.2s (next.js: 2.1s, application-code: 97ms)
+ GET /tools/pincode-serviceability 200 in 50ms (next.js: 9ms, application-code: 41ms)
+ GET /finance/cod-reconciliation 200 in 180ms (next.js: 132ms, application-code: 48ms)
+ GET /finance/wallet-history 200 in 85ms (next.js: 49ms, application-code: 36ms)
+ GET /finance/shipping-charges 200 in 87ms (next.js: 46ms, application-code: 41ms)
+ GET /finance/invoice 200 in 74ms (next.js: 41ms, application-code: 33ms)
+ GET /finance/credit-note 200 in 842ms (next.js: 800ms, application-code: 41ms)
+ GET /finance/credit-note 200 in 38ms (next.js: 9ms, application-code: 30ms)
+ GET /finance/tds 200 in 456ms (next.js: 401ms, application-code: 54ms)

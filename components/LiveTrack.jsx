@@ -5,7 +5,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
-const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
+const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 12, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 10px 28px rgba(20,44,66,.055)' };
 const inr = (paise) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(paise || 0) / 100);
 const title = (v = '') => String(v).replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 const stamp = (v) => (v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' }) : '—');
@@ -115,7 +115,7 @@ export default function LiveTrack({ mobile }) {
   }, [rows, filter, query]);
 
   const selected = rows?.find((r) => r.id === selectedId) || null;
-  const pad = mobile ? '12px 12px 28px' : '16px 22px 32px';
+  const pad = mobile ? '14px 12px 32px' : '22px 28px 40px';
 
   if (error) {
     const unauth = error instanceof ApiError && error.status === 401;
@@ -134,18 +134,18 @@ export default function LiveTrack({ mobile }) {
   const rate = rows.length ? Math.round((delivered / rows.length) * 100) : 0;
 
   return (
-    <div style={{ padding: pad }}>
-      <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 12, marginBottom: 14 }}>
-        {[['Total shipments', rows.length], ['In flight', inFlight], ['Needs attention', exceptions], ['Delivered', `${delivered} · ${rate}%`]].map(([label, value]) => (
-          <section key={label} style={{ ...CARD, padding: 14 }}><span style={{ color: T.TEXT_MUTED, fontSize: 10.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase' }}>{label}</span><div style={{ marginTop: 7, color: T.TEXT, fontSize: 22, fontWeight: 760 }}>{value}</div></section>
+    <div style={{ padding: pad, position: 'relative' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 14, marginBottom: 18 }}>
+        {[['Total shipments', rows.length], ['In flight', inFlight], ['Needs attention', exceptions], ['Delivered', `${delivered} · ${rate}%`]].map(([label, value], i) => (
+          <section key={label} style={{ ...CARD, padding: mobile ? 14 : 17, borderTop: `3px solid ${[T.NAVY, T.ACCENT, T.AMBER, T.GREEN][i]}` }}><span style={{ color: T.TEXT_MUTED, fontSize: 10.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase' }}>{label}</span><div style={{ marginTop: 9, color: T.TEXT, fontSize: 25, fontWeight: 780, letterSpacing: '-.025em' }}>{value}</div><div style={{ marginTop: 6, color: T.TEXT_MUTED, fontSize: 11.5 }}>{i === 0 ? 'Across all courier partners' : i === 1 ? 'Currently moving through network' : i === 2 ? 'Requires an operational action' : 'Successfully completed'}</div></section>
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 13, padding: 12, border: `1px solid ${T.BORDER}`, borderRadius: 11, background: 'var(--nx-surface-soft)' }}>
         <input aria-label="Search shipments" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search AWB, order, customer or pincode" style={{ flex: '1 1 260px', height: 38, boxSizing: 'border-box', borderRadius: 8, border: `1px solid ${T.INPUT_BORDER}`, background: T.SURFACE, color: T.TEXT, padding: '0 12px', fontSize: 13, outline: 'none' }} />
         <Btn onClick={load}>Refresh</Btn><Btn onClick={exportCsv} disabled={!visible.length}>Export CSV</Btn><Btn primary onClick={() => nav('orders')}>Ship an order</Btn>
       </div>
-      <div role="tablist" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div role="tablist" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 18 }}>
         {FILTERS.map(([key, label]) => {
           const on = filter === key;
           return <button key={key} role="tab" aria-selected={on} onClick={() => setFilter(key)} style={{ height: 32, padding: '0 12px', borderRadius: 99, border: `1px solid ${on ? T.NAVY : T.BORDER}`, background: on ? T.NAVY : T.SURFACE, color: on ? '#fff' : T.TEXT_SECONDARY, fontSize: 12.5, fontWeight: 680, cursor: 'pointer' }}>{label} <span style={{ opacity: 0.7, fontWeight: 600 }}>{counts[key] || 0}</span></button>;
@@ -153,7 +153,7 @@ export default function LiveTrack({ mobile }) {
       </div>
 
       {!rows.length ? (
-        <section style={{ ...CARD, padding: 34, textAlign: 'center' }}><b style={{ color: T.TEXT, fontSize: 16 }}>No shipments yet</b><p style={{ color: T.TEXT_SECONDARY, fontSize: 13 }}>Create an order, compare rates and book a courier. Every shipment and its scans appear here.</p><Btn primary onClick={() => nav('b2c')}>Create an order</Btn></section>
+        <section style={{ ...CARD, minHeight: 220, padding: 42, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}><div style={{ width: 42, height: 42, display: 'grid', placeItems: 'center', borderRadius: 12, background: 'rgba(0,215,195,.12)', color: T.ACCENT, fontSize: 20, fontWeight: 800 }}>↗</div><b style={{ marginTop: 14, color: T.TEXT, fontSize: 17 }}>No shipments yet</b><p style={{ maxWidth: 500, margin: '8px 0 18px', color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Create an order, compare rates and book a courier. Every shipment and its scans appear here.</p><Btn primary onClick={() => nav('b2c')}>Create an order</Btn></section>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: selected && !mobile ? 'minmax(0,1fr) 380px' : '1fr', gap: 14, alignItems: 'start' }}>
           <section style={{ ...CARD, overflow: 'hidden' }}>
@@ -163,7 +163,7 @@ export default function LiveTrack({ mobile }) {
                   <thead><tr>{['AWB', 'Order', 'Deliver to', 'Courier', 'Charge', 'Status', 'Booked'].map((h) => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10.5, letterSpacing: '.07em', color: T.TEXT_MUTED, background: T.TABLE_HEAD_BG, textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
                   <tbody>
                     {visible.map((r) => (
-                      <tr key={r.id} onClick={() => setSelectedId(r.id)} style={{ cursor: 'pointer', background: r.id === selectedId ? 'rgba(0,179,164,.08)' : undefined }}>
+                      <tr key={r.id} onClick={() => setSelectedId(r.id)} style={{ cursor: 'pointer', background: r.id === selectedId ? 'rgba(0,215,195,.09)' : undefined }}>
                         {[<b key="a" style={{ fontFamily: T.MONO }}>{r.awb}</b>, r.order_number, <span key="c"><b>{r.customer_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED, marginTop: 2 }}>{r.customer_city} · {r.customer_pincode}</small></span>, <span key="o"><b>{r.courier_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED, marginTop: 2 }}>{r.service_name}</small></span>, inr(r.shipping_charge_paise), <Pill key="s" state={r.state} />, stamp(r.booked_at)].map((cell, i) => <td key={i} style={{ padding: '12px 14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{cell}</td>)}
                       </tr>
                     ))}

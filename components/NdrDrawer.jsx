@@ -105,7 +105,7 @@ export default function NdrDrawer() {
                       whileTap={TAP}
                       transition={TAP_TRANSITION}
                       onClick={() => setResolution(i)}
-                      style={{ borderRadius: 10, border: `1px solid ${on ? T.ACCENT : T.BORDER}`, background: on ? 'rgba(0,179,164,.1)' : T.SURFACE, padding: '12px 14px', cursor: 'pointer' }}
+                      style={{ borderRadius: 10, border: `1px solid ${on ? T.ACCENT : T.BORDER}`, background: on ? 'rgba(0,215,195,.12)' : T.SURFACE, padding: '12px 14px', cursor: 'pointer' }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ width: 14, height: 14, borderRadius: '50%', border: `1.5px solid ${on ? T.ACCENT : T.MENU_BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -136,7 +136,7 @@ export default function NdrDrawer() {
               <motion.div whileHover={{ background: 'var(--nx-surface-soft)' }} whileTap={TAP} transition={TAP_TRANSITION} onClick={close} style={{ height: 36, padding: '0 14px', borderRadius: 8, border: `1px solid ${T.INPUT_BORDER}`, display: 'flex', alignItems: 'center', fontSize: 12.5, cursor: 'pointer' }}>Cancel</motion.div>
               <div style={{ fontFamily: T.MONO, fontSize: 10, color: T.TEXT_FAINT, marginLeft: 6 }}>ENTER TO SUBMIT</div>
               <div style={{ flex: 1 }} />
-              <motion.div whileTap={TAP} transition={TAP_TRANSITION} onClick={close} style={{ height: 36, padding: '0 16px', borderRadius: 8, background: T.ACCENT, color: '#06272B', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', boxShadow: '0 6px 16px rgba(0,179,164,.28)' }}>Submit resolution</motion.div>
+              <motion.div whileTap={TAP} transition={TAP_TRANSITION} onClick={close} style={{ height: 36, padding: '0 16px', borderRadius: 8, background: T.ACCENT, color: '#06272B', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', boxShadow: '0 6px 16px rgba(0,215,195,.32)' }}>Submit resolution</motion.div>
             </div>
           </motion.div>
         </div>

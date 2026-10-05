@@ -10,8 +10,8 @@ const CARD = {
   position: 'relative',
   background: 'var(--nx-surface)',
   border: '1px solid var(--nx-border)',
-  borderRadius: 10,
-  boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)',
+  borderRadius: 12,
+  boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 10px 28px rgba(20,44,66,.055)',
 };
 const TAP = { scale: 0.97 };
 const TAP_FAST = { duration: 0.08 };
@@ -68,10 +68,10 @@ export default function FormPage({ activeId, mobile, phone }) {
 
   const formCols = mobile ? '1fr' : form.cols;
 
-  const pagePad = phone ? 12 : mobile ? 16 : 22;
+  const pagePad = phone ? 12 : mobile ? 16 : 28;
 
   return (
-    <div style={{ flex: 1, padding: `${phone ? 12 : 20}px ${pagePad}px 48px`, position: 'relative' }}>
+    <div style={{ flex: 1, padding: `${phone ? 14 : 24}px ${pagePad}px 52px`, position: 'relative' }}>
       <ScenicBackdrop mode="workspace" />
       <div style={{ position: 'relative', zIndex: 1, display: 'grid', gridTemplateColumns: formCols, gap: 20, alignItems: 'start' }}>
         <div>

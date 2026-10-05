@@ -18,16 +18,20 @@ export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
   const actions = (ACTIONS[activeId] || []).filter(([, , dest]) => dest); // buttons without a destination had no handler
 
   return (
-    <div style={{ background: T.PANEL, borderBottom: `1px solid ${T.BORDER}`, padding: phone ? '14px 12px 0' : mobile ? '18px 16px 0' : '22px 28px 0', position: 'sticky', top: 58, zIndex: 30 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap' }}>
+    <div style={{ background: 'var(--nx-chrome-bg)', borderBottom: `1px solid ${T.BORDER}`, boxShadow: '0 4px 18px rgba(15,31,61,.045)', padding: phone ? '15px 12px 12px' : mobile ? '20px 16px 14px' : '22px 28px 16px', position: 'sticky', top: 68, zIndex: 30 }}>
+      <div style={{ height: 2, position: 'absolute', top: 0, left: 0, right: 0, background: 'linear-gradient(90deg, var(--nx-side-bg) 0%, var(--nx-side-bg) 34%, var(--nx-accent, #00D7C3) 100%)' }} />
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 28, flexWrap: 'wrap' }}>
         {isDashboard ? <div aria-hidden="true" /> : (
           <div style={{ maxWidth: 660 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.TEXT_MUTED }}>{crumb}</div>
-            <div style={{ fontSize: 26, fontWeight: 650, letterSpacing: '-.03em', marginTop: 8, lineHeight: 1.15 }}>{pageTitle}</div>
-            <div style={{ fontSize: 14.5, color: T.TEXT_SECONDARY, marginTop: 7, lineHeight: 1.5 }}>{pageSub}</div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 8px', borderRadius: 6, background: 'var(--nx-surface-soft)', border: `1px solid ${T.DIVIDER}`, fontSize: 10.5, fontWeight: 800, letterSpacing: '.11em', textTransform: 'uppercase', color: T.TEXT_MUTED }}>
+              <span style={{ width: 5, height: 5, borderRadius: 99, background: T.ACCENT }} />
+              {crumb}
+            </div>
+            <div style={{ fontSize: mobile ? 24 : 29, fontWeight: 760, letterSpacing: '-.035em', marginTop: 10, lineHeight: 1.08, color: T.TEXT }}>{pageTitle}</div>
+            <div style={{ fontSize: 14, color: T.TEXT_SECONDARY, marginTop: 8, lineHeight: 1.5 }}>{pageSub}</div>
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'stretch', gap: 8, paddingBottom: phone ? 12 : 16, marginLeft: isDashboard ? 'auto' : undefined, maxWidth: '100%', overflowX: phone ? 'auto' : undefined }}>
+        <div style={{ display: 'flex', alignItems: 'stretch', gap: 8, paddingBottom: phone ? 4 : 2, marginLeft: isDashboard ? 'auto' : undefined, maxWidth: '100%', overflowX: phone ? 'auto' : undefined }}>
           {actions.map(([label, primary, dest], i) => (
             <motion.div
               key={i}
@@ -35,7 +39,7 @@ export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
               transition={TAP_FAST}
               onClick={() => { if (dest) nav(dest); }}
               className={primary ? '' : 'nxc-btn'}
-              style={{ height: 34, padding: '0 13px', borderRadius: 7, border: `1px solid ${primary ? T.NAVY : T.INPUT_BORDER}`, background: primary ? T.NAVY : T.SURFACE, color: primary ? '#fff' : T.TEXT, display: 'flex', alignItems: 'center', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}
+              style={{ height: 38, padding: '0 14px', borderRadius: 8, border: `1px solid ${primary ? T.NAVY : T.INPUT_BORDER}`, background: primary ? T.NAVY : T.SURFACE, color: primary ? '#fff' : T.TEXT, display: 'flex', alignItems: 'center', fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: primary ? '0 5px 14px rgba(15,31,61,.16)' : '0 1px 2px rgba(15,31,61,.04)' }}
             >
               {label}
             </motion.div>
@@ -57,7 +61,7 @@ export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
               whileTap={TAP}
               transition={TAP_FAST}
               onClick={() => setPaletteOpen(true)}
-              style={{ height: 32, padding: '0 13px', borderRadius: 7, background: T.NAVY, color: '#fff', display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 16px rgba(15,31,61,.22)' }}
+              style={{ height: 38, padding: '0 14px', borderRadius: 8, background: T.NAVY, color: '#fff', display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, fontWeight: 700, boxShadow: '0 6px 16px rgba(15,31,61,.22)' }}
             >
               Ship now
               <div style={{ fontFamily: T.MONO, fontSize: 10, border: '1px solid rgba(255,255,255,.28)', borderRadius: 4, padding: '1px 4px' }}>S</div>

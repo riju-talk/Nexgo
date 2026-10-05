@@ -35,9 +35,9 @@
   --nx-side-sub: #9bb0c4;
   --nx-side-label: #8199b0;
   --nx-side-soft: rgba(255,255,255,.06);
-  --nx-side-active: rgba(0,179,164,.18);
+  --nx-side-active: rgba(0,215,195,.18);
   --nx-side-active-text: #ffffff;
-  --nx-side-wallet: rgba(0,179,164,.15);
+  --nx-side-wallet: rgba(0,215,195,.15);
   --nx-side-wallet-text: #c6fff7;
   --nx-card-sheen-top: #FFFFFF;
   --nx-card-sheen-1: #FFFFFF;
@@ -56,58 +56,75 @@
 }
 
 [data-theme="dark"] {
-  --nx-surface: #1B212B;
-  --nx-surface-soft: #20262F;
-  --nx-paper: #10141B;
-  --nx-panel: #171C25;
+  /* Surface colors - Deeper, richer backgrounds with better hierarchy */
+  --nx-surface: #16181D;
+  --nx-surface-soft: #1A1D23;
+  --nx-paper: #0D0E12;
+  --nx-panel: #12141A;
 
-  --nx-border: #2A313D;
-  --nx-divider: #242B36;
-  --nx-input-border: #333B47;
-  --nx-row-divider: #202631;
-  --nx-menu-border: #3A4250;
+  /* Borders and dividers - Subtle but visible with warmer undertones */
+  --nx-border: #282B33;
+  --nx-divider: #1F2229;
+  --nx-input-border: #30343E;
+  --nx-row-divider: #1A1D24;
+  --nx-menu-border: #353942;
 
-  --nx-text: #ECE9E3;
-  --nx-text-label: #D8D4CC;
-  --nx-text-secondary: #A9A399;
-  --nx-text-muted: #8F8A80;
-  --nx-text-faint: #6E6960;
-  --nx-table-head: #b4c0cb;
-  --nx-table-head-bg: #20262f;
-  --nx-section-head: #B7B2A8;
+  /* Text colors - Enhanced contrast with warmer tones */
+  --nx-text: #F2F3F5;
+  --nx-text-label: #E4E6E9;
+  --nx-text-secondary: #B8BBC2;
+  --nx-text-muted: #9599A3;
+  --nx-text-faint: #6B6E77;
+  --nx-table-head: #C8CDD6;
+  --nx-table-head-bg: #1A1D23;
+  --nx-section-head: #CDD1D8;
 
-  --nx-bg-tint-1: rgba(0,179,164,.07);
-  --nx-bg-tint-2: rgba(90,130,190,.05);
-  --nx-workspace-bg: #101821;
-  --nx-workspace-glow-1: rgba(0,179,164,.10);
-  --nx-workspace-glow-2: rgba(61,105,163,.10);
-  --nx-chrome-bg: #0F1F3D;
-  --nx-chrome-border: rgba(255,255,255,.1);
-  --nx-chrome-text: #FFFFFF;
-  --nx-chrome-muted: #8FA2C0;
-  --nx-chrome-search: rgba(255,255,255,.07);
-  --nx-side-bg: #0F1F3D;
-  --nx-side-edge: rgba(255,255,255,.1);
-  --nx-side-text: #D3DCE9;
-  --nx-side-sub: #8298B8;
-  --nx-side-label: #7189AE;
-  --nx-side-soft: rgba(255,255,255,.045);
-  --nx-side-active: rgba(0,179,164,.19);
+  /* Background tints - Vibrant accent overlays */
+  --nx-bg-tint-1: rgba(0,215,195,.08);
+  --nx-bg-tint-2: rgba(100,150,255,.06);
+  
+  /* Workspace - Rich dark foundation with subtle glow effects */
+  --nx-workspace-bg: #0A0B0F;
+  --nx-workspace-glow-1: rgba(0,215,195,.14);
+  --nx-workspace-glow-2: rgba(80,130,255,.12);
+  
+  /* Chrome/TopBar - Elevated surface with refined borders */
+  --nx-chrome-bg: #0B1A2E;
+  --nx-chrome-border: rgba(255,255,255,.12);
+  --nx-chrome-text: #F5F7FA;
+  --nx-chrome-muted: #97A8C4;
+  --nx-chrome-search: rgba(255,255,255,.08);
+  
+  /* Sidebar - Deep navy with enhanced contrast */
+  --nx-side-bg: #0A1628;
+  --nx-side-edge: rgba(255,255,255,.14);
+  --nx-side-text: #E5EBF4;
+  --nx-side-sub: #8FA5C8;
+  --nx-side-label: #7B91B8;
+  --nx-side-soft: rgba(255,255,255,.055);
+  --nx-side-active: rgba(0,215,195,.22);
   --nx-side-active-text: #FFFFFF;
-  --nx-side-wallet: rgba(0,179,164,.14);
+  --nx-side-wallet: rgba(0,215,195,.18);
   --nx-side-wallet-text: #FFFFFF;
-  --nx-card-sheen-top: rgba(255,255,255,.06);
-  --nx-card-sheen-1: #1E2530;
-  --nx-card-sheen-2: #1B212A;
-  --nx-scrollbar-thumb: rgba(180, 175, 165, .2);
+  
+  /* Card effects - Subtle gradients and sheens */
+  --nx-card-sheen-top: rgba(255,255,255,.08);
+  --nx-card-sheen-1: #1A1E28;
+  --nx-card-sheen-2: #15181F;
+  
+  /* Scrollbar - Refined thumb color */
+  --nx-scrollbar-thumb: rgba(200, 205, 215, .22);
 
-  --nx-glass-1: rgba(26,32,42,.82);
-  --nx-glass-2: rgba(26,32,42,.62);
-  --nx-glass-border: rgba(255,255,255,.08);
-  --nx-loader-bg: #0F1F3D;
-  --nx-loader-label: #7189AE;
-  --nx-loader-track: rgba(211,220,233,.16);
-  --nx-loader-accent: #00B3A4;
+  /* Glass effects - Improved transparency and borders */
+  --nx-glass-1: rgba(18,20,28,.88);
+  --nx-glass-2: rgba(18,20,28,.68);
+  --nx-glass-border: rgba(255,255,255,.10);
+  
+  /* Loader components */
+  --nx-loader-bg: #0B1A2E;
+  --nx-loader-label: #7B91B8;
+  --nx-loader-track: rgba(229,235,244,.18);
+  --nx-loader-accent: #00D7C3;
 }
 
 html, body {
@@ -143,7 +160,8 @@ button {
 
 ::selection {
   color: #ffffff;
-  background: #0f6e69;
+  background: #00D7C3;
+  background: rgba(0,215,195,.85);
 }
 
 /* Shared primitives used by both seller and operations surfaces. */
@@ -177,7 +195,7 @@ table tbody tr:hover {
 /* A consistent, high-contrast focus ring keeps dense operational screens
    fast to use by keyboard without adding visual noise at rest. */
 :focus-visible {
-  outline: 3px solid rgba(0,179,164,.42);
+  outline: 3px solid rgba(0,215,195,.48);
   outline-offset: 2px;
 }
 
@@ -188,8 +206,8 @@ a {
 a:hover {
   color: #093732;
 }
-[data-theme="dark"] a { color: #4FC7B8; }
-[data-theme="dark"] a:hover { color: #7BDCCF; }
+[data-theme="dark"] a { color: #5FE6D6; }
+[data-theme="dark"] a:hover { color: #8FEFDF; }
 
 ::-webkit-scrollbar {
   width: 9px;

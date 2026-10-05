@@ -211,7 +211,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
-          style={{ marginTop: 18, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(0,179,164,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
+          style={{ marginTop: 18, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(0,215,195,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
         >
           <b style={{ display: 'block', color: T.TEXT, fontSize: 14 }}>{loading ? 'Reading and validating…' : 'Drop your order file here, or click to browse'}</b>
           <span style={{ display: 'block', marginTop: 5, color: T.TEXT_MUTED, fontSize: 12.5 }}>{fileName && !loading ? fileName : '.xlsx, .xls or .csv · up to 5 MB'}</span>

@@ -69,7 +69,7 @@ export default function AuthScreen({ mode }) {
       {!mobile && (
         <div style={{ position: 'relative', zIndex: 1, background: 'rgba(12,26,51,.62)', backdropFilter: 'blur(6px)', padding: '48px 52px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', color: '#fff' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 26, height: 26, background: '#00B3A4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#06212C', clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
+            <div style={{ width: 26, height: 26, background: '#00D7C3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#06212C', clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
             <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '.13em' }}>NEXGO</div>
           </div>
           <div style={{ maxWidth: 420 }}>
@@ -79,7 +79,7 @@ export default function AuthScreen({ mode }) {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 26 }}>
               {['Delhivery', 'Blue Dart', 'Ekart', 'XpressBees', 'Ecom Express', 'Shadowfax'].map((c) => (
                 <div key={c} style={{ fontSize: 11.5, fontWeight: 600, color: '#C7D2E2', border: '1px solid rgba(255,255,255,.16)', borderRadius: 20, padding: '5px 11px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 5, height: 5, borderRadius: 3, background: '#00B3A4' }} />{c}
+                  <span style={{ width: 5, height: 5, borderRadius: 3, background: '#00D7C3' }} />{c}
                 </div>
               ))}
             </div>
