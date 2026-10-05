@@ -61,9 +61,11 @@ function CollapseControl({ collapsed, onClick }) {
       title={collapsed ? 'Expand navigation' : 'Collapse navigation'}
       onClick={onClick}
       whileTap={{ scale: 0.9 }}
-      style={{ width: 25, height: 25, padding: 0, display: 'grid', placeItems: 'center', color: 'var(--nx-side-text)', background: 'var(--nx-side-soft)', border: '1px solid var(--nx-side-edge)', borderRadius: 7, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+      style={{ width: 30, height: 30, padding: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, color: 'var(--nx-side-text)', background: 'var(--nx-side-soft)', border: '1px solid var(--nx-side-edge)', borderRadius: 7, cursor: 'pointer' }}
     >
-      {collapsed ? '›' : '‹'}
+      <span style={{ width: 14, height: 1.5, borderRadius: 2, background: 'currentColor' }} />
+      <span style={{ width: 14, height: 1.5, borderRadius: 2, background: 'currentColor' }} />
+      <span style={{ width: 14, height: 1.5, borderRadius: 2, background: 'currentColor' }} />
     </motion.button>
   );
 }
@@ -118,9 +120,8 @@ export default function Sidebar({ activeId, mobile }) {
   if (collapsed) {
     return (
       <motion.div style={outerStyle} {...outerMotion}>
-        <div style={{ height: 68, display: 'grid', placeItems: 'center', borderBottom: '1px solid var(--nx-side-edge)', position: 'relative', background: 'var(--nx-side-bg)' }}>
-          <div onClick={() => nav('dashboard')} title="Dashboard" style={{ width: 32, height: 32, borderRadius: 9, cursor: 'pointer', display: 'grid', placeItems: 'center', background: T.ACCENT, color: '#06212C', fontWeight: 800, fontSize: 13 }}>N</div>
-          <div style={{ position: 'absolute', right: 7, bottom: 7 }}><CollapseControl collapsed onClick={toggleSidebar} /></div>
+        <div style={{ height: 68, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--nx-side-edge)', background: 'var(--nx-side-bg)' }}>
+          <CollapseControl collapsed onClick={toggleSidebar} />
         </div>
         <div style={{ flex: 1, padding: '14px 14px', display: 'grid', alignContent: 'start', gap: 8 }}>
           <motion.div onClick={() => nav('dashboard')} title="Dashboard" whileTap={{ scale: 0.94 }} style={{ height: 46, display: 'grid', placeItems: 'center', borderRadius: 11, cursor: 'pointer', background: onDashboard ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${onDashboard ? 'rgba(0,179,164,.2)' : 'var(--nx-side-edge)'}` }}><NavIcon name="dashboard" active={onDashboard} /></motion.div>
@@ -148,7 +149,7 @@ export default function Sidebar({ activeId, mobile }) {
       >
         <div style={{ width: 31, height: 31, background: T.ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, color: '#06212C', borderRadius: 9, clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
         <div style={{ minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 750, letterSpacing: '.13em', color: 'var(--nx-side-text)', lineHeight: 1 }}>NEXGO</div></div>
-        {!mobile && <CollapseControl collapsed={false} onClick={(event) => { event.stopPropagation(); toggleSidebar(); }} />}
+        {!mobile && <div style={{ marginLeft: 'auto' }}><CollapseControl collapsed={false} onClick={(event) => { event.stopPropagation(); toggleSidebar(); }} /></div>}
       </motion.div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 8px 18px' }}>
