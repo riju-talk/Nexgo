@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: nexgo
       POSTGRES_PASSWORD: nexgo_local_only
     ports:
-      - '5432:5432'
+      - '${NEXGO_PG_PORT:-5432}:5432'
     volumes:
       - nexgo-postgres:/var/lib/postgresql/data
     healthcheck:

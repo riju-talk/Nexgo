@@ -29,7 +29,16 @@ cd .. && cp .env.example .env.local
 npm install && npm run dev
 ```
 
-Open http://localhost:3021 (seller) or http://localhost:3021/admin/login (admin). Demo fixtures: `npm run seed:demo-seller`, `seed:demo-data`, `seed:demo-network` and `seed:demo-admin` in `backend/`.
+Open http://localhost:3021 (seller) or http://localhost:3021/admin/login (admin).
+
+**Development logins** — run `npm run seed:dev` in `backend/` (idempotent, refuses to run in production):
+
+| Panel | URL | Email | Password |
+| --- | --- | --- | --- |
+| Admin | `/admin/login` | `dev-admin@nexgo.local` | `NexgoDevAdmin#2026` |
+| Seller | `/login` | `dev-seller@nexgo.local` | `NexgoDevSeller#2026` |
+
+Override them with `DEV_ADMIN_*` / `DEV_SELLER_*` in `backend/.env`. Local only — never reuse these anywhere deployed. Demo fixtures: `npm run seed:demo-seller`, `seed:demo-data`, `seed:demo-network` and `seed:demo-admin` in `backend/`.
 
 ## Checks
 

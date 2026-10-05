@@ -1,0 +1,12 @@
+
+> nexgo@0.1.0 dev
+> next dev -p 3021
+
+▲ Next.js 16.3.4 (Turbopack)
+- Local:         http://localhost:3021
+- Network:       http://192.168.56.1:3021
+✓ Ready in 963ms
+✓ Running next.config.mjs took 21ms
+
+ GET /login 200 in 3.1s (next.js: 2.9s, application-code: 194ms)
+ GET /login 200 in 246ms (next.js: 50ms, application-code: 196ms)

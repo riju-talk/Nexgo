@@ -22,4 +22,9 @@ export async function exceptionRoutes(app: FastifyInstance) {
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: `ndr.${input.action}_requested`, targetType: 'ndr_case', targetId: caseId, requestId: request.id }); return result.rows[0];
     });
   });
+  app.get('/v1/weight-discrepancies', { preHandler: requireSeller }, async (request) => {
+    const p = principal(request);
+    // Billed weight above the declared order weight is the discrepancy a seller needs to review.
+    return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query(`SELECT s.id,s.awb,s.state,s.shipping_charge_paise,s.chargeable_weight_g AS billed_weight_g,o.total_weight_g AS declared_weight_g,(s.chargeable_weight_g-o.total_weight_g) AS difference_g,o.order_number,cp.name AS courier_name,s.booked_at FROM shipments s JOIN orders o ON o.id=s.order_id JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.seller_id=$1 AND s.chargeable_weight_g>o.total_weight_g ORDER BY s.booked_at DESC LIMIT 200`, [p.sellerId])).rows }));
+  });
 }

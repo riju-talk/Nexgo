@@ -1,24 +1,308 @@
 'use client';
-import { useEffect, useState } from 'react';
+
+import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
-const field = { width:'100%', height:42, boxSizing:'border-box', border:'1px solid var(--nx-input-border)', borderRadius:8, background:T.SURFACE, color:T.TEXT, padding:'0 11px', fontSize:14 };
-const Card=({children})=><div style={{background:'linear-gradient(165deg,var(--nx-glass-1),var(--nx-glass-2))',backdropFilter:'blur(18px)',border:'1px solid var(--nx-glass-border)',borderRadius:14,padding:18}}>{children}</div>;
-export default function LiveCreateOrder({mobile, flow = 'forward'}) {
- const {nav,showToast}=useAppState(); const [setup,setSetup]=useState(null); const [busy,setBusy]=useState(false); const [fetchedQuotes,setQuotes]=useState({key:'',items:[]});
- const isReverse = flow === 'reverse';
- const [f,setF]=useState(()=>({orderNumber:`${flow === 'reverse' ? 'RET' : flow === 'dropship' ? 'DS' : flow === 'ship_now' ? 'NOW' : 'WEB'}-${Date.now().toString().slice(-6)}`,fullName:'',phone:'',email:'',address:'',city:'',state:'',pincode:'',sku:'',name:'',quantity:'1',price:'',weight:'500',paymentMode:'prepaid',cod:'0'}));
- useEffect(()=>{Promise.all([apiFetch('/v1/warehouses'),apiFetch('/v1/products')]).then(([w,p])=>setSetup({warehouse:w.items?.[0],product:p.items?.[0],products:p.items||[]})).catch(()=>setSetup({}));},[]);
- useEffect(()=>{ if(!/^\d{6}$/.test(f.pincode)) return; const timer=window.setTimeout(()=>apiFetch(`/v1/locations/pincode/${f.pincode}`).then(x=>setF(current=>({...current,city:x.city,state:x.state}))).catch(()=>{}),220); return()=>window.clearTimeout(timer); },[f.pincode]);
- const canQuote=/^\d{6}$/.test(f.pincode)&&Number(f.weight)>0; const quoteKey=`${f.pincode}|${f.weight}|${f.paymentMode}`; const quotes=canQuote&&fetchedQuotes.key===quoteKey?fetchedQuotes.items:[];
- useEffect(()=>{ if(!canQuote) return; const timer=window.setTimeout(()=>apiFetch('/v1/shipping/quotes',{method:'POST',body:{destinationPincode:f.pincode,weightG:Number(f.weight),paymentMode:f.paymentMode}}).then(x=>setQuotes({key:quoteKey,items:x.quotes||[]})).catch(()=>setQuotes({key:quoteKey,items:[]})),250); return()=>window.clearTimeout(timer); },[canQuote,quoteKey,f.pincode,f.weight,f.paymentMode]);
- const skuFill=(sku)=>{ const match=setup?.products?.find(item=>item.sku?.toLowerCase()===sku.trim().toLowerCase()); return match?{name:match.name,price:(Number(match.unit_price_paise)/100).toFixed(2),weight:String(match.weight_g||f.weight)}:{}; };
- const set=(k)=>(e)=>setF({...f,[k]:e.target.value,...(k==='paymentMode'&&e.target.value==='prepaid'?{cod:'0'}:{}),...(k==='sku'?skuFill(e.target.value):{})}); const product=setup?.products?.find(item=>item.sku?.toLowerCase()===f.sku.trim().toLowerCase())||setup?.product;
- const submit=async(e)=>{e.preventDefault();if(!setup?.warehouse)return showToast('Create a warehouse first in Settings.', 'error');setBusy(true);try{const unit=Math.round(Number(f.price||product?.unit_price_paise/100||0)*100);await apiFetch('/v1/orders',{method:'POST',body:{warehouseId:setup.warehouse.id,orderNumber:f.orderNumber,orderFlow:flow,paymentMode:isReverse?'prepaid':f.paymentMode,codAmountPaise:!isReverse&&f.paymentMode==='cod'?Math.round(Number(f.cod||f.price)*100):0,customer:{fullName:f.fullName,email:f.email||undefined,phone:f.phone,addressLine1:f.address,city:f.city,state:f.state,pincode:f.pincode},items:[{productId:product?.id,sku:f.sku||product?.sku||'CUSTOM',name:f.name||product?.name||'Custom item',quantity:Number(f.quantity),unitPricePaise:unit,weightG:Number(f.weight)}]}});showToast(isReverse?'Return pickup created and added to operations.':'Order created and added to operations.');nav('orders');}catch(x){showToast(x instanceof ApiError?x.message:'Unable to create order','error');}finally{setBusy(false)}};
- const orderFields=[['Order number','orderNumber'],['Customer name','fullName'],['Phone','phone'],['Email','email'],['Address','address'],['City','city'],['State','state'],['Pincode','pincode']];
- const productFields=[['SKU','sku'],['Product name','name'],['Quantity','quantity'],['Unit price ₹','price'],['Weight (g)','weight'],...(!isReverse?[['COD amount ₹','cod']]:[])];
- const renderFields=(fields)=><div style={{display:'grid',gridTemplateColumns:mobile?'1fr':'1fr 1fr',gap:13}}>{fields.map(([l,k])=><label key={k} style={{fontSize:12.5,fontWeight:650,color:T.TEXT_LABEL}}>{l}<input required={['orderNumber','fullName','phone','address','city','state','pincode','quantity','weight'].includes(k)} value={f[k]} onChange={set(k)} disabled={k==='cod'&&f.paymentMode==='prepaid'} type={k==='price'?'text':['quantity','weight','cod'].includes(k)?'number':k==='email'?'email':'text'} inputMode={k==='price'?'decimal':undefined} step={k==='cod'?'0.01':undefined} placeholder={k==='pincode'?'Enter 6-digit pincode':k==='sku'?'Enter a saved SKU':undefined} style={{...field,marginTop:6,background:(k==='city'||k==='state')&&f[k]? 'rgba(0,179,164,.06)':k==='cod'&&f.paymentMode==='prepaid'?T.SURFACE_SOFT:T.SURFACE,opacity:k==='cod'&&f.paymentMode==='prepaid'?.72:1}} />{k==='sku'&&product?.sku?.toLowerCase()===f.sku.trim().toLowerCase()?<small style={{display:'block',marginTop:4,color:T.GREEN,fontSize:11}}>Product details filled from your catalog</small>:k==='cod'&&f.paymentMode==='prepaid'?<small style={{display:'block',marginTop:4,color:T.TEXT_MUTED,fontSize:11}}>Set to ₹0 for prepaid orders</small>:(k==='city'||k==='state')&&f[k]&&<small style={{display:'block',marginTop:4,color:T.GREEN,fontSize:11}}>Filled from pincode</small>}</label>)}</div>;
- return <form onSubmit={submit} style={{padding:mobile?'14px 12px 42px':'18px 22px 48px',maxWidth:980}}><div style={{fontSize:18,fontWeight:760,color:T.TEXT}}>{isReverse ? 'Create return pickup' : flow === 'dropship' ? 'Create dropship order' : flow === 'ship_now' ? 'Ship now' : 'Create a live order'}</div><p style={{color:T.TEXT_SECONDARY,fontSize:13.5,margin:'6px 0 16px'}}>{isReverse?'Create a pickup at the customer address. The returned parcel will route back to your selected warehouse.':'This writes directly to your workspace and becomes visible in the admin queue.'}</p><div style={{display:'grid',gap:14}}><Card><div style={{marginBottom:15}}><b style={{color:T.TEXT,fontSize:15}}>{isReverse?'Return pickup & customer details':'Order & customer details'}</b><span style={{display:'block',marginTop:4,color:T.TEXT_MUTED,fontSize:12.5}}>{isReverse?'Who will hand over the return parcel and where the courier should collect it.':'Who is receiving this shipment and where it needs to go.'}</span></div>{renderFields(orderFields)}</Card>{isReverse&&<Card><div style={{marginBottom:10}}><b style={{color:T.TEXT,fontSize:15}}>Return destination</b><span style={{display:'block',marginTop:4,color:T.TEXT_MUTED,fontSize:12.5}}>The parcel will be routed to your active return warehouse.</span></div><div style={{padding:'12px 13px',borderRadius:10,border:`1px solid ${T.BORDER}`,background:T.SURFACE}}><b style={{color:T.TEXT,fontSize:13.5}}>{setup?.warehouse?.name||'Loading active warehouse…'}</b>{setup?.warehouse&&<span style={{display:'block',marginTop:4,color:T.TEXT_SECONDARY,fontSize:12.5}}>{setup.warehouse.address_line_1} · {setup.warehouse.city}, {setup.warehouse.state} · {setup.warehouse.pincode}</span>}</div></Card>}<Card><div style={{marginBottom:15}}><b style={{color:T.TEXT,fontSize:15}}>{isReverse?'Return item & pickup details':'Product & shipment details'}</b><span style={{display:'block',marginTop:4,color:T.TEXT_MUTED,fontSize:12.5}}>{isReverse?'Identify the returned item so the courier can quote the right pickup rate.':'Add the parcel contents, value, weight, and payment mode.'}</span></div>{renderFields(productFields)}{!isReverse&&<label style={{display:'block',maxWidth:mobile?'none':'calc(50% - 7px)',marginTop:13,fontSize:12.5,fontWeight:650,color:T.TEXT_LABEL}}>Payment mode<select value={f.paymentMode} onChange={set('paymentMode')} style={{...field,marginTop:6}}><option value="prepaid">Prepaid</option><option value="cod">Cash on delivery</option></select></label>}{isReverse&&<div style={{marginTop:13,color:T.TEXT_MUTED,fontSize:12}}>Return pickups are prepaid by default. There is no COD collection on this flow.</div>}</Card>{quotes.length>0&&<Card><b style={{fontSize:13,color:T.TEXT}}>{isReverse?'Return pickup rates configured by platform admin':'Live courier rates configured by platform admin'}</b><div style={{display:'grid',gridTemplateColumns:mobile?'1fr':'repeat(3,1fr)',gap:9,marginTop:10}}>{quotes.map((q,i)=><div key={q.provider.code} style={{padding:12,border:`1px solid ${i===0?T.ACCENT:T.BORDER}`,borderRadius:10,background:i===0?'rgba(0,179,164,.08)':T.SURFACE}}><b style={{display:'block',fontSize:13,color:T.TEXT}}>{q.provider.name}</b><span style={{display:'block',fontSize:12,color:T.TEXT_MUTED,marginTop:3}}>{q.service.name}</span><strong style={{display:'block',marginTop:8,color:T.TEXT,fontSize:18}}>₹{q.price.total.toFixed(2)}</strong></div>)}</div></Card>}<div><button disabled={busy} type="submit" style={{height:42,padding:'0 16px',border:0,borderRadius:8,background:T.NAVY,color:'#fff',fontWeight:700,cursor:'pointer'}}>{busy?'Creating…':isReverse?'Create return pickup':'Create order'}</button></div></div></form>;
+const FIELD = { width: '100%', height: 40, boxSizing: 'border-box', border: '1px solid var(--nx-input-border)', borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 11px', fontSize: 13.5 };
+const CARD = { background: 'linear-gradient(165deg,var(--nx-glass-1),var(--nx-glass-2))', backdropFilter: 'blur(18px)', border: '1px solid var(--nx-glass-border)', borderRadius: 14, padding: 18 };
+const PREFIX = { forward: 'WEB', reverse: 'RET', dropship: 'DS', ship_now: 'NOW' };
+// Must match backend lib/money.ts VOLUMETRIC_DIVISOR: grams = L×W×H (mm³) / 5000.
+const VOLUMETRIC_DIVISOR = 5000;
+
+const newOrderNumber = (flow) => `${PREFIX[flow] || 'WEB'}-${Date.now().toString().slice(-6)}`;
+const toPaise = (rupees) => Math.round((Number(rupees) || 0) * 100);
+const inr = (paise) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const blankItem = () => ({ key: Math.random().toString(36).slice(2), productId: '', sku: '', name: '', hsn: '', quantity: '1', price: '', weight: '' });
+const EMPTY_CHARGES = { shipping: '', giftWrap: '', transaction: '', other: '', discount: '', taxPercent: '' };
+
+function Section({ title, hint, children, aside }) {
+  return (
+    <div style={CARD}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+        <div><b style={{ color: T.TEXT, fontSize: 15 }}>{title}</b>{hint && <span style={{ display: 'block', marginTop: 4, color: T.TEXT_MUTED, fontSize: 12.5 }}>{hint}</span>}</div>
+        {aside}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Field({ label, required, note, noteTone, children }) {
+  return (
+    <label style={{ display: 'block', fontSize: 12.5, fontWeight: 650, color: T.TEXT_LABEL }}>
+      {label}{required && <span style={{ color: T.RED }}> *</span>}
+      <div style={{ marginTop: 6 }}>{children}</div>
+      {note && <small style={{ display: 'block', marginTop: 4, color: noteTone === 'ok' ? T.GREEN : T.TEXT_MUTED, fontSize: 11 }}>{note}</small>}
+    </label>
+  );
+}
+
+function Grid({ cols, children }) {
+  return <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 13 }}>{children}</div>;
+}
+
+function SummaryRow({ label, value, strong, tone }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: strong ? 14.5 : 13, fontWeight: strong ? 780 : 500, color: tone === 'minus' ? T.GREEN : strong ? T.TEXT : T.TEXT_SECONDARY }}>
+      <span>{label}</span><span>{tone === 'minus' ? `− ${value}` : value}</span>
+    </div>
+  );
+}
+
+export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = false }) {
+  const { nav, showToast } = useAppState();
+  const isReverse = flow === 'reverse';
+  const [setup, setSetup] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [orderNumber, setOrderNumber] = useState(() => newOrderNumber(flow));
+  const [warehouseId, setWarehouseId] = useState('');
+  const [paymentMode, setPaymentMode] = useState('prepaid');
+  const [customer, setCustomer] = useState({ fullName: '', companyName: '', phone: '', alternatePhone: '', email: '', address: '', address2: '', landmark: '', pincode: '', city: '', state: '' });
+  const [located, setLocated] = useState('');
+  const [items, setItems] = useState(() => [blankItem()]);
+  const [charges, setCharges] = useState(EMPTY_CHARGES);
+  const [pkg, setPkg] = useState({ weightKg: '', length: '', width: '', height: '' });
+  const [fetchedQuotes, setQuotes] = useState({ key: '', items: [] });
+
+  useEffect(() => {
+    Promise.all([apiFetch('/v1/warehouses'), apiFetch('/v1/products')])
+      .then(([w, p]) => setSetup({ warehouses: (w.items || []).filter((x) => x.is_active !== false), products: p.items || [] }))
+      .catch(() => setSetup({ warehouses: [], products: [] }));
+  }, []);
+
+  const warehouses = setup?.warehouses || [];
+  const warehouse = warehouses.find((w) => w.id === warehouseId) || warehouses[0];
+
+  // Pincode → city/state, debounced; only fills while the user is still on that pincode.
+  useEffect(() => {
+    if (!/^\d{6}$/.test(customer.pincode)) return;
+    const pin = customer.pincode;
+    const timer = window.setTimeout(() => apiFetch(`/v1/locations/pincode/${pin}`)
+      .then((x) => { setCustomer((c) => (c.pincode === pin ? { ...c, city: x.city, state: x.state } : c)); setLocated(pin); })
+      .catch(() => {}), 220);
+    return () => window.clearTimeout(timer);
+  }, [customer.pincode]);
+
+  // Money in integer paise, computed exactly as the API does (routes/operations.ts orderTotals).
+  const totals = useMemo(() => {
+    const subtotal = items.reduce((sum, i) => sum + (Number(i.quantity) || 0) * toPaise(i.price), 0);
+    if (isReverse) return { subtotal, taxRateBps: 0, tax: 0, shipping: 0, giftWrap: 0, transaction: 0, other: 0, discount: 0, gross: subtotal, total: subtotal };
+    const taxRateBps = Math.round((Number(charges.taxPercent) || 0) * 100);
+    const tax = Math.round((subtotal * taxRateBps) / 10_000);
+    const lines = { shipping: toPaise(charges.shipping), giftWrap: toPaise(charges.giftWrap), transaction: toPaise(charges.transaction), other: toPaise(charges.other), discount: toPaise(charges.discount) };
+    const gross = subtotal + tax + lines.shipping + lines.giftWrap + lines.transaction + lines.other;
+    return { subtotal, taxRateBps, tax, ...lines, gross, total: gross - lines.discount };
+  }, [items, charges, isReverse]);
+
+  const itemWeightG = items.reduce((sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.weight) || 0), 0);
+  const deadWeightG = pkg.weightKg !== '' ? Math.round(Number(pkg.weightKg) * 1000) : itemWeightG;
+  const dims = [pkg.length, pkg.width, pkg.height].map((v) => Math.round((Number(v) || 0) * 10));
+  const hasDims = dims.every((d) => d > 0);
+  const volumetricG = hasDims ? Math.ceil((dims[0] * dims[1] * dims[2]) / VOLUMETRIC_DIVISOR) : 0;
+  const chargeableG = Math.max(deadWeightG, volumetricG);
+
+  // Live courier rates for the chargeable parcel.
+  const canQuote = /^\d{6}$/.test(customer.pincode) && deadWeightG > 0;
+  const quoteMode = isReverse ? 'prepaid' : paymentMode;
+  const quoteKey = `${customer.pincode}|${deadWeightG}|${dims.join('x')}|${quoteMode}`;
+  const quotesLoaded = canQuote && fetchedQuotes.key === quoteKey;
+  const quotes = quotesLoaded ? fetchedQuotes.items : [];
+  useEffect(() => {
+    if (!canQuote) return;
+    const body = { destinationPincode: customer.pincode, weightG: deadWeightG, paymentMode: quoteMode, ...(hasDims ? { lengthMm: dims[0], widthMm: dims[1], heightMm: dims[2] } : {}) };
+    const timer = window.setTimeout(() => apiFetch('/v1/shipping/quotes', { method: 'POST', body })
+      .then((x) => setQuotes({ key: quoteKey, items: x.quotes || [] }))
+      .catch(() => setQuotes({ key: quoteKey, items: [] })), 300);
+    return () => window.clearTimeout(timer);
+  }, [quoteKey]); // eslint-disable-line react-hooks/exhaustive-deps -- quoteKey encodes every input the request reads
+
+  const setCust = (k) => (e) => setCustomer({ ...customer, [k]: k === 'pincode' ? e.target.value.replace(/\D/g, '').slice(0, 6) : e.target.value });
+  const setCharge = (k) => (e) => setCharges({ ...charges, [k]: e.target.value });
+  const setPack = (k) => (e) => setPkg({ ...pkg, [k]: e.target.value });
+  const setItem = (key, k) => (e) => {
+    const value = e.target.value;
+    setItems((list) => list.map((item) => {
+      if (item.key !== key) return item;
+      const next = { ...item, [k]: value };
+      if (k === 'sku') {
+        const match = setup?.products?.find((p) => p.sku?.toLowerCase() === value.trim().toLowerCase());
+        next.productId = match?.id || '';
+        if (match) Object.assign(next, { name: match.name, hsn: match.hsn_code || next.hsn, price: (Number(match.unit_price_paise) / 100).toFixed(2), weight: match.weight_g ? String(match.weight_g) : next.weight });
+      }
+      return next;
+    }));
+  };
+  const addItem = () => setItems((list) => [...list, blankItem()]);
+  const removeItem = (key) => setItems((list) => (list.length > 1 ? list.filter((i) => i.key !== key) : list));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!warehouse) return showToast('Add a pickup warehouse in Settings → Warehouse first.', 'error');
+    if (totals.discount > totals.gross) return showToast('Discount cannot exceed the order value.', 'error');
+    if (quoteMode === 'cod' && totals.total <= 0) return showToast('COD orders need a value to collect.', 'error');
+    if ([pkg.length, pkg.width, pkg.height].some((v) => v !== '') && !hasDims) return showToast('Enter length, breadth and height together.', 'error');
+    if (deadWeightG <= 0) return showToast('Enter the package weight.', 'error');
+    setBusy(true);
+    try {
+      const c = customer;
+      const opt = (v) => (v.trim() ? v.trim() : undefined);
+      await apiFetch('/v1/orders', { method: 'POST', body: {
+        warehouseId: warehouse.id, orderNumber: orderNumber.trim(), orderFlow: flow,
+        paymentMode: quoteMode, codAmountPaise: quoteMode === 'cod' ? totals.total : 0,
+        customer: { fullName: c.fullName.trim(), companyName: opt(c.companyName), phone: c.phone.trim(), alternatePhone: opt(c.alternatePhone), email: opt(c.email), addressLine1: c.address.trim(), addressLine2: opt(c.address2), landmark: opt(c.landmark), city: c.city.trim(), state: c.state.trim(), pincode: c.pincode },
+        items: items.map((i) => ({ productId: i.productId || undefined, sku: i.sku.trim() || 'CUSTOM', name: i.name.trim(), hsnCode: opt(i.hsn), quantity: Number(i.quantity), unitPricePaise: toPaise(i.price), weightG: Math.round(Number(i.weight) || 0) })),
+        package: { weightG: deadWeightG, ...(hasDims ? { lengthMm: dims[0], widthMm: dims[1], heightMm: dims[2] } : {}) },
+        charges: isReverse ? {} : { shippingPaise: totals.shipping, giftWrapPaise: totals.giftWrap, transactionPaise: totals.transaction, otherPaise: totals.other, discountPaise: totals.discount, taxRateBps: totals.taxRateBps },
+      } });
+      showToast(isReverse ? 'Return pickup created. Book a courier from All orders.' : 'Order created. Mark it ready and book a courier from All orders.');
+      nav('orders');
+    } catch (x) {
+      showToast(x instanceof ApiError ? x.message : 'Unable to create order', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const two = mobile ? '1fr' : '1fr 1fr';
+  const three = mobile ? '1fr' : 'repeat(3, minmax(0,1fr))';
+  const input = (value, onChange, props = {}) => <input value={value} onChange={onChange} style={FIELD} {...props} />;
+  const money = (value, onChange) => input(value, onChange, { type: 'number', min: 0, step: '0.01', inputMode: 'decimal', placeholder: '0.00' });
+
+  return (
+    <form onSubmit={submit} style={{ padding: embedded ? 0 : mobile ? '14px 12px 42px' : '18px 22px 48px', display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'minmax(0,1fr) 330px', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gap: 14, minWidth: 0 }}>
+        <Section title={isReverse ? 'Return details' : 'Order information'} hint={isReverse ? 'Return pickups are prepaid — no COD is collected.' : 'Identify the order and how the customer pays.'}>
+          <Grid cols={two}>
+            <Field label="Order ID" required>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {input(orderNumber, (e) => setOrderNumber(e.target.value), { required: true, maxLength: 100 })}
+                <button type="button" onClick={() => setOrderNumber(newOrderNumber(flow))} style={{ ...FIELD, width: 'auto', padding: '0 12px', cursor: 'pointer', fontWeight: 700 }}>Generate</button>
+              </div>
+            </Field>
+            {!isReverse && (
+              <Field label="Payment mode" required note={paymentMode === 'cod' ? 'The courier collects the order total on delivery.' : undefined}>
+                <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)} style={FIELD}><option value="prepaid">Prepaid</option><option value="cod">Cash on delivery (COD)</option></select>
+              </Field>
+            )}
+          </Grid>
+          {!isReverse && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 750, color: T.TEXT_MUTED, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 9 }}>Order charges (optional)</div>
+              <Grid cols={three}>
+                <Field label="Shipping charges ₹">{money(charges.shipping, setCharge('shipping'))}</Field>
+                <Field label="Gift wrap ₹">{money(charges.giftWrap, setCharge('giftWrap'))}</Field>
+                <Field label="Transaction / COD charges ₹">{money(charges.transaction, setCharge('transaction'))}</Field>
+                <Field label="Other charges ₹">{money(charges.other, setCharge('other'))}</Field>
+                <Field label="Discount ₹">{money(charges.discount, setCharge('discount'))}</Field>
+                <Field label="Tax % (on products)">{input(charges.taxPercent, setCharge('taxPercent'), { type: 'number', min: 0, max: 100, step: '0.01', placeholder: '0' })}</Field>
+              </Grid>
+            </div>
+          )}
+        </Section>
+
+        <Section title={isReverse ? 'Pickup from customer' : 'Customer details'} hint={isReverse ? 'Where the courier collects the returned parcel.' : 'Who receives this shipment and where it goes.'}>
+          <Grid cols={two}>
+            <Field label="Consignee name" required>{input(customer.fullName, setCust('fullName'), { required: true, minLength: 2, maxLength: 120 })}</Field>
+            <Field label="Company name">{input(customer.companyName, setCust('companyName'), { maxLength: 120 })}</Field>
+            <Field label="Phone" required>{input(customer.phone, setCust('phone'), { required: true, type: 'tel', pattern: '[6-9][0-9]{9}', title: '10-digit Indian mobile number', placeholder: '10-digit mobile' })}</Field>
+            <Field label="Alternate phone">{input(customer.alternatePhone, setCust('alternatePhone'), { type: 'tel', pattern: '[6-9][0-9]{9}', title: '10-digit Indian mobile number' })}</Field>
+            <Field label="Email">{input(customer.email, setCust('email'), { type: 'email' })}</Field>
+            <Field label="Address line 1" required>{input(customer.address, setCust('address'), { required: true, minLength: 3, maxLength: 200, placeholder: 'House / flat, street' })}</Field>
+            <Field label="Address line 2">{input(customer.address2, setCust('address2'), { maxLength: 200, placeholder: 'Area, locality' })}</Field>
+            <Field label="Landmark">{input(customer.landmark, setCust('landmark'), { maxLength: 200 })}</Field>
+            <Field label="Pincode" required note={located && located === customer.pincode ? 'City and state filled from pincode' : undefined} noteTone="ok">{input(customer.pincode, setCust('pincode'), { required: true, inputMode: 'numeric', pattern: '[0-9]{6}', placeholder: '6-digit pincode' })}</Field>
+            <Field label="City" required>{input(customer.city, setCust('city'), { required: true, minLength: 2 })}</Field>
+            <Field label="State" required>{input(customer.state, setCust('state'), { required: true, minLength: 2 })}</Field>
+            <Field label="Country"><input value="India" readOnly style={{ ...FIELD, background: T.SURFACE_SOFT }} /></Field>
+          </Grid>
+        </Section>
+
+        <Section title={isReverse ? 'Returned products' : 'Products'} hint="Enter a saved SKU to fill name, HSN, price and weight from your catalog." aside={<button type="button" onClick={addItem} style={{ ...FIELD, width: 'auto', height: 34, padding: '0 12px', cursor: 'pointer', fontWeight: 750 }}>+ Add product</button>}>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {items.map((item, index) => (
+              <div key={item.key} style={{ padding: 12, borderRadius: 10, border: `1px solid ${T.BORDER}`, background: T.SURFACE }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 9 }}>
+                  <b style={{ fontSize: 12.5, color: T.TEXT_LABEL }}>Product {index + 1}{item.productId && <span style={{ color: T.GREEN, fontWeight: 600 }}> · from catalog</span>}</b>
+                  {items.length > 1 && <button type="button" onClick={() => removeItem(item.key)} style={{ border: 0, background: 'transparent', color: T.RED, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Remove</button>}
+                </div>
+                <Grid cols={mobile ? '1fr' : '1fr 1.6fr 0.9fr'}>
+                  <Field label="SKU">{input(item.sku, setItem(item.key, 'sku'), { maxLength: 80, placeholder: 'Saved SKU' })}</Field>
+                  <Field label="Product name" required>{input(item.name, setItem(item.key, 'name'), { required: true, minLength: 2, maxLength: 200 })}</Field>
+                  <Field label="HSN code">{input(item.hsn, setItem(item.key, 'hsn'), { inputMode: 'numeric', pattern: '[0-9]{4,8}', title: '4–8 digit HSN code' })}</Field>
+                </Grid>
+                <div style={{ marginTop: 11 }}>
+                  <Grid cols={three}>
+                    <Field label="Quantity" required>{input(item.quantity, setItem(item.key, 'quantity'), { required: true, type: 'number', min: 1, max: 10000, step: 1 })}</Field>
+                    <Field label="Unit price ₹" required>{input(item.price, setItem(item.key, 'price'), { required: true, type: 'number', min: 0, step: '0.01', inputMode: 'decimal' })}</Field>
+                    <Field label="Unit weight (g)">{input(item.weight, setItem(item.key, 'weight'), { type: 'number', min: 0, step: 1 })}</Field>
+                  </Grid>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Package details" hint="Couriers bill the higher of dead weight and volumetric weight (L × B × H ÷ 5000).">
+          <Grid cols={mobile ? '1fr 1fr' : 'repeat(4, minmax(0,1fr))'}>
+            <Field label="Dead weight (kg)" required note={pkg.weightKg === '' && itemWeightG > 0 ? `From products: ${(itemWeightG / 1000).toFixed(3)} kg` : undefined}>
+              {input(pkg.weightKg, setPack('weightKg'), { type: 'number', min: 0.01, step: '0.01', placeholder: itemWeightG > 0 ? (itemWeightG / 1000).toFixed(3) : '0.50' })}
+            </Field>
+            <Field label="Length (cm)">{input(pkg.length, setPack('length'), { type: 'number', min: 1, step: '0.1' })}</Field>
+            <Field label="Breadth (cm)">{input(pkg.width, setPack('width'), { type: 'number', min: 1, step: '0.1' })}</Field>
+            <Field label="Height (cm)">{input(pkg.height, setPack('height'), { type: 'number', min: 1, step: '0.1' })}</Field>
+          </Grid>
+          <div style={{ marginTop: 12, display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 12.5, color: T.TEXT_SECONDARY }}>
+            <span>Dead: <b style={{ color: T.TEXT }}>{(deadWeightG / 1000).toFixed(3)} kg</b></span>
+            <span>Volumetric: <b style={{ color: T.TEXT }}>{hasDims ? `${(volumetricG / 1000).toFixed(3)} kg` : '—'}</b></span>
+            <span>Chargeable: <b style={{ color: T.ACCENT }}>{(chargeableG / 1000).toFixed(3)} kg</b></span>
+          </div>
+        </Section>
+      </div>
+
+      <aside style={{ display: 'grid', gap: 14, position: mobile ? 'static' : 'sticky', top: 76 }}>
+        <Section title={isReverse ? 'Return to warehouse' : 'Pickup warehouse'}>
+          {setup === null ? <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>Loading warehouses…</span> : !warehouses.length ? (
+            <button type="button" onClick={() => nav('warehouse')} style={{ ...FIELD, cursor: 'pointer', fontWeight: 700 }}>Add a warehouse first</button>
+          ) : (
+            <>
+              <select value={warehouse?.id || ''} onChange={(e) => setWarehouseId(e.target.value)} style={FIELD}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
+              {warehouse && <span style={{ display: 'block', marginTop: 7, color: T.TEXT_SECONDARY, fontSize: 12 }}>{warehouse.address_line_1}, {warehouse.city} · {warehouse.pincode}</span>}
+            </>
+          )}
+        </Section>
+
+        <Section title="Courier rates" hint={canQuote ? `For ${(chargeableG / 1000).toFixed(3)} kg chargeable` : 'Enter pincode and weight to compare.'}>
+          {canQuote && !quotes.length ? <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>{quotesLoaded ? 'No courier enabled for your account serves this pincode and weight.' : 'Fetching rates…'}</span> : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {quotes.slice(0, 4).map((q, i) => (
+                <div key={`${q.provider.code}:${q.service.code}`} style={{ padding: '9px 11px', border: `1px solid ${i === 0 ? T.ACCENT : T.BORDER}`, borderRadius: 9, background: i === 0 ? 'rgba(0,179,164,.08)' : T.SURFACE, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span><b style={{ display: 'block', fontSize: 12.5, color: T.TEXT }}>{q.provider.name}{i === 0 && <span style={{ color: T.ACCENT }}> · Cheapest</span>}</b><span style={{ fontSize: 11.5, color: T.TEXT_MUTED }}>{q.service.name}</span></span>
+                  <b style={{ fontSize: 14, color: T.TEXT }}>₹{q.price.total.toFixed(2)}</b>
+                </div>
+              ))}
+            </div>
+          )}
+          <span style={{ display: 'block', marginTop: 9, fontSize: 11.5, color: T.TEXT_MUTED }}>You book the courier after creating the order, from All orders.</span>
+        </Section>
+
+        <Section title="Total summary">
+          <SummaryRow label="Products" value={inr(totals.subtotal)} />
+          {totals.tax > 0 && <SummaryRow label={`Tax (${(totals.taxRateBps / 100).toFixed(2)}%)`} value={inr(totals.tax)} />}
+          {totals.shipping > 0 && <SummaryRow label="Shipping charges" value={inr(totals.shipping)} />}
+          {totals.giftWrap > 0 && <SummaryRow label="Gift wrap" value={inr(totals.giftWrap)} />}
+          {totals.transaction > 0 && <SummaryRow label="Transaction charges" value={inr(totals.transaction)} />}
+          {totals.other > 0 && <SummaryRow label="Other charges" value={inr(totals.other)} />}
+          {totals.discount > 0 && <SummaryRow label="Discount" value={inr(totals.discount)} tone="minus" />}
+          <div style={{ borderTop: `1px solid ${T.DIVIDER}`, marginTop: 6, paddingTop: 6 }}><SummaryRow label="Order total" value={inr(Math.max(totals.total, 0))} strong /></div>
+          {quoteMode === 'cod' && <SummaryRow label="Collect on delivery" value={inr(Math.max(totals.total, 0))} />}
+          {totals.discount > totals.gross && <small style={{ display: 'block', color: T.RED, fontSize: 11.5 }}>Discount is larger than the order value.</small>}
+          <button disabled={busy || !warehouse} type="submit" style={{ marginTop: 12, width: '100%', height: 42, border: 0, borderRadius: 9, background: T.NAVY, color: '#fff', fontWeight: 750, fontSize: 13.5, cursor: busy ? 'wait' : 'pointer', opacity: busy || !warehouse ? 0.6 : 1 }}>
+            {busy ? 'Creating…' : isReverse ? 'Create return pickup' : 'Create order'}
+          </button>
+        </Section>
+      </aside>
+    </form>
+  );
 }

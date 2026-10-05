@@ -15,7 +15,7 @@ export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
   const meta = PAGES[activeId] || ['', '', ''];
   const [crumb, pageTitle, pageSub] = meta;
   const isAdmin = activeId.indexOf('a-') === 0;
-  const actions = ACTIONS[activeId] || [];
+  const actions = (ACTIONS[activeId] || []).filter(([, , dest]) => dest); // buttons without a destination had no handler
 
   return (
     <div style={{ background: T.PANEL, borderBottom: `1px solid ${T.BORDER}`, padding: phone ? '12px 12px 0' : mobile ? '16px 16px 0' : '18px 22px 0', position: 'sticky', top: 52, zIndex: 30 }}>

@@ -17,3 +17,11 @@ export function calculateRate(rate: {
   const codFeePaise = isCod ? rate.cod_fee_paise : 0;
   return { transportPaise, fuelSurchargePaise, codFeePaise, totalPaise: transportPaise + fuelSurchargePaise + codFeePaise };
 }
+
+// Couriers bill the greater of dead and volumetric weight. Volumetric kg is
+// L×W×H (cm³) / 5000, which in grams works out to L×W×H (mm³) / 5000.
+export const VOLUMETRIC_DIVISOR = 5000;
+
+export function volumetricWeightG(lengthMm: number, widthMm: number, heightMm: number) {
+  return Math.ceil((lengthMm * widthMm * heightMm) / VOLUMETRIC_DIVISOR);
+}

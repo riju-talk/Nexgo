@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
+import { volumetricWeightG } from '../lib/money.js';
 import { requireSeller } from './seller.js';
 
 const uuid = z.string().uuid();
@@ -10,10 +11,36 @@ const phone = z.string().trim().regex(/^[0-9+() -]{7,24}$/);
 const address = z.object({ fullName: z.string().trim().min(2).max(120), email: z.string().email().max(254).optional(), phone, addressLine1: z.string().trim().min(3).max(200), addressLine2: z.string().trim().max(200).optional(), city: z.string().trim().min(2).max(100), state: z.string().trim().min(2).max(100), pincode });
 const warehouseInput = address.extend({ name: z.string().trim().min(2).max(120), contactName: z.string().trim().min(2).max(100), isReturnAddress: z.boolean().default(false), cutoffTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional() });
 const productInput = z.object({ sku: z.string().trim().min(1).max(80), name: z.string().trim().min(2).max(200), description: z.string().trim().max(2000).optional(), hsnCode: z.string().trim().max(20).optional(), unitPricePaise: z.number().int().min(0).default(0), weightG: z.number().int().positive().optional(), lengthMm: z.number().int().positive().optional(), widthMm: z.number().int().positive().optional(), heightMm: z.number().int().positive().optional() });
-const orderInput = z.object({ warehouseId: uuid, orderNumber: z.string().trim().min(1).max(100), externalReference: z.string().trim().min(1).max(150).optional(), orderFlow: z.enum(['forward','reverse','dropship','ship_now']).default('forward'), paymentMode: z.enum(['prepaid', 'cod']).default('prepaid'), codAmountPaise: z.number().int().min(0).default(0), notes: z.string().trim().max(2000).optional(), customer: address, items: z.array(z.object({ productId: uuid.optional(), sku: z.string().trim().min(1).max(80), name: z.string().trim().min(2).max(200), quantity: z.number().int().min(1).max(10_000), unitPricePaise: z.number().int().min(0), weightG: z.number().int().min(0).default(0) })).min(1).max(500) }).superRefine((value, ctx) => {
+const consignee = address.extend({ companyName: z.string().trim().max(120).optional(), alternatePhone: phone.optional(), landmark: z.string().trim().max(200).optional() });
+const paise = z.number().int().min(0).max(1_000_000_000);
+const orderInput = z.object({
+  warehouseId: uuid, orderNumber: z.string().trim().min(1).max(100), externalReference: z.string().trim().min(1).max(150).optional(),
+  orderFlow: z.enum(['forward','reverse','dropship','ship_now']).default('forward'), paymentMode: z.enum(['prepaid', 'cod']).default('prepaid'),
+  codAmountPaise: paise.default(0), notes: z.string().trim().max(2000).optional(), customer: consignee,
+  items: z.array(z.object({ productId: uuid.optional(), sku: z.string().trim().min(1).max(80), name: z.string().trim().min(2).max(200), hsnCode: z.string().trim().regex(/^\d{4,8}$/).optional(), quantity: z.number().int().min(1).max(10_000), unitPricePaise: paise, weightG: z.number().int().min(0).default(0) })).min(1).max(500),
+  // Physical parcel. weightG overrides the item-weight sum (it includes packaging); dimensions drive volumetric weight.
+  package: z.object({ weightG: z.number().int().min(1).max(500_000).optional(), lengthMm: z.number().int().min(10).max(5_000).optional(), widthMm: z.number().int().min(10).max(5_000).optional(), heightMm: z.number().int().min(10).max(5_000).optional() }).default({}),
+  charges: z.object({ shippingPaise: paise.default(0), giftWrapPaise: paise.default(0), transactionPaise: paise.default(0), otherPaise: paise.default(0), discountPaise: paise.default(0), taxRateBps: z.number().int().min(0).max(10_000).default(0) }).default({}),
+}).superRefine((value, ctx) => {
   if (value.paymentMode === 'cod' && value.codAmountPaise <= 0) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'COD orders require a positive COD amount', path: ['codAmountPaise'] });
   if (value.paymentMode === 'prepaid' && value.codAmountPaise !== 0) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Prepaid orders cannot have a COD amount', path: ['codAmountPaise'] });
+  const dims = [value.package.lengthMm, value.package.widthMm, value.package.heightMm].filter((d) => d !== undefined).length;
+  if (dims !== 0 && dims !== 3) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Provide length, width and height together', path: ['package'] });
 });
+
+// Server-side money for an order: clients send line inputs, never totals.
+function orderTotals(input: z.infer<typeof orderInput>) {
+  const subtotal = input.items.reduce((sum, item) => sum + item.quantity * item.unitPricePaise, 0);
+  const c = input.charges; const tax = Math.round((subtotal * c.taxRateBps) / 10_000);
+  const gross = subtotal + tax + c.shippingPaise + c.giftWrapPaise + c.transactionPaise + c.otherPaise;
+  if (c.discountPaise > gross) throw Object.assign(new Error('Discount cannot exceed the order value'), { statusCode: 422 });
+  const total = gross - c.discountPaise;
+  if (input.paymentMode === 'cod' && input.codAmountPaise > total) throw Object.assign(new Error('COD amount cannot exceed the order total'), { statusCode: 422 });
+  const itemWeight = input.items.reduce((sum, item) => sum + item.quantity * item.weightG, 0);
+  const { lengthMm, widthMm, heightMm } = input.package;
+  const volumetric = lengthMm && widthMm && heightMm ? volumetricWeightG(lengthMm, widthMm, heightMm) : 0;
+  return { subtotal, tax, total, deadWeight: input.package.weightG ?? itemWeight, volumetric };
+}
 const transitions: Record<string, readonly string[]> = { draft: ['new', 'cancelled'], new: ['ready_to_ship', 'cancelled'], ready_to_ship: ['booked', 'cancelled'], booked: ['returned'], cancelled: [], returned: [] };
 
 function getPrincipal(request: FastifyRequest) { if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 }); return request.principal; }
@@ -50,10 +77,11 @@ export async function operationsRoutes(app: FastifyInstance) {
     const row = await withSellerTransaction(p.sellerId, async (client) => {
       const warehouse = await client.query('SELECT id FROM warehouses WHERE id=$1 AND seller_id=$2 AND is_active', [input.warehouseId, p.sellerId]); if (!warehouse.rows[0]) throw Object.assign(new Error('Active warehouse not found'), { statusCode: 422 });
       let customer = await client.query<{ id: string }>('SELECT id FROM customers WHERE seller_id=$1 AND phone=$2 AND pincode=$3 LIMIT 1', [p.sellerId, input.customer.phone, input.customer.pincode]);
-      if (!customer.rows[0]) customer = await client.query<{ id: string }>(`INSERT INTO customers (seller_id,full_name,email,phone,address_line_1,address_line_2,city,state,pincode) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [p.sellerId, input.customer.fullName, input.customer.email ?? null, input.customer.phone, input.customer.addressLine1, input.customer.addressLine2 ?? null, input.customer.city, input.customer.state, input.customer.pincode]);
-      const subtotal = input.items.reduce((sum, item) => sum + item.quantity * item.unitPricePaise, 0); const weight = input.items.reduce((sum, item) => sum + item.quantity * item.weightG, 0);
-      const result = await client.query(`INSERT INTO orders (seller_id,warehouse_id,customer_id,order_number,external_reference,order_flow,payment_mode,cod_amount_paise,subtotal_paise,total_weight_g,notes,state) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'new') RETURNING *`, [p.sellerId, input.warehouseId, customer.rows[0].id, input.orderNumber, input.externalReference ?? input.orderNumber, input.orderFlow, input.paymentMode, input.codAmountPaise, subtotal, weight, input.notes ?? null]);
-      for (const item of input.items) await client.query('INSERT INTO order_items (order_id,product_id,sku,name,quantity,unit_price_paise,weight_g) VALUES ($1,$2,$3,$4,$5,$6,$7)', [result.rows[0].id, item.productId ?? null, item.sku, item.name, item.quantity, item.unitPricePaise, item.weightG]);
+      const c = input.customer;
+      if (!customer.rows[0]) customer = await client.query<{ id: string }>(`INSERT INTO customers (seller_id,full_name,email,phone,address_line_1,address_line_2,city,state,pincode,company_name,alternate_phone,landmark) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`, [p.sellerId, c.fullName, c.email ?? null, c.phone, c.addressLine1, c.addressLine2 ?? null, c.city, c.state, c.pincode, c.companyName ?? null, c.alternatePhone ?? null, c.landmark ?? null]);
+      const t = orderTotals(input); const ch = input.charges; const pk = input.package;
+      const result = await client.query(`INSERT INTO orders (seller_id,warehouse_id,customer_id,order_number,external_reference,order_flow,payment_mode,cod_amount_paise,subtotal_paise,total_weight_g,notes,state,package_length_mm,package_width_mm,package_height_mm,volumetric_weight_g,shipping_charges_paise,gift_wrap_paise,transaction_charges_paise,other_charges_paise,discount_paise,tax_rate_bps,tax_paise,total_paise) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'new',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`, [p.sellerId, input.warehouseId, customer.rows[0].id, input.orderNumber, input.externalReference ?? input.orderNumber, input.orderFlow, input.paymentMode, input.codAmountPaise, t.subtotal, t.deadWeight, input.notes ?? null, pk.lengthMm ?? null, pk.widthMm ?? null, pk.heightMm ?? null, t.volumetric, ch.shippingPaise, ch.giftWrapPaise, ch.transactionPaise, ch.otherPaise, ch.discountPaise, ch.taxRateBps, t.tax, t.total]);
+      for (const item of input.items) await client.query('INSERT INTO order_items (order_id,product_id,sku,name,quantity,unit_price_paise,weight_g,hsn_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [result.rows[0].id, item.productId ?? null, item.sku, item.name, item.quantity, item.unitPricePaise, item.weightG, item.hsnCode ?? null]);
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.created', targetType: 'order', targetId: result.rows[0].id, requestId: request.id, metadata: { orderNumber: input.orderNumber, itemCount: input.items.length } }); return result.rows[0];
     }); return reply.code(201).send(row);
   });

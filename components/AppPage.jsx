@@ -17,10 +17,14 @@ import LiveCreateOrder from './LiveCreateOrder';
 import LiveSellerWorkspace from './LiveSellerWorkspace';
 import LiveAdminOperations from './LiveAdminOperations';
 import LiveWorkspaceTools from './LiveWorkspaceTools';
-import LiveBulkOrderImport from './LiveBulkOrderImport';
 import LiveMarketing from './LiveMarketing';
 import LiveSellerSecurity from './LiveSellerSecurity';
 import LiveShipmentDetail from './LiveShipmentDetail';
+import CreateOrder from './CreateOrder';
+import LiveBilling from './LiveBilling';
+import LiveBillingDocs from './LiveBillingDocs';
+import LiveTrack from './LiveTrack';
+import ComingSoon from './ComingSoon';
 
 export default function AppPage({ id, isDashboard = false }) {
   const { vw } = useAppState();
@@ -33,16 +37,20 @@ export default function AppPage({ id, isDashboard = false }) {
   const isAccountConfig = id === 'account-config';
   const isAdminOverview = id === 'a-overview';
   const isAdminPage = id.startsWith('a-');
-  const isLiveSellerPage = ['orders', 'shipments', 'ndr', 'wallet'].includes(id);
+  const isLiveSellerPage = ['orders', 'ndr', 'wallet'].includes(id);
   const isLiveAdminPage = ['a-sellers', 'a-orders', 'a-shipments', 'a-ndr', 'a-rto', 'a-pickups', 'a-couriers'].includes(id);
-  const isLiveCreateOrder = ['b2c', 'reverse', 'dropship', 'shipnow'].includes(id);
-  const isLiveBulkImport = id === 'bulk-orders';
+  const isCreateOrder = id === 'b2c' || id === 'bulk-orders';
+  const isLiveCreateOrder = ['dropship', 'shipnow'].includes(id);
+  const isLiveBilling = id === 'billing';
+  const isBillingDoc = id === 'credit-note' || id === 'tds';
+  const isTrack = id === 'shipments';
+  const isComingSoon = id === 'b2b' || id === 'reverse';
   const isLiveMarketing = ['whatsapp', 'email'].includes(id);
   const isLiveSellerSecurity = id === 'password';
   const isLiveShipmentDetail = id === 'ship-detail';
-  const isLiveSellerWorkspace = ['recharges', 'warehouse', 'profile', 'kyc', 'invoice', 'cod', 'charges', 'shopify', 'woo', 'magento', 'opencart', 'amazon', 'ratecalc', 'ratecard', 'pincode'].includes(id);
+  const isLiveSellerWorkspace = ['recharges', 'warehouse', 'team', 'kyc', 'invoice', 'cod', 'charges', 'shopify', 'woo', 'magento', 'opencart', 'amazon', 'ratecalc', 'ratecard', 'pincode'].includes(id);
   const isLiveAdminOperations = ['a-kyc', 'a-wallets', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
-  const isLiveWorkspaceTool = ['courier-rules', 'label', 'printer', 'inv-settings', 'notifications', 'account-config', 'mis', 'weight', 'a-tickets'].includes(id);
+  const isLiveWorkspaceTool = ['courier-rules', 'label', 'printer', 'inv-settings', 'notifications', 'mis', 'weight', 'a-tickets', 'wa-api', 'sms-api', 'abandoned', 'email-reports', 'profile'].includes(id);
   const isAdminUtility = isAdminPage && !isAdminOverview && !hasTable;
 
   return (
@@ -53,18 +61,22 @@ export default function AppPage({ id, isDashboard = false }) {
       {isDashboard && !isAdminOverview && <DashboardContent mobile={mobile} narrow={narrow} phone={phone} />}
       {isLiveSellerPage && <LiveSellerOperations activeId={id} mobile={mobile} />}
       {isLiveAdminPage && <LiveAdminQueues activeId={id} mobile={mobile} />}
-      {isLiveCreateOrder && <LiveCreateOrder mobile={mobile} flow={id === 'b2c' ? 'forward' : id === 'shipnow' ? 'ship_now' : id} />}
-      {isLiveBulkImport && <LiveBulkOrderImport mobile={mobile} />}
+      {isCreateOrder && <CreateOrder tab={id === 'bulk-orders' ? 'bulk' : 'single'} mobile={mobile} />}
+      {isLiveCreateOrder && <LiveCreateOrder mobile={mobile} flow={id === 'shipnow' ? 'ship_now' : id} />}
+      {isLiveBilling && <LiveBilling mobile={mobile} />}
+      {isBillingDoc && <LiveBillingDocs kind={id} mobile={mobile} />}
+      {isTrack && <LiveTrack mobile={mobile} />}
+      {isComingSoon && <ComingSoon mobile={mobile} name={id === 'b2b' ? 'B2B orders' : 'Reverse orders'} blurb={id === 'b2b' ? 'Business shipments with GST invoicing and multi-box handling arrive in the next phase.' : 'Customer return pickups arrive in the next phase.'} />}
       {isLiveMarketing && <LiveMarketing channel={id} mobile={mobile} />}
       {isLiveSellerSecurity && <LiveSellerSecurity mobile={mobile} />}
       {isLiveShipmentDetail && <LiveShipmentDetail mobile={mobile} />}
       {isLiveSellerWorkspace && <LiveSellerWorkspace activeId={id} mobile={mobile} />}
       {isLiveAdminOperations && <LiveAdminOperations activeId={id} mobile={mobile} />}
       {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
-      {hasTable && !isAdminOverview && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <TablePage activeId={id} mobile={mobile} phone={phone} />}
-      {hasForm && !isLiveCreateOrder && !isLiveBulkImport && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <FormPage activeId={id} mobile={mobile} phone={phone} />}
+      {hasTable && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <TablePage activeId={id} mobile={mobile} phone={phone} />}
+      {hasForm && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <FormPage activeId={id} mobile={mobile} phone={phone} />}
       {isAdminUtility && !isLiveAdminOperations && !isLiveWorkspaceTool && <AdminUtilityPage activeId={id} mobile={mobile} />}
-      {isAccountConfig && !isLiveWorkspaceTool && <AccountConfiguration mobile={mobile} phone={phone} />}
+      {isAccountConfig && <AccountConfiguration mobile={mobile} phone={phone} />}
     </>
   );
 }

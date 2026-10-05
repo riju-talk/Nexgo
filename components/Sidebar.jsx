@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
+import { apiFetch } from '@/lib/api';
+import { useSellerSession, initialsOf } from '@/lib/useSellerSession';
 
 const SB_WIDTH = 272;
 const OPEN_SPRING = { type: 'spring', bounce: 0, duration: 0.32 };
@@ -17,25 +19,32 @@ const ICONS = {
   money: 'M5 7h14v10H5zM8 12h8M12 9.5v5',
   returns: 'M8 7 4 11l4 4M4 11h10a5 5 0 0 1 5 5v1',
   addons: 'M12 4v16M4 12h16',
+  tower: 'M12 3v18M7.5 21 12 3l4.5 18M8.6 14h6.8M9.8 9h4.4',
   settings: 'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7ZM4.8 15l1.5.9-.1 1.8 2.2 1.3 1.4-1.1 1.6.7.5 1.7h2.5l.5-1.7 1.6-.7 1.4 1.1 2.2-1.3-.1-1.8 1.5-.9v-2.5l-1.5-.9.1-1.8-2.2-1.3-1.4 1.1-1.6-.7-.5-1.7h-2.5l-.5 1.7-1.6.7-1.4-1.1-2.2 1.3.1 1.8-1.5.9V15Z',
   reports: 'M5 20V10M12 20V4M19 20v-7',
 };
 
-// Shipway-inspired operational hierarchy: plain labels, one job per section,
-// and deeper screens revealed only when that job is in focus.
+// Child entries: [label, screenId, extraOwnedIds?, flag?]. flag 'soon' renders a blurred,
+// non-clickable phase-2 item; a ['#', label, screenId?] entry is a section heading.
 const MENU = [
   ['dashboard', 'Dashboard', 'dashboard', []],
-  ['intake', 'Orders Management', 'orders', [['All orders', 'orders'], ['Create forward order', 'b2c'], ['Bulk order upload', 'bulk-orders'], ['Reverse order', 'reverse']]],
-  ['flight', 'Track', 'shipments', [['Shipments', 'shipments']]],
-  ['reports', 'Reports', 'mis', [['MIS report', 'mis'], ['Weight discrepancies', 'weight'], ['NDR report', 'ndr']]],
-  ['book', 'Tools', 'ratecalc', [['Rate calculator', 'ratecalc'], ['Rate card', 'ratecard'], ['Pincode serviceability', 'pincode']]],
-  ['addons', 'Marketplace', 'shopify', [['Shopify', 'shopify'], ['WooCommerce', 'woo'], ['Magento', 'magento'], ['Amazon', 'amazon']]],
-  ['settings', 'Control Tower', 'account-config', [['Account configuration', 'account-config'], ['Printer settings', 'printer'], ['Invoice settings', 'inv-settings'], ['SMS notifications', 'sms-api'], ['WhatsApp notifications', 'wa-api'], ['Order confirmation', 'notifications'], ['Webhook', 'webhook'], ['Scheduled email reports', 'email']]],
-  ['returns', 'Team', 'profile', [['Team and roles', 'profile']]],
-  ['exceptions', 'Settings', 'profile', [['Profile settings', 'profile'], ['Warehouse settings', 'warehouse'], ['Courier rules', 'courier-rules'], ['Label settings', 'label'], ['KYC', 'kyc'], ['Change password', 'password']]],
+  ['intake', 'Orders Management', 'orders', [['All orders', 'orders'], ['Create B2C order', 'b2c', ['bulk-orders']], ['B2B orders', 'b2b', [], 'soon'], ['Reverse order', 'reverse', [], 'soon']]],
+  ['flight', 'Track', 'shipments', []],
+  ['reports', 'Reports', 'mis', [['MIS reports', 'mis'], ['NDR report', 'ndr'], ['Weight discrepancy', 'weight']]],
+  ['book', 'Tools', 'ratecard', [['Rate card', 'ratecard'], ['Rate calculator', 'ratecalc'], ['Pincode serviceability', 'pincode']]],
+  ['addons', 'Marketplace', 'shopify', [['Shopify', 'shopify'], ['Magento', 'magento'], ['WooCommerce', 'woo'], ['Amazon.in', 'amazon']]],
+  ['money', 'Billing', 'cod', [['COD remittance', 'cod'], ['Wallet transactions', 'wallet', ['recharges']], ['Shipping charges', 'charges'], ['Invoice', 'invoice'], ['Credit note', 'credit-note'], ['TDS', 'tds']]],
+  ['tower', 'Control Tower', 'account-config', [
+    ['#', 'Account configuration', 'account-config'], ['Printer settings', 'printer'], ['Label settings', 'label'], ['Invoice settings', 'inv-settings'], ['Schedule email reports', 'email-reports'],
+    ['#', 'ABC configuration'], ['WhatsApp notifications', 'wa-api'], ['SMS notifications', 'sms-api'], ['Order confirmation', 'notifications'], ['Abandoned checkout notifications', 'abandoned'],
+    ['#', 'Access'], ['Team & roles', 'team'],
+  ]],
+  ['settings', 'Settings', 'kyc', [['KYC', 'kyc'], ['Profile settings', 'profile', ['password']], ['Warehouse settings', 'warehouse'], ['Courier rules', 'courier-rules']]],
 ];
 
-const isMenuActive = ([, , destination, children], activeId) => destination === activeId || children.some(([, id]) => id === activeId);
+const isHeading = (child) => child[0] === '#';
+const childOwns = ([, id, also = []], activeId) => id === activeId || also.includes(activeId);
+const isMenuActive = ([, , destination, children], activeId) => destination === activeId || children.some((child) => !isHeading(child) && childOwns(child, activeId));
 
 function NavIcon({ name, active }) {
   return (
@@ -62,6 +71,8 @@ function CollapseControl({ collapsed, onClick }) {
 export default function Sidebar({ activeId, mobile }) {
   const { navOpen, nav, openGroups, toggleGroup, setNavOpen, sidebarCollapsed, toggleSidebar, theme, toggleTheme } = useAppState();
   const reduced = useReducedMotion();
+  const { me } = useSellerSession();
+  const signOut = async () => { try { await apiFetch('/v1/auth/logout', { method: 'POST' }); } catch { /* session already gone: still leave */ } nav('login'); };
   const [dragVelocity, setDragVelocity] = useState(0);
   const collapsed = !mobile && sidebarCollapsed;
 
@@ -121,7 +132,7 @@ export default function Sidebar({ activeId, mobile }) {
           })}
         </div>
         <div style={{ padding: '12px 14px', display: 'grid', justifyItems: 'center', gap: 11, borderTop: '1px solid var(--nx-side-edge)' }}>
-          <div onClick={() => nav('profile')} title="Anita Rao" style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(145deg, #2B8EAA, #7B5FB8)', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 10, fontWeight: 800, color: '#fff' }}>AR</div>
+          <div onClick={() => nav('profile')} title={me?.full_name || 'Profile'} style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(145deg, #2B8EAA, #7B5FB8)', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 10, fontWeight: 800, color: '#fff' }}>{initialsOf(me?.full_name)}</div>
         </div>
       </motion.div>
     );
@@ -152,7 +163,7 @@ export default function Sidebar({ activeId, mobile }) {
               <motion.div
                 whileTap={{ scale: 0.985 }}
                 transition={{ duration: 0.1 }}
-                onClick={() => hasChildren ? toggleGroup(label, !open) : nav(destination)}
+                onClick={() => hasChildren ? toggleGroup(label, open) : nav(destination)}
                 className="nxc-nav-row"
                 style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 9, cursor: 'pointer', background: on ? 'var(--nx-side-active)' : undefined, border: `1px solid ${on ? 'rgba(0,179,164,.2)' : 'transparent'}` }}
               >
@@ -163,10 +174,18 @@ export default function Sidebar({ activeId, mobile }) {
               </motion.div>
               {hasChildren && open && (
                 <div style={{ margin: '2px 0 5px 24px', padding: '2px 0 2px 13px', borderLeft: '1px solid var(--nx-side-edge)', animation: 'nxc-expand .12s ease-out' }}>
-                  {children.map(([childLabel, childId]) => (
-                    <div key={`${childId}-${childLabel}`} onClick={() => nav(childId)} className="nxc-nav-row" style={{ padding: '7px 9px', borderRadius: 7, margin: '1px 0', cursor: 'pointer', fontSize: 13, fontWeight: childId === activeId ? 650 : 500, color: childId === activeId ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: childId === activeId ? 'var(--nx-side-active)' : undefined }}>{childLabel}</div>
-                  ))}
-                  {id === 'exceptions' && (
+                  {children.map((child) => {
+                    if (isHeading(child)) {
+                      const [, headingLabel, headingId] = child;
+                      const headingOn = headingId === activeId;
+                      return <div key={`h-${headingLabel}`} onClick={headingId ? () => nav(headingId) : undefined} className={headingId ? 'nxc-nav-row' : undefined} style={{ margin: '8px 0 2px', padding: '5px 9px', borderRadius: 7, fontSize: 11, fontWeight: 750, letterSpacing: '.08em', textTransform: 'uppercase', cursor: headingId ? 'pointer' : 'default', color: headingOn ? 'var(--nx-side-active-text)' : 'var(--nx-side-label)', background: headingOn ? 'var(--nx-side-active)' : undefined }}>{headingLabel}</div>;
+                    }
+                    const [childLabel, childId, , flag] = child;
+                    const childOn = childOwns(child, activeId);
+                    if (flag === 'soon') return <div key={childId} aria-disabled="true" title="Coming in phase 2" style={{ padding: '7px 9px', margin: '1px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 13, fontWeight: 500, color: 'var(--nx-side-sub)', cursor: 'not-allowed', userSelect: 'none' }}><span style={{ filter: 'blur(1.6px)', opacity: .6 }}>{childLabel}</span><span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', padding: '2px 6px', borderRadius: 99, color: 'var(--nx-side-label)', background: 'var(--nx-side-soft)', border: '1px solid var(--nx-side-edge)' }}>Soon</span></div>;
+                    return <div key={`${childId}-${childLabel}`} onClick={() => nav(childId)} className="nxc-nav-row" style={{ padding: '7px 9px', borderRadius: 7, margin: '1px 0', cursor: 'pointer', fontSize: 13, fontWeight: childOn ? 650 : 500, color: childOn ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: childOn ? 'var(--nx-side-active)' : undefined }}>{childLabel}</div>;
+                  })}
+                  {id === 'settings' && (
                     <div style={{ marginTop: 7, paddingTop: 8, borderTop: '1px solid var(--nx-side-edge)' }}>
                       <div style={{ padding: '0 9px 5px', fontSize: 11.5, fontWeight: 750, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--nx-side-label)' }}>Appearance</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
@@ -186,9 +205,9 @@ export default function Sidebar({ activeId, mobile }) {
 
       <div style={{ padding: '10px 10px 11px', borderTop: '1px solid var(--nx-side-edge)', background: 'var(--nx-side-bg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 7px 0', borderTop: '1px solid var(--nx-side-edge)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 9, background: 'linear-gradient(145deg, #2B8EAA, #7B5FB8)', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 800, color: '#fff' }}>AR</div>
-          <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--nx-side-text)' }}>Anita Rao</div><div style={{ marginTop: 2, fontSize: 12, color: 'var(--nx-side-label)' }}>Karma Living · Owner</div></div>
-          <div onClick={() => nav('login')} title="Sign out" style={{ padding: '6px 7px', borderRadius: 6, fontSize: 12, color: 'var(--nx-side-text)', cursor: 'pointer', background: 'var(--nx-side-soft)' }}>↪</div>
+          <div style={{ width: 28, height: 28, borderRadius: 9, background: 'linear-gradient(145deg, #2B8EAA, #7B5FB8)', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 800, color: '#fff' }}>{initialsOf(me?.full_name)}</div>
+          <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--nx-side-text)' }}>{me?.full_name || 'Not signed in'}</div><div style={{ marginTop: 2, fontSize: 12, color: 'var(--nx-side-label)' }}>{me ? `${me.legal_name} · ${me.role.replaceAll('_', ' ')}` : 'Sign in to continue'}</div></div>
+          <div onClick={signOut} title="Sign out" style={{ padding: '6px 7px', borderRadius: 6, fontSize: 12, color: 'var(--nx-side-text)', cursor: 'pointer', background: 'var(--nx-side-soft)' }}>↪</div>
         </div>
       </div>
       <style jsx>{`

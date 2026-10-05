@@ -56,7 +56,7 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
       `SELECT o.id, o.order_number, o.order_flow, o.notes, o.state, o.payment_mode, o.subtotal_paise, o.total_weight_g, o.created_at,
               s.legal_name AS seller_name, c.full_name AS customer_name, c.city AS customer_city, c.pincode AS customer_pincode
        FROM orders o JOIN sellers s ON s.id = o.seller_id JOIN customers c ON c.id = o.customer_id
-       WHERE ($1::order_state IS NULL OR o.state = $1) AND ($2::order_flow IS NULL OR o.order_flow = $2) AND ($3::uuid IS NULL OR o.seller_id = $3)
+       WHERE ($1::order_state IS NULL OR o.state = $1) AND ($2::text IS NULL OR o.order_flow = $2) AND ($3::uuid IS NULL OR o.seller_id = $3)
        ORDER BY o.created_at DESC LIMIT $4`,
       [q.state ?? null, q.orderFlow ?? null, q.sellerId ?? null, q.limit],
     );

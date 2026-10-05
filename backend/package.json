@@ -10,6 +10,7 @@
     "start:worker": "node dist/worker.js",
     "migrate": "tsx src/db/migrate.ts",
     "seed:admin": "tsx src/db/seed-admin.ts",
+    "seed:dev": "tsx src/db/seed-dev-accounts.ts",
     "seed:demo-seller": "tsx src/db/seed-demo-seller.ts",
     "seed:demo-network": "tsx src/db/seed-demo-network.ts",
     "seed:demo-admin": "tsx src/db/seed-demo-admin.ts",

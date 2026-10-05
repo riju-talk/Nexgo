@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
-import { calculateRate, paiseToAmount } from '../lib/money.js';
+import { calculateRate, paiseToAmount, volumetricWeightG } from '../lib/money.js';
 import { requireSeller } from './seller.js';
 
 const quoteInput = z.object({
@@ -9,6 +9,10 @@ const quoteInput = z.object({
   zoneCode: z.string().min(2).max(40).default('national'),
   weightG: z.number().int().min(1).max(50_000),
   paymentMode: z.enum(['prepaid', 'cod']).default('prepaid'),
+  // Optional parcel dimensions; when present the quote bills max(dead, volumetric).
+  lengthMm: z.number().int().min(10).max(5_000).optional(),
+  widthMm: z.number().int().min(10).max(5_000).optional(),
+  heightMm: z.number().int().min(10).max(5_000).optional(),
 });
 
 type RateRow = {
@@ -38,6 +42,8 @@ export async function shippingRoutes(app: FastifyInstance) {
     const input = quoteInput.parse(request.body);
     const { sellerId } = request.principal!;
     const isCod = input.paymentMode === 'cod';
+    const volumetricG = input.lengthMm && input.widthMm && input.heightMm ? volumetricWeightG(input.lengthMm, input.widthMm, input.heightMm) : 0;
+    const chargeableG = Math.max(input.weightG, volumetricG);
     return withSellerTransaction(sellerId, async (client) => {
       const result = await client.query<RateRow>(
         `SELECT cp.code AS provider_code, cp.name AS provider_name, cs.code AS service_code,
@@ -61,12 +67,12 @@ export async function shippingRoutes(app: FastifyInstance) {
            AND NOT EXISTS (SELECT 1 FROM courier_pincode_rules blocked WHERE blocked.service_id = cs.id AND blocked.rule_type = 'blocked' AND $5 LIKE blocked.destination_prefix || '%')
            AND (NOT EXISTS (SELECT 1 FROM courier_pincode_rules allowed WHERE allowed.service_id = cs.id AND allowed.rule_type = 'allowed') OR EXISTS (SELECT 1 FROM courier_pincode_rules allowed WHERE allowed.service_id = cs.id AND allowed.rule_type = 'allowed' AND $5 LIKE allowed.destination_prefix || '%'))
          ORDER BY (rcr.zone_code = $2) DESC, rcr.min_weight_g DESC`,
-        [sellerId, input.zoneCode, input.weightG, isCod, input.destinationPincode],
+        [sellerId, input.zoneCode, chargeableG, isCod, input.destinationPincode],
       );
       const unique = new Map<string, RateRow>();
       for (const row of result.rows) unique.set(`${row.provider_code}:${row.service_code}`, row);
       const quotes = [...unique.values()].map((row) => {
-        const pricing = calculateRate(row, input.weightG, isCod);
+        const pricing = calculateRate(row, chargeableG, isCod);
         return {
           provider: { code: row.provider_code, name: row.provider_name },
           service: { code: row.service_code, name: row.service_name },
@@ -75,7 +81,7 @@ export async function shippingRoutes(app: FastifyInstance) {
           price: { transport: paiseToAmount(pricing.transportPaise), fuelSurcharge: paiseToAmount(pricing.fuelSurchargePaise), codFee: paiseToAmount(pricing.codFeePaise), total: paiseToAmount(pricing.totalPaise) },
         };
       }).sort((a, b) => a.price.total - b.price.total);
-      return { destinationPincode: input.destinationPincode, quotes };
+      return { destinationPincode: input.destinationPincode, deadWeightG: input.weightG, volumetricWeightG: volumetricG, chargeableWeightG: chargeableG, quotes };
     });
   });
 }

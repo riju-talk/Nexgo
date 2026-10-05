@@ -1,7 +1,8 @@
 'use client';
 
 import { motion } from 'motion/react';
-import { PAGES, WALLET_BALANCE } from '@/lib/data';
+import { PAGES } from '@/lib/data';
+import { useSellerSession, initialsOf } from '@/lib/useSellerSession';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
@@ -10,6 +11,7 @@ const TAP_TRANSITION = { duration: 0.1 };
 
 export default function TopBar({ activeId, mobile }) {
   const { navOpen, setNavOpen, setPaletteOpen, theme, nav } = useAppState();
+  const { me, balance } = useSellerSession({ wallet: true, refreshKey: activeId });
   const meta = PAGES[activeId] || ['', ''];
   const crumb = meta[0], pageTitle = meta[1];
   const light = theme === 'light';
@@ -38,7 +40,7 @@ export default function TopBar({ activeId, mobile }) {
             <div style={{ fontFamily: T.MONO, fontSize: 11, fontWeight: 600, color: light ? '#52657A' : '#B9C8DE', border: '1px solid var(--nx-chrome-border)', padding: '1px 4px' }}>⌘K</div>
             Search or run a command
           </motion.div>
-          <motion.div onClick={() => nav('wallet')} whileTap={TAP} transition={TAP_TRANSITION} title={`Wallet ${WALLET_BALANCE}`} style={{ width: 32, height: 30, flex: '0 0 32px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: 'var(--nx-side-wallet-text)', background: 'var(--nx-side-wallet)', border: '1px solid rgba(0,179,164,.22)', borderRadius: 7, fontSize: 15, fontWeight: 750 }}>₹</motion.div>
+          <motion.div onClick={() => nav('wallet')} whileTap={TAP} transition={TAP_TRANSITION} title={`Wallet ${balance}`} style={{ width: 32, height: 30, flex: '0 0 32px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: 'var(--nx-side-wallet-text)', background: 'var(--nx-side-wallet)', border: '1px solid rgba(0,179,164,.22)', borderRadius: 7, fontSize: 15, fontWeight: 750 }}>₹</motion.div>
         </>
       ) : (
         <>
@@ -61,15 +63,15 @@ export default function TopBar({ activeId, mobile }) {
               <div style={{ width: 25, height: 25, display: 'grid', placeItems: 'center', borderRadius: 7, color: T.ACCENT, background: 'rgba(0,179,164,.10)', fontSize: 14, fontWeight: 750 }}>₹</div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, whiteSpace: 'nowrap' }}>
                 <span style={{ fontSize: 12.5, fontWeight: 650, color: 'var(--nx-chrome-muted)' }}>Wallet</span>
-                <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 750, letterSpacing: '-.01em', color: 'var(--nx-chrome-text)' }}>{WALLET_BALANCE}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 750, letterSpacing: '-.01em', color: 'var(--nx-chrome-text)' }}>{balance}</span>
               </div>
             </motion.div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 14 }}>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--nx-chrome-text)', lineHeight: 1.2 }}>Anita Rao</div>
-                <div style={{ fontSize: 12, color: 'var(--nx-chrome-muted)' }}>Karma Living · Owner</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--nx-chrome-text)', lineHeight: 1.2 }}>{me?.full_name || 'Not signed in'}</div>
+                <div style={{ fontSize: 12, color: 'var(--nx-chrome-muted)' }}>{me ? `${me.legal_name} · ${me.role.replaceAll('_', ' ')}` : 'Sign in to continue'}</div>
               </div>
-              <div style={{ width: 27, height: 27, background: T.ACCENT, color: '#06212C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>AR</div>
+              <div style={{ width: 27, height: 27, background: T.ACCENT, color: '#06212C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>{initialsOf(me?.full_name)}</div>
             </div>
           </div>
         </>
