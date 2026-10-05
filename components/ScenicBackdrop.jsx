@@ -7,11 +7,7 @@ export default function ScenicBackdrop() {
         position: 'fixed',
         inset: 0,
         zIndex: 0,
-        background: [
-          'radial-gradient(900px 620px at 8% -10%, var(--nx-workspace-glow-1), transparent 64%)',
-          'radial-gradient(760px 520px at 100% 8%, var(--nx-workspace-glow-2), transparent 62%)',
-          'var(--nx-workspace-bg)',
-        ].join(', '),
+        background: 'var(--nx-workspace-bg)',
         pointerEvents: 'none',
       }}
     />

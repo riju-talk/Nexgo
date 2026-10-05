@@ -5,7 +5,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
-const CARD = { background: 'linear-gradient(165deg,var(--nx-glass-1),var(--nx-glass-2))', border: '1px solid var(--nx-glass-border)', borderRadius: 14, boxShadow: '0 12px 30px rgba(15,31,61,.07)' };
+const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
 const inr = (paise) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(paise || 0) / 100);
 const title = (v = '') => String(v).replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 const stamp = (v) => (v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' }) : '—');
@@ -115,11 +115,11 @@ export default function LiveTrack({ mobile }) {
   }, [rows, filter, query]);
 
   const selected = rows?.find((r) => r.id === selectedId) || null;
-  const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
+  const pad = mobile ? '12px 12px 28px' : '16px 22px 32px';
 
   if (error) {
     const unauth = error instanceof ApiError && error.status === 401;
-    return <div style={{ padding: pad }}><div style={{ ...CARD, padding: 26, color: T.TEXT_SECONDARY, fontSize: 13.5 }}>{unauth ? 'Sign in to track your shipments.' : 'Shipments could not be loaded right now.'}{unauth ? <button onClick={() => nav('login')} style={{ marginLeft: 10, border: 0, background: 'transparent', color: T.ACCENT, fontWeight: 750, cursor: 'pointer' }}>Sign in</button> : <button onClick={load} style={{ marginLeft: 10, border: 0, background: 'transparent', color: T.ACCENT, fontWeight: 750, cursor: 'pointer' }}>Retry</button>}</div></div>;
+    return <div style={{ padding: pad }}><div style={{ ...CARD, minHeight: 74, padding: '18px 26px', display: 'flex', alignItems: 'center', gap: 8, color: T.TEXT_SECONDARY, fontSize: 13.5 }}>{unauth ? 'Sign in to track your shipments.' : 'Shipments could not be loaded right now.'}{unauth ? <button onClick={() => nav('login')} style={{ border: 0, background: 'transparent', color: T.ACCENT, fontWeight: 750, cursor: 'pointer' }}>Sign in</button> : <button onClick={load} style={{ border: 0, background: 'transparent', color: T.ACCENT, fontWeight: 750, cursor: 'pointer' }}>Retry</button>}</div></div>;
   }
   if (!rows) return <div style={{ padding: pad }}><div style={{ ...CARD, padding: 26, color: T.TEXT_MUTED, fontSize: 13 }}>Loading shipments…</div></div>;
 
@@ -160,7 +160,7 @@ export default function LiveTrack({ mobile }) {
             {!visible.length ? <div style={{ padding: 26, color: T.TEXT_MUTED, fontSize: 13 }}>No shipments match this filter.</div> : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse' }}>
-                  <thead><tr>{['AWB', 'Order', 'Deliver to', 'Courier', 'Charge', 'Status', 'Booked'].map((h) => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10.5, letterSpacing: '.07em', color: T.TEXT_MUTED, background: T.TABLE_HEAD, textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['AWB', 'Order', 'Deliver to', 'Courier', 'Charge', 'Status', 'Booked'].map((h) => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10.5, letterSpacing: '.07em', color: T.TEXT_MUTED, background: T.TABLE_HEAD_BG, textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
                   <tbody>
                     {visible.map((r) => (
                       <tr key={r.id} onClick={() => setSelectedId(r.id)} style={{ cursor: 'pointer', background: r.id === selectedId ? 'rgba(0,179,164,.08)' : undefined }}>

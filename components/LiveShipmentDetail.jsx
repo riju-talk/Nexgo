@@ -5,7 +5,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
-const CARD = { background: 'linear-gradient(165deg,var(--nx-glass-1),var(--nx-glass-2))', border: '1px solid var(--nx-glass-border)', borderRadius: 14, boxShadow: '0 12px 30px rgba(15,31,61,.07)' };
+const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
 const money = value => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(value || 0) / 100);
 const title = value => String(value || '').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
 function Button({ children, onClick, primary, disabled }) { return <button disabled={disabled} onClick={onClick} style={{ height: 35, padding: '0 11px', borderRadius: 8, border: `1px solid ${primary ? T.NAVY : T.INPUT_BORDER}`, background: primary ? T.NAVY : T.SURFACE, color: primary ? '#fff' : T.TEXT, fontSize: 12, fontWeight: 720, cursor: disabled ? 'wait' : 'pointer', opacity: disabled ? .58 : 1 }}>{children}</button>; }

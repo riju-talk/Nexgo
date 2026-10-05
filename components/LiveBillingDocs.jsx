@@ -6,7 +6,7 @@ import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
 // Credit notes and TDS: finance documents issued by the platform, read-only for sellers.
-const CARD = { background: 'linear-gradient(165deg,var(--nx-glass-1),var(--nx-glass-2))', border: '1px solid var(--nx-glass-border)', borderRadius: 14, boxShadow: '0 12px 30px rgba(15,31,61,.07)' };
+const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
 const inr = (paise) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(paise || 0) / 100);
 const day = (v) => (v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
@@ -75,7 +75,7 @@ export default function LiveBillingDocs({ kind, mobile }) {
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse' }}>
-                  <thead><tr>{cfg.columns.map((h) => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10.5, letterSpacing: '.07em', color: T.TEXT_MUTED, background: T.TABLE_HEAD, textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
+                  <thead><tr>{cfg.columns.map((h) => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10.5, letterSpacing: '.07em', color: T.TEXT_MUTED, background: T.TABLE_HEAD_BG, textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
                   <tbody>{rows.map((r) => <tr key={r.id}>{cfg.cells(r).map((cell, i) => <td key={i} style={{ padding: '12px 14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{cell}</td>)}</tr>)}</tbody>
                 </table>
               </div>

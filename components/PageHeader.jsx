@@ -18,12 +18,12 @@ export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
   const actions = (ACTIONS[activeId] || []).filter(([, , dest]) => dest); // buttons without a destination had no handler
 
   return (
-    <div style={{ background: T.PANEL, borderBottom: `1px solid ${T.BORDER}`, padding: phone ? '12px 12px 0' : mobile ? '16px 16px 0' : '18px 22px 0', position: 'sticky', top: 52, zIndex: 30 }}>
+    <div style={{ background: T.PANEL, borderBottom: `1px solid ${T.BORDER}`, padding: phone ? '14px 12px 0' : mobile ? '18px 16px 0' : '22px 28px 0', position: 'sticky', top: 58, zIndex: 30 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap' }}>
         {isDashboard ? <div aria-hidden="true" /> : (
           <div style={{ maxWidth: 660 }}>
             <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.TEXT_MUTED }}>{crumb}</div>
-            <div style={{ fontSize: 23, fontWeight: 600, letterSpacing: '-.02em', marginTop: 8, lineHeight: 1.2 }}>{pageTitle}</div>
+            <div style={{ fontSize: 26, fontWeight: 650, letterSpacing: '-.03em', marginTop: 8, lineHeight: 1.15 }}>{pageTitle}</div>
             <div style={{ fontSize: 14.5, color: T.TEXT_SECONDARY, marginTop: 7, lineHeight: 1.5 }}>{pageSub}</div>
           </div>
         )}
@@ -52,15 +52,17 @@ export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
               />
             </>
           )}
-          <motion.div
-            whileTap={TAP}
-            transition={TAP_FAST}
-            onClick={() => setPaletteOpen(true)}
-            style={{ height: 32, padding: '0 13px', borderRadius: 7, background: T.NAVY, color: '#fff', display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 16px rgba(15,31,61,.22)' }}
-          >
-            Ship now
-            <div style={{ fontFamily: T.MONO, fontSize: 10, border: '1px solid rgba(255,255,255,.28)', borderRadius: 4, padding: '1px 4px' }}>S</div>
-          </motion.div>
+          {!actions.length && (
+            <motion.div
+              whileTap={TAP}
+              transition={TAP_FAST}
+              onClick={() => setPaletteOpen(true)}
+              style={{ height: 32, padding: '0 13px', borderRadius: 7, background: T.NAVY, color: '#fff', display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 16px rgba(15,31,61,.22)' }}
+            >
+              Ship now
+              <div style={{ fontFamily: T.MONO, fontSize: 10, border: '1px solid rgba(255,255,255,.28)', borderRadius: 4, padding: '1px 4px' }}>S</div>
+            </motion.div>
+          )}
         </div>
       </div>
       <style jsx>{`

@@ -6,7 +6,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
-const CARD = { background: 'linear-gradient(165deg,var(--nx-glass-1),var(--nx-glass-2))', backdropFilter: 'blur(18px) saturate(150%)', border: '1px solid var(--nx-glass-border)', borderRadius: 14, boxShadow: '0 12px 30px rgba(15,31,61,.08)' };
+const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
 const MAX_ORDERS = 100;
 const MAX_ROWS = 500;
 

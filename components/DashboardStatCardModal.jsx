@@ -34,8 +34,9 @@ export default function DashboardStatCardModal({ card, onClose }) {
               style={{
                 position: 'relative', pointerEvents: 'auto', overflow: 'hidden',
                 width: 'min(560px,90vw)',
-                background: 'linear-gradient(165deg, var(--nx-card-sheen-1) 0%, var(--nx-card-sheen-2) 100%)',
-                borderRadius: 18,
+                background: 'var(--nx-surface)',
+                border: `1px solid ${T.BORDER}`,
+                borderRadius: 12,
                 padding: '32px 34px 34px',
                 boxShadow: `0 1px 1px rgba(15,23,20,.05), 0 30px 70px rgba(15,23,20,.28), 0 8px 20px ${card.sparkColor}22`,
               }}

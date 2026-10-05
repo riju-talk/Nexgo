@@ -18,7 +18,7 @@ export default function TopBar({ activeId, mobile }) {
   const searchStyle = { background: 'var(--nx-chrome-search)', border: '1px solid var(--nx-chrome-border)', color: 'var(--nx-chrome-muted)' };
 
   return (
-    <div style={{ height: 52, flex: '0 0 52px', background: 'var(--nx-chrome-bg)', borderBottom: '1px solid var(--nx-chrome-border)', boxShadow: light ? '0 1px 0 rgba(15,31,61,.03)' : 'none', display: 'flex', alignItems: 'center', gap: 14, padding: '0 16px', position: 'sticky', top: 0, zIndex: 40 }}>
+    <div style={{ height: 58, flex: '0 0 58px', background: 'var(--nx-chrome-bg)', borderBottom: '1px solid var(--nx-chrome-border)', boxShadow: light ? '0 1px 0 rgba(15,31,61,.03)' : 'none', display: 'flex', alignItems: 'center', gap: 16, padding: '0 20px', position: 'sticky', top: 0, zIndex: 40 }}>
       {mobile ? (
         <>
           <motion.div

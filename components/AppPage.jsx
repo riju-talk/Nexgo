@@ -40,11 +40,11 @@ export default function AppPage({ id, isDashboard = false }) {
   const isLiveSellerPage = ['orders', 'ndr', 'wallet'].includes(id);
   const isLiveAdminPage = ['a-sellers', 'a-orders', 'a-shipments', 'a-ndr', 'a-rto', 'a-pickups', 'a-couriers'].includes(id);
   const isCreateOrder = id === 'b2c' || id === 'bulk-orders';
-  const isLiveCreateOrder = ['dropship', 'shipnow'].includes(id);
+  const isLiveCreateOrder = ['dropship', 'shipnow', 'reverse'].includes(id);
   const isLiveBilling = id === 'billing';
   const isBillingDoc = id === 'credit-note' || id === 'tds';
   const isTrack = id === 'shipments';
-  const isComingSoon = id === 'b2b' || id === 'reverse';
+  const isComingSoon = id === 'b2b';
   const isLiveMarketing = ['whatsapp', 'email'].includes(id);
   const isLiveSellerSecurity = id === 'password';
   const isLiveShipmentDetail = id === 'ship-detail';
@@ -66,7 +66,7 @@ export default function AppPage({ id, isDashboard = false }) {
       {isLiveBilling && <LiveBilling mobile={mobile} />}
       {isBillingDoc && <LiveBillingDocs kind={id} mobile={mobile} />}
       {isTrack && <LiveTrack mobile={mobile} />}
-      {isComingSoon && <ComingSoon mobile={mobile} name={id === 'b2b' ? 'B2B orders' : 'Reverse orders'} blurb={id === 'b2b' ? 'Business shipments with GST invoicing and multi-box handling arrive in the next phase.' : 'Customer return pickups arrive in the next phase.'} />}
+      {isComingSoon && <ComingSoon mobile={mobile} name="B2B orders" blurb="Business shipments with GST invoicing and multi-box handling are not enabled by the current API contract yet." />}
       {isLiveMarketing && <LiveMarketing channel={id} mobile={mobile} />}
       {isLiveSellerSecurity && <LiveSellerSecurity mobile={mobile} />}
       {isLiveShipmentDetail && <LiveShipmentDetail mobile={mobile} />}

@@ -5,7 +5,7 @@ import * as T from '@/lib/theme';
 
 // Phase-2 placeholder: a blurred skeleton of the eventual screen under a clear label,
 // so the menu item is visible without any half-working behaviour behind it.
-const CARD = { background: 'linear-gradient(165deg,var(--nx-glass-1),var(--nx-glass-2))', border: '1px solid var(--nx-glass-border)', borderRadius: 14 };
+const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
 
 export default function ComingSoon({ name, blurb, mobile }) {
   const { nav } = useAppState();

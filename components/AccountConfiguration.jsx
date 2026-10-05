@@ -39,7 +39,7 @@ export default function AccountConfiguration({ phone, mobile }) {
                 whileHover={{ transform: 'translateY(-3px)', boxShadow: '0 12px 26px rgba(15,31,61,.12)' }}
                 whileTap={{ transform: 'scale(.985)' }}
                 transition={{ duration: 0.18, ease: 'easeOut' }}
-                style={{ minHeight: 178, cursor: 'pointer', position: 'relative', overflow: 'hidden', padding: '17px', borderRadius: 13, background: 'linear-gradient(165deg,var(--nx-glass-1),var(--nx-glass-2))', backdropFilter: 'blur(18px) saturate(180%)', border: '1px solid var(--nx-glass-border)', boxShadow: '0 2px 10px rgba(15,31,61,.05)' }}
+                style={{ minHeight: 178, cursor: 'pointer', position: 'relative', overflow: 'hidden', padding: '17px', borderRadius: 12, background: 'var(--nx-surface)', border: '1px solid var(--nx-glass-border)', boxShadow: '0 2px 8px rgba(15,31,61,.05)' }}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                   <div style={{ width: 34, height: 34, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(0,179,164,.10)', border: '1px solid rgba(0,179,164,.16)', color: T.ACCENT, fontSize: 17, fontWeight: 700 }}>{icon}</div>

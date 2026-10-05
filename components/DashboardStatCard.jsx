@@ -18,19 +18,18 @@ export default function DashboardStatCard({ card, hidden, onOpen }) {
         position: 'relative',
         opacity: hidden ? 0 : 1,
         overflow: 'hidden',
-        background: 'linear-gradient(165deg, var(--nx-glass-1) 0%, var(--nx-glass-2) 100%)',
-        backdropFilter: 'blur(18px) saturate(180%)',
+        background: 'var(--nx-surface)',
         border: '1px solid var(--nx-glass-border)',
-        borderRadius: 14,
+        borderRadius: 10,
         padding: '17px 19px 18px',
         cursor: 'pointer',
-        boxShadow: '0 1px 1px rgba(15,23,20,.05), 0 8px 20px rgba(15,23,20,.09)',
+        boxShadow: '0 2px 8px rgba(15,31,61,.05)',
       }}
     >
       <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 1, background: 'var(--nx-glass-border)' }} />
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: card.sparkColor, opacity: 0.85 }} />
 
-      <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: T.TABLE_HEAD }}>{card.label}</div>
+      <div style={{ fontSize: 11.5, fontWeight: 750, letterSpacing: '.1em', textTransform: 'uppercase', color: T.TEXT_MUTED }}>{card.label}</div>
 
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, marginTop: 13 }}>
         <div style={{ fontVariantNumeric: 'tabular-nums', fontSize: 28, fontWeight: 650, letterSpacing: '-.025em', lineHeight: .9, color: T.TEXT }}>{card.value}</div>

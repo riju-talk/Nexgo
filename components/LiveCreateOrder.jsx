@@ -6,7 +6,7 @@ import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
 const FIELD = { width: '100%', height: 40, boxSizing: 'border-box', border: '1px solid var(--nx-input-border)', borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 11px', fontSize: 13.5 };
-const CARD = { background: 'linear-gradient(165deg,var(--nx-glass-1),var(--nx-glass-2))', backdropFilter: 'blur(18px)', border: '1px solid var(--nx-glass-border)', borderRadius: 14, padding: 18 };
+const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, padding: 18, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
 const PREFIX = { forward: 'WEB', reverse: 'RET', dropship: 'DS', ship_now: 'NOW' };
 // Must match backend lib/money.ts VOLUMETRIC_DIVISOR: grams = L×W×H (mm³) / 5000.
 const VOLUMETRIC_DIVISOR = 5000;

@@ -5,7 +5,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
-const CARD = { background: 'linear-gradient(165deg,var(--nx-glass-1),var(--nx-glass-2))', backdropFilter: 'blur(18px)', border: '1px solid var(--nx-glass-border)', borderRadius: 14, boxShadow: '0 12px 30px rgba(15,31,61,.07)' };
+const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
 const inr = (paise) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(paise || 0) / 100);
 const date = (v) => (v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 const title = (v = '') => String(v).replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -26,7 +26,7 @@ function Panel({ heading, count, onViewAll, columns, rows, empty, mobile }) {
       {!rows.length ? <div style={{ padding: '22px 18px', color: T.TEXT_MUTED, fontSize: 13 }}>{empty}</div> : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
-            <thead><tr>{columns.map((c) => <th key={c} style={{ padding: '9px 16px', textAlign: 'left', background: T.TABLE_HEAD, color: T.TEXT_MUTED, fontSize: 10.5, letterSpacing: '.07em', textTransform: 'uppercase' }}>{c}</th>)}</tr></thead>
+            <thead><tr>{columns.map((c) => <th key={c} style={{ padding: '9px 16px', textAlign: 'left', background: T.TABLE_HEAD_BG, color: T.TEXT_MUTED, fontSize: 10.5, letterSpacing: '.07em', textTransform: 'uppercase' }}>{c}</th>)}</tr></thead>
             <tbody>{rows.map((cells, r) => <tr key={r}>{cells.map((cell, i) => <td key={i} style={{ padding: '11px 16px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{cell}</td>)}</tr>)}</tbody>
           </table>
         </div>

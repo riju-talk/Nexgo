@@ -28,7 +28,7 @@ const ICONS = {
 // non-clickable phase-2 item; a ['#', label, screenId?] entry is a section heading.
 const MENU = [
   ['dashboard', 'Dashboard', 'dashboard', []],
-  ['intake', 'Orders Management', 'orders', [['All orders', 'orders'], ['Create B2C order', 'b2c', ['bulk-orders']], ['B2B orders', 'b2b', [], 'soon'], ['Reverse order', 'reverse', [], 'soon']]],
+  ['intake', 'Orders Management', 'orders', [['All orders', 'orders'], ['Create B2C order', 'b2c', ['bulk-orders']], ['B2B orders', 'b2b', [], 'soon'], ['Reverse order', 'reverse']]],
   ['flight', 'Track', 'shipments', []],
   ['reports', 'Reports', 'mis', [['MIS reports', 'mis'], ['NDR report', 'ndr'], ['Weight discrepancy', 'weight']]],
   ['book', 'Tools', 'ratecard', [['Rate card', 'ratecard'], ['Rate calculator', 'ratecalc'], ['Pincode serviceability', 'pincode']]],
@@ -107,7 +107,7 @@ export default function Sidebar({ activeId, mobile }) {
       }
     : {
         width: 272, flex: '0 0 272px', background: 'var(--nx-side-bg)', position: 'sticky', left: 'auto', top: 0,
-        height: '100vh', zIndex: 30,
+        height: '100vh', minHeight: 0, zIndex: 30,
         display: 'flex', flexDirection: 'column',
       };
 
@@ -119,7 +119,7 @@ export default function Sidebar({ activeId, mobile }) {
     return (
       <motion.div style={outerStyle} {...outerMotion}>
         <div style={{ height: 68, display: 'grid', placeItems: 'center', borderBottom: '1px solid var(--nx-side-edge)', position: 'relative', background: 'var(--nx-side-bg)' }}>
-          <div onClick={() => nav('dashboard')} title="Dashboard" style={{ width: 32, height: 32, borderRadius: 9, cursor: 'pointer', display: 'grid', placeItems: 'center', background: 'linear-gradient(145deg, #35D5C5, #00A99C)', color: '#06212C', fontWeight: 800, fontSize: 13, boxShadow: '0 8px 18px rgba(0,179,164,.24)' }}>N</div>
+          <div onClick={() => nav('dashboard')} title="Dashboard" style={{ width: 32, height: 32, borderRadius: 9, cursor: 'pointer', display: 'grid', placeItems: 'center', background: T.ACCENT, color: '#06212C', fontWeight: 800, fontSize: 13 }}>N</div>
           <div style={{ position: 'absolute', right: 7, bottom: 7 }}><CollapseControl collapsed onClick={toggleSidebar} /></div>
         </div>
         <div style={{ flex: 1, padding: '14px 14px', display: 'grid', alignContent: 'start', gap: 8 }}>
@@ -132,7 +132,7 @@ export default function Sidebar({ activeId, mobile }) {
           })}
         </div>
         <div style={{ padding: '12px 14px', display: 'grid', justifyItems: 'center', gap: 11, borderTop: '1px solid var(--nx-side-edge)' }}>
-          <div onClick={() => nav('profile')} title={me?.full_name || 'Profile'} style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(145deg, #2B8EAA, #7B5FB8)', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 10, fontWeight: 800, color: '#fff' }}>{initialsOf(me?.full_name)}</div>
+          <div onClick={() => nav('profile')} title={me?.full_name || 'Profile'} style={{ width: 30, height: 30, borderRadius: 9, background: T.NAVY, display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: 10, fontWeight: 800, color: '#fff' }}>{initialsOf(me?.full_name)}</div>
         </div>
       </motion.div>
     );
@@ -146,7 +146,7 @@ export default function Sidebar({ activeId, mobile }) {
         onClick={() => nav('dashboard')}
         style={{ height: 68, flex: '0 0 68px', display: 'flex', alignItems: 'center', gap: 10, padding: '0 16px', borderBottom: '1px solid var(--nx-side-edge)', cursor: 'pointer', background: 'var(--nx-side-bg)' }}
       >
-        <div style={{ width: 31, height: 31, background: 'linear-gradient(145deg, #35D5C5, #00A99C)', boxShadow: '0 8px 18px rgba(0,179,164,.24)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, color: '#06212C', borderRadius: 9, clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
+        <div style={{ width: 31, height: 31, background: T.ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, color: '#06212C', borderRadius: 9, clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
         <div style={{ minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 750, letterSpacing: '.13em', color: 'var(--nx-side-text)', lineHeight: 1 }}>NEXGO</div></div>
         {!mobile && <CollapseControl collapsed={false} onClick={(event) => { event.stopPropagation(); toggleSidebar(); }} />}
       </motion.div>
@@ -205,7 +205,7 @@ export default function Sidebar({ activeId, mobile }) {
 
       <div style={{ padding: '10px 10px 11px', borderTop: '1px solid var(--nx-side-edge)', background: 'var(--nx-side-bg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 7px 0', borderTop: '1px solid var(--nx-side-edge)' }}>
-          <div style={{ width: 28, height: 28, borderRadius: 9, background: 'linear-gradient(145deg, #2B8EAA, #7B5FB8)', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 800, color: '#fff' }}>{initialsOf(me?.full_name)}</div>
+          <div style={{ width: 28, height: 28, borderRadius: 9, background: T.NAVY, display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 800, color: '#fff' }}>{initialsOf(me?.full_name)}</div>
           <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--nx-side-text)' }}>{me?.full_name || 'Not signed in'}</div><div style={{ marginTop: 2, fontSize: 12, color: 'var(--nx-side-label)' }}>{me ? `${me.legal_name} · ${me.role.replaceAll('_', ' ')}` : 'Sign in to continue'}</div></div>
           <div onClick={signOut} title="Sign out" style={{ padding: '6px 7px', borderRadius: 6, fontSize: 12, color: 'var(--nx-side-text)', cursor: 'pointer', background: 'var(--nx-side-soft)' }}>↪</div>
         </div>

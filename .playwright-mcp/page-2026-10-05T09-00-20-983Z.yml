@@ -1,0 +1,273 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5] [cursor=pointer]:
+        - generic [ref=e6]: "N"
+        - generic [ref=e7]: NEXGO
+        - button "Collapse navigation" [ref=e9]: ‹
+      - generic [ref=e10]:
+        - generic [ref=e11]: Main menu
+        - generic [ref=e12]: Dashboard
+        - generic [ref=e20] [cursor=pointer]:
+          - generic [ref=e24]: Orders Management
+          - generic [ref=e25]: ›
+        - generic [ref=e26]: Track
+        - generic [ref=e33] [cursor=pointer]:
+          - generic [ref=e37]: Reports
+          - generic [ref=e38]: ›
+        - generic [ref=e40] [cursor=pointer]:
+          - generic [ref=e44]: Tools
+          - generic [ref=e45]: ›
+        - generic [ref=e47] [cursor=pointer]:
+          - generic [ref=e51]: Marketplace
+          - generic [ref=e52]: ›
+        - generic [ref=e54] [cursor=pointer]:
+          - generic [ref=e58]: Billing
+          - generic [ref=e59]: ›
+        - generic [ref=e61] [cursor=pointer]:
+          - generic [ref=e65]: Control Tower
+          - generic [ref=e66]: ›
+        - generic [ref=e68] [cursor=pointer]:
+          - generic [ref=e72]: Settings
+          - generic [ref=e73]: ›
+      - generic [ref=e75]:
+        - generic [ref=e76]: "?"
+        - generic [ref=e77]:
+          - generic [ref=e78]: Not signed in
+          - generic [ref=e79]: Sign in to continue
+        - generic "Sign out" [ref=e80] [cursor=pointer]: ↪
+    - generic [ref=e81]:
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - generic [ref=e84]: Exceptions
+          - generic [ref=e85]: /
+          - generic [ref=e86]: Dashboard
+        - generic [ref=e87] [cursor=pointer]:
+          - generic [ref=e88]: ⌘K
+          - text: Run a command, jump to a screen, or paste an AWB
+        - generic [ref=e89]:
+          - generic "Open wallet" [ref=e90] [cursor=pointer]:
+            - generic [ref=e91]: ₹
+            - generic [ref=e92]:
+              - generic [ref=e93]: Wallet
+              - generic [ref=e94]: —
+          - generic [ref=e95]:
+            - generic [ref=e96]:
+              - generic [ref=e97]: Not signed in
+              - generic [ref=e98]: Sign in to continue
+            - generic [ref=e99]: "?"
+      - generic [ref=e102]:
+        - generic [ref=e104] [cursor=pointer]:
+          - text: Customize KPIs
+          - generic [ref=e105]: 7/11
+          - generic [ref=e106]: ▾
+        - generic [ref=e108] [cursor=pointer]:
+          - text: Last 30 days
+          - generic [ref=e109]: ▾
+        - generic [ref=e110] [cursor=pointer]:
+          - text: Ship now
+          - generic [ref=e111]: S
+      - generic [ref=e112]:
+        - generic [ref=e113]:
+          - generic [ref=e114] [cursor=pointer]:
+            - generic [ref=e117]: Order volume
+            - generic [ref=e118]: 12,480
+            - generic [ref=e124]:
+              - generic [ref=e125]: +8.2%
+              - generic [ref=e126]: vs. 11,534 prior
+          - generic [ref=e127] [cursor=pointer]:
+            - generic [ref=e130]: Delivery rate
+            - generic [ref=e131]: 94.6%
+            - generic [ref=e137]:
+              - generic [ref=e138]: +1.1pp
+              - generic [ref=e139]: Target 95%
+          - generic [ref=e140] [cursor=pointer]:
+            - generic [ref=e143]: RTO rate
+            - generic [ref=e144]: 3.8%
+            - generic [ref=e150]:
+              - generic [ref=e151]: "-0.4pp"
+              - generic [ref=e152]: 474 returned
+          - generic [ref=e153] [cursor=pointer]:
+            - generic [ref=e156]: NDR rate
+            - generic [ref=e157]: 5.2%
+            - generic [ref=e163]:
+              - generic [ref=e164]: +0.6pp
+              - generic [ref=e165]: 112 unactioned
+          - generic [ref=e166] [cursor=pointer]:
+            - generic [ref=e169]: Shipping spend
+            - generic [ref=e170]: ₹18.4L
+            - generic [ref=e176]:
+              - generic [ref=e177]: +6.0%
+              - generic [ref=e178]: ₹147 avg
+        - generic [ref=e179]:
+          - generic [ref=e180]:
+            - generic [ref=e182]:
+              - generic [ref=e183]:
+                - generic [ref=e184]: Order pipeline
+                - generic [ref=e185]: 12,480 orders · click a stage to filter the queue
+              - generic [ref=e186] [cursor=pointer]: Export →
+            - generic [ref=e187]:
+              - generic [ref=e188] [cursor=pointer]:
+                - generic [ref=e189]: New
+                - generic [ref=e192]: 1,204
+                - generic [ref=e193]: 9.6%
+              - generic [ref=e195] [cursor=pointer]:
+                - generic [ref=e196]: Ready to ship
+                - generic [ref=e199]: "842"
+                - generic [ref=e200]: 6.7%
+              - generic [ref=e202] [cursor=pointer]:
+                - generic [ref=e203]: Pickup scheduled
+                - generic [ref=e206]: "610"
+                - generic [ref=e207]: 4.9%
+              - generic [ref=e209] [cursor=pointer]:
+                - generic [ref=e210]: In transit
+                - generic [ref=e213]: 1,842
+                - generic [ref=e214]: 14.8%
+              - generic [ref=e216] [cursor=pointer]:
+                - generic [ref=e217]: Out for delivery
+                - generic [ref=e220]: "486"
+                - generic [ref=e221]: 3.9%
+              - generic [ref=e223] [cursor=pointer]:
+                - generic [ref=e224]: Delivered
+                - generic [ref=e227]: 6,512
+                - generic [ref=e228]: 52.2%
+              - generic [ref=e230] [cursor=pointer]:
+                - generic [ref=e231]: NDR
+                - generic [ref=e234]: "358"
+                - generic [ref=e235]: 2.9%
+              - generic [ref=e237] [cursor=pointer]:
+                - generic [ref=e238]: RTO
+                - generic [ref=e241]: "474"
+                - generic [ref=e242]: 3.8%
+              - generic [ref=e244] [cursor=pointer]:
+                - generic [ref=e245]: Cancelled
+                - generic [ref=e248]: "152"
+                - generic [ref=e249]: 1.2%
+          - generic [ref=e251]:
+            - generic [ref=e253]:
+              - generic [ref=e254]:
+                - generic [ref=e255]: Decisions waiting on you
+                - generic [ref=e256]: expand a row to act without leaving this screen
+              - generic [ref=e257]:
+                - generic [ref=e258] [cursor=pointer]: All
+                - generic [ref=e259] [cursor=pointer]: Time critical
+                - generic [ref=e260] [cursor=pointer]: Money at risk
+            - generic [ref=e261]:
+              - generic [ref=e262]:
+                - generic [ref=e263] [cursor=pointer]:
+                  - generic [ref=e264]: ▸
+                  - generic [ref=e266]: "112"
+                  - generic [ref=e267]:
+                    - generic [ref=e268]: NDR shipments awaiting action
+                    - generic [ref=e269]: Auto-reattempt stops in 24 hours · 38 are second attempts
+                  - generic [ref=e270]: 24H LEFT
+                  - generic [ref=e271]: Action →
+                - generic [ref=e273]:
+                  - generic [ref=e274]:
+                    - generic [ref=e275]: Breakdown
+                    - generic [ref=e276]:
+                      - generic [ref=e277]:
+                        - generic [ref=e278]: Customer unavailable
+                        - generic [ref=e279]: "54"
+                      - generic [ref=e280]:
+                        - generic [ref=e281]: Address incomplete
+                        - generic [ref=e282]: "31"
+                      - generic [ref=e283]:
+                        - generic [ref=e284]: Refused delivery
+                        - generic [ref=e285]: "18"
+                      - generic [ref=e286]:
+                        - generic [ref=e287]: Payment not ready
+                        - generic [ref=e288]: "9"
+                  - generic [ref=e289]:
+                    - generic [ref=e290]: Recommended action
+                    - generic [ref=e291]: Reattempt the 54 “customer unavailable” shipments with a fresh delivery slot, and push an address-confirmation WhatsApp to the 31 incomplete ones before the 24-hour window closes.
+                    - generic [ref=e292]:
+                      - generic [ref=e293] [cursor=pointer]: Resolve 54 NDRs
+                      - generic [ref=e294] [cursor=pointer]: Bulk reattempt
+              - generic [ref=e296] [cursor=pointer]:
+                - generic [ref=e297]: ▸
+                - generic [ref=e299]: "46"
+                - generic [ref=e300]:
+                  - generic [ref=e301]: Weight discrepancies raised by couriers
+                  - generic [ref=e302]: ₹8,240 held against wallet · dispute window closes 10 Sep
+                - generic [ref=e303]: 7D LEFT
+                - generic [ref=e304]: Review →
+              - generic [ref=e306] [cursor=pointer]:
+                - generic [ref=e307]: ▸
+                - generic [ref=e309]: "32"
+                - generic [ref=e310]:
+                  - generic [ref=e311]: Pickups missed yesterday
+                  - generic [ref=e312]: Bommasandra warehouse · Delhivery and Ekart
+                - generic [ref=e313]: TODAY
+                - generic [ref=e314]: Reschedule →
+              - generic [ref=e316] [cursor=pointer]:
+                - generic [ref=e317]: ▸
+                - generic [ref=e319]: ₹1.2L
+                - generic [ref=e320]:
+                  - generic [ref=e321]: COD remittance in the next payout
+                  - generic [ref=e322]: Expected 06 Sep · HDFC ••4412
+                - generic [ref=e323]: 06 SEP
+                - generic [ref=e324]: View →
+          - generic [ref=e325]:
+            - generic [ref=e326]:
+              - generic [ref=e328]:
+                - generic [ref=e329]: Volume vs. delivered
+                - generic [ref=e330]:
+                  - generic [ref=e331]: ORDERS
+                  - generic [ref=e333]: DELIVERED
+              - generic [ref=e335]:
+                - generic [ref=e336]:
+                  - generic [ref=e337]: "150"
+                  - generic [ref=e338]: "100"
+                  - generic [ref=e339]: "50"
+                  - generic [ref=e340]: "0"
+                - generic [ref=e347]:
+                  - generic [ref=e348]: 05 AUG
+                  - generic [ref=e349]: 12 AUG
+                  - generic [ref=e350]: 19 AUG
+                  - generic [ref=e351]: 26 AUG
+                  - generic [ref=e352]: 03 SEP
+            - generic [ref=e353]:
+              - generic [ref=e355]: Courier performance
+              - generic [ref=e356]:
+                - generic [ref=e357]:
+                  - generic [ref=e358]: Blue Dart
+                  - generic [ref=e359]: 97.8%
+                - generic [ref=e360]: "624"
+              - generic [ref=e364]:
+                - generic [ref=e365]:
+                  - generic [ref=e366]: Delhivery
+                  - generic [ref=e367]: 96.2%
+                - generic [ref=e368]: 1,482
+              - generic [ref=e372]:
+                - generic [ref=e373]:
+                  - generic [ref=e374]: Ekart
+                  - generic [ref=e375]: 93.1%
+                - generic [ref=e376]: "918"
+              - generic [ref=e380]:
+                - generic [ref=e381]:
+                  - generic [ref=e382]: XpressBees
+                  - generic [ref=e383]: 91.4%
+                - generic [ref=e384]: "546"
+              - generic [ref=e388]:
+                - generic [ref=e389]:
+                  - generic [ref=e390]: Ecom Express
+                  - generic [ref=e391]: 88.0%
+                - generic [ref=e392]: "348"
+            - generic [ref=e396]:
+              - generic [ref=e398]: COD vs. prepaid
+              - generic [ref=e399]:
+                - generic [ref=e400]:
+                  - generic [ref=e401]: 62% COD
+                  - generic [ref=e402]: 38%
+                - generic [ref=e403]:
+                  - generic [ref=e404]:
+                    - generic [ref=e405]: COD orders
+                    - generic [ref=e406]: 7,738
+                  - generic [ref=e407]:
+                    - generic [ref=e408]: COD collected
+                    - generic [ref=e409]: ₹41.2L
+                  - generic [ref=e410]:
+                    - generic [ref=e411]: Prepaid value
+                    - generic [ref=e412]: ₹26.8L
+  - generic [ref=e413]: Multi-courier shipping platform

@@ -8,11 +8,10 @@ import ScenicBackdrop from './ScenicBackdrop';
 
 const CARD = {
   position: 'relative',
-  background: 'linear-gradient(165deg, var(--nx-glass-1) 0%, var(--nx-glass-2) 100%)',
-  backdropFilter: 'blur(18px) saturate(180%)',
-  border: '1px solid var(--nx-glass-border)',
-  borderRadius: 12,
-  boxShadow: '0 1px 1px rgba(15,23,20,.05), 0 10px 28px rgba(15,23,20,.10)',
+  background: 'var(--nx-surface)',
+  border: '1px solid var(--nx-border)',
+  borderRadius: 10,
+  boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)',
 };
 const TAP = { scale: 0.97 };
 const TAP_FAST = { duration: 0.08 };

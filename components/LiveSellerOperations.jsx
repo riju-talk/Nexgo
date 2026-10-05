@@ -7,13 +7,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
-const CARD = {
-  background: 'linear-gradient(165deg, var(--nx-glass-1) 0%, var(--nx-glass-2) 100%)',
-  backdropFilter: 'blur(18px) saturate(160%)',
-  border: '1px solid var(--nx-glass-border)',
-  borderRadius: 14,
-  boxShadow: '0 12px 30px rgba(15,31,61,.08)',
-};
+const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
 
 const money = (paise = 0) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(paise) / 100);
 const date = (value) => value ? new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value)) : 'Just now';
@@ -42,7 +36,7 @@ function OperationsTable({ id, rows, onAction, actionBusy, mobile }) {
   })[id], [id, onAction, actionBusy]);
 
   if (mobile) return <div style={{ display: 'grid', gap: 10 }}>{rows.map((row) => { const cells = config.render(row); return <div key={row.id} style={{ ...CARD, padding: 14 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><div>{cells[0]}<div style={{ marginTop: 5, color: T.TEXT_SECONDARY, fontSize: 12.5 }}>{typeof cells[1] === 'string' ? cells[1] : ''}</div></div>{cells[4]}</div><div style={{ marginTop: 13, paddingTop: 12, borderTop: `1px solid ${T.DIVIDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>{cells[2]}<div>{cells[5]}</div></div></div>; })}</div>;
-  return <div style={{ ...CARD, overflow: 'hidden' }}><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 780, borderCollapse: 'collapse' }}><thead><tr>{config.headers.map((header) => <th key={header} style={{ padding: '11px 15px', textAlign: 'left', background: T.TABLE_HEAD, color: T.TEXT_MUTED, fontSize: 10.5, letterSpacing: '.075em', textTransform: 'uppercase' }}>{header}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}>{config.render(row).map((cell, i) => <td key={i} style={{ padding: '13px 15px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{typeof cell === 'string' || typeof cell === 'number' ? <span style={{ fontWeight: i === 0 ? 700 : 520 }}>{cell}</span> : cell}</td>)}</tr>)}</tbody></table></div></div>;
+  return <div style={{ ...CARD, overflow: 'hidden' }}><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 780, borderCollapse: 'collapse' }}><thead><tr>{config.headers.map((header) => <th key={header} style={{ padding: '11px 15px', textAlign: 'left', background: T.TABLE_HEAD_BG, color: T.TEXT_MUTED, fontSize: 10.5, letterSpacing: '.075em', textTransform: 'uppercase' }}>{header}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}>{config.render(row).map((cell, i) => <td key={i} style={{ padding: '13px 15px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{typeof cell === 'string' || typeof cell === 'number' ? <span style={{ fontWeight: i === 0 ? 700 : 520 }}>{cell}</span> : cell}</td>)}</tr>)}</tbody></table></div></div>;
 }
 
 function Wallet({ mobile }) {

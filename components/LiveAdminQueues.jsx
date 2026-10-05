@@ -8,7 +8,7 @@ import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 import AdminRateEditor from './AdminRateEditor';
 
-const CARD = { background: 'var(--ops-surface)', border: '1px solid var(--ops-border)', borderRadius: 16, boxShadow: 'var(--ops-shadow)' };
+const CARD = { background: 'var(--ops-surface)', border: '1px solid var(--ops-border)', borderRadius: 10, boxShadow: 'var(--ops-shadow)' };
 const title = (value = '') => value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 const money = (paise = 0) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(paise) / 100);
 
