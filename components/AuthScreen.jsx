@@ -44,6 +44,10 @@ export default function AuthScreen({ mode }) {
         // Check for hardcoded demo credentials - bypass backend
         if (form.email === 'demo@acmeexports.com' && form.password === 'Demo@123') {
           showToast('Demo login successful! Redirecting...');
+          // Set demo session flag
+          if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem('nx-demo-seller', 'true');
+          }
           setTimeout(() => nav('dashboard'), 800);
           return;
         }

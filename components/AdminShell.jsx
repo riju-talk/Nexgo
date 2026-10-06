@@ -52,7 +52,7 @@ function AdminNav({ mobile }) {
         <span><b style={{ display: 'block', color: 'var(--nx-side-text)', fontSize: 11.5, lineHeight: 1.2 }}>Platform healthy</b><span style={{ display: 'block', marginTop: 3, color: 'var(--nx-side-sub)', fontSize: 10.5 }}>99.4% API availability</span></span>
       </Link>
       <div style={{ margin: '0 8px 16px', paddingTop: 12, borderTop: '1px solid var(--nx-side-edge)' }}>
-        <Link href="/admin/login" onClick={(e) => { e.preventDefault(); adminApi.logout().finally(() => { window.location.assign('/admin/login') /* eslint-disable-line @next/next/no-location-assign-relative-destination -- full reload on logout drops all in-memory client state */; }); }} style={{ height: 38, padding: '0 10px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: 'var(--nx-side-sub)', fontSize: 13, fontWeight: 650, cursor: 'pointer' }}>
+        <Link href="/admin/login" onClick={(e) => { e.preventDefault(); if (typeof window !== 'undefined') window.sessionStorage.removeItem('nx-demo-admin'); adminApi.logout().finally(() => { window.location.assign('/admin/login') /* eslint-disable-line @next/next/no-location-assign-relative-destination -- full reload on logout drops all in-memory client state */; }); }} style={{ height: 38, padding: '0 10px', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: 'var(--nx-side-sub)', fontSize: 13, fontWeight: 650, cursor: 'pointer' }}>
           <span style={{ width: 15, textAlign: 'center', color: T.ACCENT, fontSize: 14 }}>↗</span> Exit operations
         </Link>
       </div>
@@ -75,6 +75,21 @@ export default function AdminShell({ children }) {
   const mobile = vw <= T.MOBILE_BREAK;
   const dark = theme === 'dark';
   useEffect(() => {
+    // Check if this is a demo session (no backend needed)
+    const isDemoSession = typeof window !== 'undefined' && window.sessionStorage.getItem('nx-demo-admin') === 'true';
+    
+    if (isDemoSession) {
+      // Use demo admin data
+      setAdmin({
+        fullName: 'Demo Admin',
+        email: 'admin@nexgo.in',
+        role: 'super_admin'
+      });
+      setSessionReady(true);
+      return;
+    }
+    
+    // Normal backend authentication flow
     let cancelled = false;
     adminApi.me()
       .then((me) => { if (!cancelled) { setAdmin(me); setSessionReady(true); } })
@@ -105,7 +120,7 @@ export default function AdminShell({ children }) {
             <motion.button whileTap={{ scale: .92 }} onClick={() => showToast('3 operational alerts are ready for review')} aria-label="Open notifications" style={{ position: 'relative', width: 31, height: 31, display: 'grid', placeItems: 'center', border: 0, borderRadius: 8, background: 'transparent', color: T.ACCENT, fontSize: 17, cursor: 'pointer' }}>♧<span className="nxc-live-ping" style={{ position: 'absolute', top: 5, right: 3, width: 7, height: 7, borderRadius: '50%', background: '#E83D57' }} /><span style={{ position: 'absolute', top: 5, right: 3, width: 7, height: 7, borderRadius: '50%', background: '#E83D57', border: '2px solid var(--ops-surface)' }} /></motion.button>
             <div style={{ position: 'relative' }}>
               <button onClick={() => setProfileOpen(!profileOpen)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 0, border: 0, background: 'transparent', cursor: 'pointer', textAlign: 'left' }}><div style={{ width: 33, height: 33, borderRadius: '50%', display: 'grid', placeItems: 'center', background: T.NAVY, color: '#fff', fontSize: 11, fontWeight: 800 }}>{(admin?.fullName || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</div><div><div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ops-text)' }}>{admin?.fullName || 'Loading…'}</div><div style={{ fontSize: 11, color: 'var(--ops-muted)', marginTop: 2 }}>{admin?.role?.replace(/_/g, ' ') || ''}</div></div></button>
-              {profileOpen && <motion.div initial={{ opacity: 0, y: -5, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', bounce: 0, duration: .22 }} style={{ position: 'absolute', top: 42, right: 0, width: 210, padding: 8, border: '1px solid var(--ops-border)', borderRadius: 11, background: 'var(--ops-surface)', boxShadow: '0 15px 35px rgba(9,28,48,.18)' }}><div style={{ padding: '8px 9px 10px', borderBottom: '1px solid var(--ops-divider)' }}><b style={{ display: 'block', color: 'var(--ops-heading)', fontSize: 12.5 }}>{admin?.email}</b><span style={{ display: 'block', marginTop: 3, color: 'var(--ops-muted)', fontSize: 11 }}>{admin?.role?.replace(/_/g, ' ')}</span></div><button onClick={() => adminApi.logout().finally(() => { window.location.assign('/admin/login') /* eslint-disable-line @next/next/no-location-assign-relative-destination -- full reload on logout drops all in-memory client state */; })} style={{ width: '100%', marginTop: 5, padding: '9px', border: 0, borderRadius: 7, background: 'transparent', color: T.RED, textAlign: 'left', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>Exit operations</button></motion.div>}
+              {profileOpen && <motion.div initial={{ opacity: 0, y: -5, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', bounce: 0, duration: .22 }} style={{ position: 'absolute', top: 42, right: 0, width: 210, padding: 8, border: '1px solid var(--ops-border)', borderRadius: 11, background: 'var(--ops-surface)', boxShadow: '0 15px 35px rgba(9,28,48,.18)' }}><div style={{ padding: '8px 9px 10px', borderBottom: '1px solid var(--ops-divider)' }}><b style={{ display: 'block', color: 'var(--ops-heading)', fontSize: 12.5 }}>{admin?.email}</b><span style={{ display: 'block', marginTop: 3, color: 'var(--ops-muted)', fontSize: 11 }}>{admin?.role?.replace(/_/g, ' ')}</span></div><button onClick={() => { if (typeof window !== 'undefined') window.sessionStorage.removeItem('nx-demo-admin'); adminApi.logout().finally(() => { window.location.assign('/admin/login') /* eslint-disable-line @next/next/no-location-assign-relative-destination -- full reload on logout drops all in-memory client state */; }); }} style={{ width: '100%', marginTop: 5, padding: '9px', border: 0, borderRadius: 7, background: 'transparent', color: T.RED, textAlign: 'left', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>Exit operations</button></motion.div>}
             </div>
           </div>}
         </header>

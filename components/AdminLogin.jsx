@@ -34,6 +34,10 @@ export default function AdminLogin() {
       // Check for hardcoded demo admin credentials - bypass backend
       if (email === 'admin@nexgo.in' && password === 'Admin@456') {
         await new Promise(resolve => setTimeout(resolve, 600)); // Simulate loading
+        // Set demo session flag
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem('nx-demo-admin', 'true');
+        }
         nav('a-overview');
         return;
       }
