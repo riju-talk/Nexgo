@@ -107,7 +107,7 @@ export default function TablePage({ activeId, mobile, phone }) {
   return (
     <div style={{ flex: 1, padding: `${phone ? 14 : 24}px ${pagePad}px 52px`, position: 'relative' }}>
       <ScenicBackdrop mode="workspace" />
-      <div style={{ position: 'relative', zIndex: 1, maxWidth: admin ? 1560 : undefined, margin: admin ? '0 auto' : undefined }}>
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1680, margin: '0 auto' }}>
       {t.stats && !directTable && (
         <div style={{ ...card, display: 'grid', gridTemplateColumns: miniCols, marginBottom: 20, overflow: 'hidden' }}>
           {t.stats.map(([label, value, delta, dir, sub], i) => (
@@ -116,11 +116,11 @@ export default function TablePage({ activeId, mobile, phone }) {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: Math.min(i * 0.04, 0.16), duration: 0.28, ease: 'easeOut' }}
-              style={{ padding: '14px 16px', borderRight: (i + 1) % (mobile ? 2 : 4) !== 0 ? `1px solid ${T.DIVIDER}` : 'none', borderBottom: i < t.stats.length - (mobile ? 2 : 4) ? `1px solid ${T.DIVIDER}` : 'none' }}
+              style={{ padding: '14px 16px', borderRight: (i + 1) % (mobile ? 2 : 4) !== 0 ? `1px solid ${admin ? 'var(--ops-divider)' : T.DIVIDER}` : 'none', borderBottom: i < t.stats.length - (mobile ? 2 : 4) ? `1px solid ${admin ? 'var(--ops-divider)' : T.DIVIDER}` : 'none' }}
             >
-              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.TEXT_MUTED }}>{label}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: admin ? 'var(--ops-muted)' : T.TEXT_MUTED }}>{label}</div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, marginTop: 9 }}>
-                <div style={{ fontVariantNumeric: 'tabular-nums', fontSize: 24, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1 }}>{value}</div>
+                <div style={{ fontVariantNumeric: 'tabular-nums', fontSize: 24, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1, color: admin ? 'var(--ops-heading)' : T.TEXT }}>{value}</div>
                 <div style={{
                   fontSize: 11.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
                   color: dir === 'up' ? T.GREEN : dir === 'down' ? T.RED : T.MUTE,
@@ -128,7 +128,7 @@ export default function TablePage({ activeId, mobile, phone }) {
                   padding: '2px 7px', borderRadius: 20,
                 }}>{delta}</div>
               </div>
-              <div style={{ fontSize: 13, color: T.TEXT_MUTED, marginTop: 7 }}>{sub}</div>
+              <div style={{ fontSize: 13, color: admin ? 'var(--ops-muted)' : T.TEXT_MUTED, marginTop: 7 }}>{sub}</div>
             </motion.div>
           ))}
         </div>
@@ -136,7 +136,7 @@ export default function TablePage({ activeId, mobile, phone }) {
 
       <div style={{ ...card, overflow: 'hidden' }}>
         {t.tabs && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '0 14px', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '0 14px', borderBottom: `1px solid ${admin ? 'var(--ops-divider)' : T.DIVIDER}`, overflowX: 'auto' }}>
             {t.tabs.map(([label, count]) => {
               const on = tabKey === label;
               return (
@@ -146,10 +146,10 @@ export default function TablePage({ activeId, mobile, phone }) {
                   transition={{ duration: 0.08 }}
                   onClick={() => setTab(activeId, label)}
                   className="nxc-tab"
-                  style={{ position: 'relative', padding: '13px 12px 11px', color: on ? T.TEXT : T.TEXT_SECONDARY, fontSize: 13.5, fontWeight: on ? 600 : 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}
+                  style={{ position: 'relative', padding: '13px 12px 11px', color: on ? (admin ? 'var(--ops-heading)' : T.TEXT) : (admin ? 'var(--ops-muted)' : T.TEXT_SECONDARY), fontSize: 13.5, fontWeight: on ? 600 : 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}
                 >
                   {label}
-                  <div style={{ fontSize: 11.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', background: on ? 'rgba(0,215,195,.18)' : T.DIVIDER, color: on ? '#0E5049' : '#6B6659', padding: '1px 6px', borderRadius: 10 }}>{count}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', background: on ? 'rgba(0,215,195,.18)' : (admin ? 'var(--ops-divider)' : T.DIVIDER), color: on ? '#0E5049' : (admin ? 'var(--ops-subtle)' : '#6B6659'), padding: '1px 6px', borderRadius: 10 }}>{count}</div>
                   {on && (
                     <motion.div
                       layoutId={`tab-underline-${activeId}`}
@@ -162,9 +162,9 @@ export default function TablePage({ activeId, mobile, phone }) {
             })}
           </div>
         )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: phone ? '10px' : '11px 14px', background: 'transparent', borderBottom: `1px solid ${T.DIVIDER}`, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 32, background: T.SURFACE, border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 7, padding: '0 11px', minWidth: mobile ? '100%' : 250, flex: mobile ? '1 0 100%' : undefined, color: T.TEXT_MUTED, fontSize: 13 }}>
-            <div style={{ width: 11, height: 11, border: '1.5px solid #A8A395', borderRadius: '50%' }} />{t.search}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: phone ? '10px' : '11px 14px', background: 'transparent', borderBottom: `1px solid ${admin ? 'var(--ops-divider)' : T.DIVIDER}`, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 32, background: admin ? 'var(--ops-surface-soft)' : T.SURFACE, border: `1px solid ${admin ? 'var(--ops-border)' : T.INPUT_BORDER}`, borderRadius: 7, padding: '0 11px', minWidth: mobile ? '100%' : 250, flex: mobile ? '1 0 100%' : undefined, color: admin ? 'var(--ops-muted)' : T.TEXT_MUTED, fontSize: 13 }}>
+            <div style={{ width: 11, height: 11, border: `1.5px solid ${admin ? 'var(--ops-border)' : '#A8A395'}`, borderRadius: '50%' }} />{t.search}
           </div>
           {t.filters.map((label) => (
             <FilterDropdown
@@ -172,13 +172,13 @@ export default function TablePage({ activeId, mobile, phone }) {
               label={label}
               options={optionsFor(label)}
               className="nxc-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, background: T.SURFACE, border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 7, padding: '0 11px', fontSize: 13, color: T.TEXT_LABEL, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, background: admin ? 'var(--ops-surface-soft)' : T.SURFACE, border: `1px solid ${admin ? 'var(--ops-border)' : T.INPUT_BORDER}`, borderRadius: 7, padding: '0 11px', fontSize: 13, color: admin ? 'var(--ops-text)' : T.TEXT_LABEL, cursor: 'pointer', whiteSpace: 'nowrap' }}
             />
           ))}
           <div style={{ marginLeft: phone ? 0 : 'auto', display: 'flex', gap: 8, flex: phone ? '1 0 100%' : undefined }}>
             {t.tools.map((label, i) => {
               const primaryTool = admin && i === t.tools.length - 1;
-              return <motion.div key={label} onClick={() => showToast(`${label} has been prepared`)} whileTap={TAP} transition={TAP_FAST} className={primaryTool ? '' : 'nxc-btn'} style={{ height: 32, display: 'flex', justifyContent: phone ? 'center' : undefined, flex: phone ? 1 : undefined, alignItems: 'center', padding: '0 12px', border: `1px solid ${primaryTool ? T.NAVY : T.INPUT_BORDER}`, borderRadius: 8, background: primaryTool ? T.NAVY : T.SURFACE, color: primaryTool ? '#fff' : T.TEXT, boxShadow: primaryTool ? '0 6px 14px rgba(15,31,61,.16)' : 'none', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}</motion.div>;
+              return <motion.div key={label} onClick={() => showToast(`${label} has been prepared`)} whileTap={TAP} transition={TAP_FAST} className={primaryTool ? '' : 'nxc-btn'} style={{ height: 32, display: 'flex', justifyContent: phone ? 'center' : undefined, flex: phone ? 1 : undefined, alignItems: 'center', padding: '0 12px', border: `1px solid ${primaryTool ? T.NAVY : (admin ? 'var(--ops-border)' : T.INPUT_BORDER)}`, borderRadius: 8, background: primaryTool ? T.NAVY : (admin ? 'var(--ops-surface-soft)' : T.SURFACE), color: primaryTool ? '#fff' : (admin ? 'var(--ops-text)' : T.TEXT), boxShadow: primaryTool ? '0 6px 14px rgba(15,31,61,.16)' : 'none', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}</motion.div>;
             })}
           </div>
         </div>
@@ -188,7 +188,7 @@ export default function TablePage({ activeId, mobile, phone }) {
             <thead>
               <tr style={{ background: 'transparent' }}>
                 {t.cols.map(([label, align]) => (
-                  <th key={label + align} style={{ padding: '11px 14px', textAlign: align, fontSize: 12.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: T.TABLE_HEAD, borderBottom: `1px solid ${T.BORDER}`, whiteSpace: 'nowrap' }}>{label}</th>
+                  <th key={label + align} style={{ padding: '11px 14px', textAlign: align, fontSize: 12.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: admin ? 'var(--ops-muted)' : T.TABLE_HEAD, borderBottom: `1px solid ${admin ? 'var(--ops-border)' : T.BORDER}`, whiteSpace: 'nowrap' }}>{label}</th>
                 ))}
               </tr>
             </thead>
@@ -201,7 +201,7 @@ export default function TablePage({ activeId, mobile, phone }) {
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: Math.min(ri * 0.03, 0.24), duration: 0.26, ease: 'easeOut' }}
-                  style={{ borderBottom: `1px solid ${T.ROW_DIVIDER}`, cursor: 'pointer' }}
+                  style={{ borderBottom: `1px solid ${admin ? 'var(--ops-divider)' : T.ROW_DIVIDER}`, cursor: 'pointer' }}
                 >
                   {r.map((c, ci) => {
                     const d = cell(c, t.cols[ci][1]);
@@ -215,8 +215,8 @@ export default function TablePage({ activeId, mobile, phone }) {
                         {d.isLink && <div onClick={(event) => { event.stopPropagation(); showToast(`${d.v} is ready for ${r[0][1]}`); }} style={{ fontSize: 12.5, fontWeight: 600, color: '#0E5049' }}>{d.v}</div>}
                         {d.isText && (
                           <>
-                            <div style={{ fontFamily: d.font, fontSize: d.size, fontWeight: d.fw, color: d.color, fontVariantNumeric: 'tabular-nums' }}>{d.v}</div>
-                            {d.sub && <div style={{ fontSize: 12, color: T.TEXT_MUTED, marginTop: 2 }}>{d.sub}</div>}
+                            <div style={{ fontFamily: d.font, fontSize: d.size, fontWeight: d.fw, color: admin ? 'var(--ops-text)' : d.color, fontVariantNumeric: 'tabular-nums' }}>{d.v}</div>
+                            {d.sub && <div style={{ fontSize: 12, color: admin ? 'var(--ops-muted)' : T.TEXT_MUTED, marginTop: 2 }}>{d.sub}</div>}
                           </>
                         )}
                       </td>
@@ -228,22 +228,22 @@ export default function TablePage({ activeId, mobile, phone }) {
           </table>
         </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 14px', background: 'transparent', borderTop: `1px solid ${T.DIVIDER}` }}>
-          <div style={{ fontSize: 12.5, color: T.TEXT_SECONDARY }}>{t.count}</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 14px', background: 'transparent', borderTop: `1px solid ${admin ? 'var(--ops-divider)' : T.DIVIDER}` }}>
+          <div style={{ fontSize: 12.5, color: admin ? 'var(--ops-muted)' : T.TEXT_SECONDARY }}>{t.count}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <motion.div whileTap={TAP} transition={TAP_FAST} className="nxc-btn" style={{ height: 29, padding: '0 10px', display: 'flex', alignItems: 'center', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 7, background: T.SURFACE, fontSize: 12.5, color: T.TEXT_FAINT, cursor: 'pointer' }}>Prev</motion.div>
+            <motion.div whileTap={TAP} transition={TAP_FAST} className="nxc-btn" style={{ height: 29, padding: '0 10px', display: 'flex', alignItems: 'center', border: `1px solid ${admin ? 'var(--ops-border)' : T.INPUT_BORDER}`, borderRadius: 7, background: admin ? 'var(--ops-surface-soft)' : T.SURFACE, fontSize: 12.5, color: admin ? 'var(--ops-subtle)' : T.TEXT_FAINT, cursor: 'pointer' }}>Prev</motion.div>
             <motion.div whileTap={TAP} transition={TAP_FAST} style={{ height: 29, minWidth: 29, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7, background: T.NAVY, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>1</motion.div>
-            <motion.div whileTap={TAP} transition={TAP_FAST} className="nxc-btn" style={{ height: 29, minWidth: 29, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 7, background: T.SURFACE, fontSize: 12.5, cursor: 'pointer' }}>2</motion.div>
-            <motion.div whileTap={TAP} transition={TAP_FAST} className="nxc-btn" style={{ height: 29, minWidth: 29, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 7, background: T.SURFACE, fontSize: 12.5, cursor: 'pointer' }}>3</motion.div>
-            <motion.div whileTap={TAP} transition={TAP_FAST} className="nxc-btn" style={{ height: 29, padding: '0 10px', display: 'flex', alignItems: 'center', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 7, background: T.SURFACE, fontSize: 12.5, cursor: 'pointer' }}>Next</motion.div>
+            <motion.div whileTap={TAP} transition={TAP_FAST} className="nxc-btn" style={{ height: 29, minWidth: 29, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${admin ? 'var(--ops-border)' : T.INPUT_BORDER}`, borderRadius: 7, background: admin ? 'var(--ops-surface-soft)' : T.SURFACE, fontSize: 12.5, cursor: 'pointer' }}>2</motion.div>
+            <motion.div whileTap={TAP} transition={TAP_FAST} className="nxc-btn" style={{ height: 29, minWidth: 29, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${admin ? 'var(--ops-border)' : T.INPUT_BORDER}`, borderRadius: 7, background: admin ? 'var(--ops-surface-soft)' : T.SURFACE, fontSize: 12.5, cursor: 'pointer' }}>3</motion.div>
+            <motion.div whileTap={TAP} transition={TAP_FAST} className="nxc-btn" style={{ height: 29, padding: '0 10px', display: 'flex', alignItems: 'center', border: `1px solid ${admin ? 'var(--ops-border)' : T.INPUT_BORDER}`, borderRadius: 7, background: admin ? 'var(--ops-surface-soft)' : T.SURFACE, fontSize: 12.5, cursor: 'pointer' }}>Next</motion.div>
           </div>
         </div>
       </div>
       </div>
       <style jsx>{`
         .nxc-btn { transition: background 100ms ease-out, border-color 100ms ease-out; }
-        .nxc-btn:hover { background: var(--nx-surface-soft); border-color: var(--nx-menu-border); }
-        .nxc-tab:hover { color: var(--nx-text); }
+        .nxc-btn:hover { background: ${admin ? 'var(--ops-surface)' : 'var(--nx-surface-soft)'}; border-color: ${admin ? 'rgba(0,215,195,.3)' : 'var(--nx-menu-border)'}; }
+        .nxc-tab:hover { color: ${admin ? 'var(--ops-heading)' : 'var(--nx-text)'}; }
         .nxc-row { transition: background 100ms ease-out; }
         .nxc-row:hover { background: rgba(0,215,195,.09); }
       `}</style>

@@ -58,7 +58,8 @@ export default function DashboardContent({ mobile, narrow, phone }) {
     <div style={{ flex: 1, padding: '0 0 48px', position: 'relative' }}>
       <ScenicBackdrop />
 
-      <div style={{ position: 'relative', zIndex: 1, padding: `${phone ? 14 : 22}px ${pagePad}px 6px`, display: 'grid', gridTemplateColumns: statCols, gap: phone ? 10 : 14 }}>
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1680, margin: '0 auto' }}>
+      <div style={{ padding: `${phone ? 14 : 22}px ${pagePad}px 6px`, display: 'grid', gridTemplateColumns: statCols, gap: phone ? 10 : 14 }}>
         {statCards.map((c) => (
           <DashboardStatCard key={c.id} card={c} hidden={expandedCardId === c.id} onOpen={setExpandedCardId} />
         ))}
@@ -66,7 +67,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
 
       <DashboardStatCardModal card={expandedCard} onClose={() => setExpandedCardId(null)} />
 
-      <div style={{ position: 'relative', zIndex: 1, padding: `6px ${pagePad}px 0`, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: `6px ${pagePad}px 0`, display: 'flex', flexDirection: 'column' }}>
         <div style={{ ...GLASS, overflow: 'hidden', marginTop: 20 }}>
           <GlassSheen />
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', padding: phone ? '12px 14px' : '13px 18px', borderBottom: `1px solid ${T.DIVIDER}` }}>
@@ -266,6 +267,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
