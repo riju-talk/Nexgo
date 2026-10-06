@@ -15,6 +15,7 @@
     "seed:demo-network": "tsx src/db/seed-demo-network.ts",
     "seed:demo-admin": "tsx src/db/seed-demo-admin.ts",
     "seed:demo-data": "tsx src/db/seed-demo-data.ts",
+    "seed:comprehensive": "tsx src/db/seed-comprehensive-test-data.ts",
     "check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

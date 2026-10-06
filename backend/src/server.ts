@@ -33,6 +33,10 @@ import { analyticsRoutes } from './routes/analytics.js';
 import { workspaceRoutes } from './routes/workspace.js';
 import { locationRoutes } from './routes/locations.js';
 import { billingExtrasRoutes } from './routes/billingExtras.js';
+import { ndrRoutes } from './routes/ndr.js';
+import { weightDisputeRoutes } from './routes/weightDisputes.js';
+import { bankAccountRoutes } from './routes/bankAccounts.js';
+import { partnerRoutes } from './routes/partners.js';
 
 const app = Fastify({ logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' }, requestIdHeader: 'x-request-id' });
 await app.register(helmet, { contentSecurityPolicy: false });
@@ -83,6 +87,10 @@ await app.register(adminMfaRoutes);
 await app.register(adminOperationsRoutes);
 await app.register(adminVisibilityRoutes);
 await app.register(kycRoutes);
+await app.register(ndrRoutes);
+await app.register(weightDisputeRoutes);
+await app.register(bankAccountRoutes);
+await app.register(partnerRoutes);
 
 const close = async () => { await app.close(); await db.end(); };
 process.on('SIGTERM', close); process.on('SIGINT', close);

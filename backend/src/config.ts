@@ -16,6 +16,7 @@ const schema = z.object({
   // 32-byte AES-256 key, base64-encoded. Local dev only — production uses
   // per-record envelope encryption via AWS KMS instead of a static key.
   LOCAL_ENCRYPTION_KEY: z.string().min(1),
+  ENCRYPTION_KEY: z.string().min(64).optional(), // 32-byte hex key for bank account encryption
   // Optional: unset means "use the deterministic mock gateway," the same
   // pattern as the mock courier adapter. Set all three once real Razorpay
   // test-mode credentials exist.

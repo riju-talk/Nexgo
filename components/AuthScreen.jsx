@@ -30,6 +30,12 @@ export default function AuthScreen({ mode }) {
   const [form, setForm] = useState({ businessName: '', fullName: '', email: '', password: '', phone: '', confirmPassword: '' });
   const [submitting, setSubmitting] = useState(false);
   const set = (name) => (value) => setForm((current) => ({ ...current, [name]: value }));
+  
+  // Demo credentials helper
+  const fillDemo = () => {
+    setForm({ ...form, email: 'demo@acmeexports.com', password: 'Demo@123' });
+    showToast('Demo credentials filled! Click Sign In to continue.');
+  };
   const submit = async (event) => {
     event.preventDefault(); setSubmitting(true);
     try {
@@ -104,7 +110,48 @@ export default function AuthScreen({ mode }) {
             <>
               <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: T.TEXT }}>Sign in</div>
               <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4 }}>Access your shipping workspace</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 22 }}>
+              
+              {/* Demo Credentials Banner */}
+              <div style={{ 
+                marginTop: 16, 
+                padding: '11px 13px', 
+                background: 'linear-gradient(135deg, rgba(0,215,195,.08) 0%, rgba(15,118,110,.08) 100%)', 
+                border: '1px solid rgba(0,215,195,.25)',
+                borderRadius: 9,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10
+              }}>
+                <div style={{ fontSize: 16 }}>🚀</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#0F766E', marginBottom: 3 }}>Demo Access Available</div>
+                  <div style={{ fontSize: 11.5, color: T.TEXT_SECONDARY, lineHeight: 1.5, marginBottom: 8 }}>
+                    <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: T.TEXT, marginTop: 3 }}>
+                      <div>Email: <strong>demo@acmeexports.com</strong></div>
+                      <div>Password: <strong>Demo@123</strong></div>
+                    </div>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={fillDemo}
+                    style={{ 
+                      height: 26, 
+                      padding: '0 10px', 
+                      border: '1px solid rgba(0,215,195,.4)', 
+                      borderRadius: 6, 
+                      background: 'rgba(0,215,195,.12)', 
+                      color: '#0F766E', 
+                      fontSize: 11, 
+                      fontWeight: 700, 
+                      cursor: 'pointer' 
+                    }}
+                  >
+                    Fill Demo Credentials
+                  </button>
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 16 }}>
                 <Field label="Work email" required value={form.email} onChange={set('email')} placeholder="you@company.com" />
                 <Field label="Password" required type="password" value={form.password} onChange={set('password')} />
                 <button type="submit" disabled={submitting} style={{ ...PRIMARY_BTN, width: '100%', border: 0, opacity: submitting ? .7 : 1 }}>{submitting ? 'Signing in…' : 'Sign In'}</button>
