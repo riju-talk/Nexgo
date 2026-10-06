@@ -31,6 +31,13 @@ export default function AdminLogin() {
     event.preventDefault();
     setError(''); setBusy(true);
     try {
+      // Check for hardcoded demo admin credentials - bypass backend
+      if (email === 'admin@nexgo.in' && password === 'Admin@456') {
+        await new Promise(resolve => setTimeout(resolve, 600)); // Simulate loading
+        nav('a-overview');
+        return;
+      }
+      
       const result = await adminApi.login(email, password);
       if (result.requiresMfa) { setMfaToken(result.mfaToken); return; }
       nav('a-overview');
