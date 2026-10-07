@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useAppState } from '@/lib/AppStateContext';
 import { apiFetch, ApiError } from '@/lib/api';
 import * as T from '@/lib/theme';
@@ -11,7 +12,11 @@ const SWITCHER = [
 ];
 
 const FIELD = { height: 38, border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, display: 'flex', alignItems: 'center', padding: '0 12px', fontSize: 13.5, color: T.TEXT };
-const FIELD_LABEL = { fontSize: 12.5, fontWeight: 600, color: T.TEXT_LABEL, marginBottom: 6, display: 'flex', gap: 3 };
+const AUTH_TEXT = '#F8FAFC';
+const AUTH_SUB = '#D6E2F2';
+const AUTH_MUTED = '#AFC0D7';
+const AUTH_LINK = '#00D7C3';
+const FIELD_LABEL = { fontSize: 12.5, fontWeight: 700, color: AUTH_SUB, marginBottom: 6, display: 'flex', gap: 3, textShadow: '0 1px 2px rgba(0,0,0,.28)' };
 const REQUIRED = <span style={{ color: '#DC2626' }}>*</span>;
 const PRIMARY_BTN = { height: 40, borderRadius: 8, background: '#0F766E', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 4 };
 
@@ -76,7 +81,8 @@ export default function AuthScreen({ mode }) {
         style={{
           position: 'absolute', inset: 0, zIndex: 0,
           backgroundImage: [
-            'linear-gradient(rgba(6,12,10,.5), rgba(6,12,10,.5))',
+            'radial-gradient(circle at 72% 36%, rgba(0,215,195,.24), transparent 28%)',
+            'linear-gradient(90deg, rgba(3,10,20,.78), rgba(3,10,20,.32) 46%, rgba(116,57,7,.35))',
             'url(/login-port.jpg)',
           ].join(', '),
           backgroundSize: 'cover',
@@ -114,15 +120,15 @@ export default function AuthScreen({ mode }) {
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
         <div style={{
           width: '100%', maxWidth: 400,
-          background: 'var(--nx-glass-1)', backdropFilter: 'blur(18px) saturate(160%)',
-          border: '1px solid var(--nx-glass-border)', borderRadius: 16,
-          boxShadow: '0 1px 1px rgba(15,23,42,.05), 0 24px 60px rgba(6,12,10,.35)',
+          background: 'transparent', backdropFilter: 'blur(16px) saturate(170%)',
+          border: '1px solid rgba(0,215,195,.26)', borderRadius: 16,
+          boxShadow: '0 24px 70px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.14)',
           padding: '32px 34px 30px',
         }}>
           <form onSubmit={submit}>{mode === 'login' && (
             <>
-              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: T.TEXT }}>Sign in</div>
-              <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4 }}>Access your shipping workspace</div>
+              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT, textShadow: '0 1px 2px rgba(0,0,0,.34)' }}>Sign in</div>
+              <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 4 }}>Access your shipping workspace</div>
               
               {/* Demo Credentials Banner */}
               <div style={{ 
@@ -137,9 +143,9 @@ export default function AuthScreen({ mode }) {
               }}>
                 <div style={{ fontSize: 16 }}>🚀</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#0F766E', marginBottom: 3 }}>Demo Access Available</div>
-                  <div style={{ fontSize: 11.5, color: T.TEXT_SECONDARY, lineHeight: 1.5, marginBottom: 8 }}>
-                    <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: T.TEXT, marginTop: 3 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: AUTH_LINK, marginBottom: 3 }}>Demo Access Available</div>
+                  <div style={{ fontSize: 11.5, color: AUTH_SUB, lineHeight: 1.5, marginBottom: 8 }}>
+                    <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: AUTH_TEXT, marginTop: 3 }}>
                       <div>Email: <strong>demo@acmeexports.com</strong></div>
                       <div>Password: <strong>Demo@123</strong></div>
                     </div>
@@ -153,7 +159,7 @@ export default function AuthScreen({ mode }) {
                       border: '1px solid rgba(0,215,195,.4)', 
                       borderRadius: 6, 
                       background: 'rgba(0,215,195,.12)', 
-                      color: '#0F766E', 
+                      color: AUTH_LINK, 
                       fontSize: 11, 
                       fontWeight: 700, 
                       cursor: 'pointer' 
@@ -169,19 +175,19 @@ export default function AuthScreen({ mode }) {
                 <Field label="Password" required type="password" value={form.password} onChange={set('password')} />
                 <button type="submit" disabled={submitting} style={{ ...PRIMARY_BTN, width: '100%', border: 0, opacity: submitting ? .7 : 1 }}>{submitting ? 'Signing in…' : 'Sign In'}</button>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-                  <span onClick={() => nav('forgot')} style={{ fontSize: 12, color: '#0F766E', fontWeight: 600, cursor: 'pointer' }}>Forgot Password</span>
-                  <span style={{ fontSize: 12, color: T.TEXT_SECONDARY }}>New here? <span onClick={() => nav('signup')} style={{ color: '#0F766E', fontWeight: 600, cursor: 'pointer' }}>Sign Up</span></span>
+                  <span onClick={() => nav('forgot')} style={{ fontSize: 12, color: AUTH_LINK, fontWeight: 700, cursor: 'pointer' }}>Forgot Password</span>
+                  <span style={{ fontSize: 12, color: AUTH_SUB }}>New here? <span onClick={() => nav('signup')} style={{ color: AUTH_LINK, fontWeight: 700, cursor: 'pointer' }}>Sign Up</span></span>
                 </div>
-                <div style={{ marginTop: 12, paddingTop: 14, borderTop: `1px solid ${T.DIVIDER}`, textAlign: 'center', fontSize: 12, color: T.TEXT_SECONDARY }}>
-                  Platform staff? <a href="/admin/login" style={{ color: '#0F766E', fontWeight: 600, textDecoration: 'none' }}>Sign in as admin</a>
+                <div style={{ marginTop: 12, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,.34)', textAlign: 'center', fontSize: 12, color: AUTH_SUB }}>
+                  Platform staff? <Link href="/admin/login" style={{ color: AUTH_LINK, fontWeight: 700, textDecoration: 'none' }}>Sign in as admin</Link>
                 </div>
               </div>
             </>
           )}
           {mode === 'signup' && (
             <>
-              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: T.TEXT }}>Create account</div>
-              <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4 }}>Set up your seller workspace</div>
+              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT }}>Create account</div>
+              <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 4 }}>Set up your seller workspace</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 22 }}>
                 <Field label="Business name" required value={form.businessName} onChange={set('businessName')} />
                 <Field label="Your name" required value={form.fullName} onChange={set('fullName')} />
@@ -189,25 +195,25 @@ export default function AuthScreen({ mode }) {
                 <Field label="Password" required type="password" value={form.password} onChange={set('password')} />
                 <Field label="Confirm password" required type="password" value={form.confirmPassword} onChange={set('confirmPassword')} />
                 <button type="submit" disabled={submitting} style={{ ...PRIMARY_BTN, width: '100%', border: 0, opacity: submitting ? .7 : 1 }}>{submitting ? 'Creating…' : 'Create account'}</button>
-                <div style={{ textAlign: 'center', fontSize: 12, color: T.TEXT_SECONDARY }}>Already on NEXGO? <span onClick={() => nav('login')} style={{ color: '#0F766E', fontWeight: 600, cursor: 'pointer' }}>Sign in</span></div>
+                <div style={{ textAlign: 'center', fontSize: 12, color: AUTH_SUB }}>Already on NEXGO? <span onClick={() => nav('login')} style={{ color: AUTH_LINK, fontWeight: 700, cursor: 'pointer' }}>Sign in</span></div>
               </div>
             </>
           )}
           {mode === 'forgot' && (
             <>
-              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: T.TEXT }}>Reset your password</div>
-              <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4, lineHeight: 1.6 }}>Enter your work email and we&apos;ll send a link to reset your password.</div>
+              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT }}>Reset your password</div>
+              <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 4, lineHeight: 1.6 }}>Enter your work email and we&apos;ll send a link to reset your password.</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 22 }}>
                 <Field label="Work email" required value={form.email} onChange={set('email')} />
                 <button type="submit" disabled={submitting} style={{ ...PRIMARY_BTN, width: '100%', border: 0 }}>{submitting ? 'Sending…' : 'Send reset link'}</button>
-                <div onClick={() => nav('login')} style={{ textAlign: 'center', fontSize: 12, color: T.TEXT_SECONDARY, cursor: 'pointer' }}>← Back to sign in</div>
+                <div onClick={() => nav('login')} style={{ textAlign: 'center', fontSize: 12, color: AUTH_SUB, cursor: 'pointer' }}>← Back to sign in</div>
               </div>
             </>
           )}</form>
           {mode === 'reset' && (
             <form onSubmit={submit}>
-              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: T.TEXT }}>Set a new password</div>
-              <div style={{ fontSize: 13, color: T.TEXT_SECONDARY, marginTop: 4 }}>Choose a strong password for your workspace.</div>
+              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT }}>Set a new password</div>
+              <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 4 }}>Choose a strong password for your workspace.</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 22 }}>
                 <Field label="New password" required type="password" value={form.password} onChange={set('password')} />
                 <Field label="Confirm new password" required type="password" value={form.confirmPassword} onChange={set('confirmPassword')} />
@@ -215,9 +221,9 @@ export default function AuthScreen({ mode }) {
               </div>
             </form>
           )}
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 22, paddingTop: 16, borderTop: `1px solid ${T.DIVIDER}` }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 22, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,.34)' }}>
             {SWITCHER.map(([label, id]) => (
-              <div key={id} onClick={() => nav(id)} style={{ fontSize: 11, fontWeight: 600, color: mode === id ? '#0F766E' : '#94A3B8', cursor: 'pointer' }}>{label}</div>
+              <div key={id} onClick={() => nav(id)} style={{ fontSize: 11, fontWeight: 700, color: mode === id ? AUTH_LINK : AUTH_MUTED, cursor: 'pointer' }}>{label}</div>
             ))}
           </div>
         </div>

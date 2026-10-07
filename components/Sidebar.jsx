@@ -28,7 +28,7 @@ const ICONS = {
 // non-clickable phase-2 item; a ['#', label, screenId?] entry is a section heading.
 const MENU = [
   ['dashboard', 'Dashboard', 'dashboard', []],
-  ['intake', 'Orders Management', 'orders', [['All orders', 'orders'], ['Create B2C order', 'b2c', ['bulk-orders']], ['B2B orders', 'b2b', [], 'soon'], ['Reverse order', 'reverse']]],
+  ['intake', 'Orders Management', 'b2c', [['Create B2C order', 'b2c', ['bulk-orders']]]],
   ['flight', 'Track', 'shipments', []],
   ['reports', 'Reports', 'mis', [['MIS reports', 'mis'], ['NDR report', 'ndr'], ['Weight discrepancy', 'weight']]],
   ['book', 'Tools', 'ratecard', [['Rate card', 'ratecard'], ['Rate calculator', 'ratecalc'], ['Pincode serviceability', 'pincode']]],
@@ -37,7 +37,6 @@ const MENU = [
   ['tower', 'Control Tower', 'account-config', [
     ['#', 'Account configuration', 'account-config'], ['Printer settings', 'printer'], ['Label settings', 'label'], ['Invoice settings', 'inv-settings'], ['Schedule email reports', 'email-reports'],
     ['#', 'ABC configuration'], ['WhatsApp notifications', 'wa-api'], ['SMS notifications', 'sms-api'], ['Order confirmation', 'notifications'], ['Abandoned checkout notifications', 'abandoned'],
-    ['#', 'Access'], ['Team & roles', 'team'],
   ]],
   ['settings', 'Settings', 'kyc', [['KYC', 'kyc'], ['Profile settings', 'profile', ['password']], ['Warehouse settings', 'warehouse'], ['Courier rules', 'courier-rules']]],
 ];

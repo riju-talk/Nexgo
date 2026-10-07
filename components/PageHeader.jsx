@@ -11,7 +11,7 @@ const TAP = { scale: 0.96 };
 const TAP_FAST = { duration: 0.08 };
 
 export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
-  const { nav, setPaletteOpen } = useAppState();
+  const { nav } = useAppState();
   const meta = PAGES[activeId] || ['', '', ''];
   const [crumb, pageTitle, pageSub] = meta;
   const isAdmin = activeId.indexOf('a-') === 0;
@@ -55,17 +55,6 @@ export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
                 style={{ height: 32, padding: '0 12px', borderRadius: 7, border: `1px solid ${T.INPUT_BORDER}`, background: T.SURFACE, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12.5, color: T.TEXT_LABEL }}
               />
             </>
-          )}
-          {!actions.length && (
-            <motion.div
-              whileTap={TAP}
-              transition={TAP_FAST}
-              onClick={() => setPaletteOpen(true)}
-              style={{ height: 38, padding: '0 14px', borderRadius: 8, background: T.NAVY, color: '#fff', display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, fontWeight: 700, boxShadow: '0 6px 16px rgba(15,31,61,.22)' }}
-            >
-              Ship now
-              <div style={{ fontFamily: T.MONO, fontSize: 10, border: '1px solid rgba(255,255,255,.28)', borderRadius: 4, padding: '1px 4px' }}>S</div>
-            </motion.div>
           )}
         </div>
       </div>

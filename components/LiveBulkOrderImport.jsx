@@ -7,8 +7,8 @@ import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
-const MAX_ORDERS = 100;
-const MAX_ROWS = 500;
+const MAX_ORDERS = 5000;
+const MAX_ROWS = 20000;
 
 // Header text (any case/spacing/punctuation) → field. Kept loose so seller-made sheets import too.
 const ALIASES = {
@@ -31,6 +31,18 @@ const inr = (paise) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFrac
 
 function Action({ children, onClick, primary = false, disabled = false }) {
   return <button type="button" disabled={disabled} onClick={onClick} style={{ minHeight: 36, padding: '0 13px', borderRadius: 9, border: `1px solid ${primary ? T.NAVY : T.INPUT_BORDER}`, background: primary ? T.NAVY : T.SURFACE, color: primary ? '#fff' : T.TEXT, fontSize: 12.5, fontWeight: 750, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>{children}</button>;
+}
+
+function SummaryCard({ label, value, tone = T.ACCENT, icon }) {
+  return (
+    <section style={{ ...CARD, minHeight: 82, padding: '14px 15px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderLeft: `3px solid ${tone}` }}>
+      <div>
+        <span style={{ display: 'block', color: T.TEXT_MUTED, fontSize: 11, fontWeight: 800, letterSpacing: '.04em' }}>{label}</span>
+        <b style={{ display: 'block', marginTop: 8, color: T.TEXT, fontSize: 24, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{value}</b>
+      </div>
+      <div style={{ width: 42, height: 42, borderRadius: 10, display: 'grid', placeItems: 'center', background: `${tone}16`, color: tone, fontSize: 20, fontWeight: 850 }}>{icon}</div>
+    </section>
+  );
 }
 
 // Finds the header row (the first row with an "Order number" column) so title or
@@ -198,10 +210,17 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
       <div style={{ ...CARD, padding: mobile ? 17 : 22 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ color: T.TEXT, fontSize: 17, fontWeight: 780 }}>Bulk upload</div>
-            <p style={{ margin: '6px 0 0', maxWidth: 640, color: T.TEXT_SECONDARY, fontSize: 13.5, lineHeight: 1.55 }}>Upload up to {MAX_ORDERS} orders from Excel or CSV. Repeat an order number on several rows to add multiple products to one order. Every order is validated and priced before anything is created.</p>
+            <div style={{ color: T.TEXT, fontSize: 17, fontWeight: 780 }}>Bulk Order Management</div>
+            <p style={{ margin: '6px 0 0', maxWidth: 680, color: T.TEXT_SECONDARY, fontSize: 13.5, lineHeight: 1.55 }}>Upload and track NEXGO bulk orders efficiently. Each sheet can include up to {MAX_ORDERS.toLocaleString('en-IN')} orders, with repeated order numbers used for multiple products.</p>
           </div>
-          <a href="/bulk-order-template.xlsx" download style={{ minHeight: 36, display: 'inline-flex', alignItems: 'center', padding: '0 13px', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 9, color: T.TEXT, background: T.SURFACE, textDecoration: 'none', fontSize: 12.5, fontWeight: 750 }}>Download Excel template</a>
+          <a href="/bulk-order-template.xlsx" download="NEXGO bulk upload.xlsx" style={{ minHeight: 36, display: 'inline-flex', alignItems: 'center', padding: '0 13px', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 9, color: T.TEXT, background: T.SURFACE, textDecoration: 'none', fontSize: 12.5, fontWeight: 750 }}>Download NEXGO bulk upload</a>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4,minmax(0,1fr))', gap: 12, marginTop: 18 }}>
+          <SummaryCard label="Total uploads" value={fileName ? 1 : 0} tone="#6366F1" icon="⇧" />
+          <SummaryCard label="Total orders" value={orders.length} tone="#3B82F6" icon="□" />
+          <SummaryCard label="Successful orders" value={result?.created || orders.filter((o) => o.created).length} tone="#22C55E" icon="✓" />
+          <SummaryCard label="Failed orders" value={failedCount} tone="#EF4444" icon="×" />
         </div>
 
         <div
@@ -214,7 +233,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           style={{ marginTop: 18, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(0,215,195,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
         >
           <b style={{ display: 'block', color: T.TEXT, fontSize: 14 }}>{loading ? 'Reading and validating…' : 'Drop your order file here, or click to browse'}</b>
-          <span style={{ display: 'block', marginTop: 5, color: T.TEXT_MUTED, fontSize: 12.5 }}>{fileName && !loading ? fileName : '.xlsx, .xls or .csv · up to 5 MB'}</span>
+          <span style={{ display: 'block', marginTop: 5, color: T.TEXT_MUTED, fontSize: 12.5 }}>{fileName && !loading ? fileName : '.xlsx, .xls or .csv · up to 5 MB · NEXGO bulk upload format'}</span>
           <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; importFile(f); }} />
         </div>
       </div>

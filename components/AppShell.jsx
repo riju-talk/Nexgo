@@ -25,7 +25,7 @@ export default function AppShell({ children }) {
       <div style={{ height: '100%', display: 'flex', minHeight: 0 }}>
         <MobileOverlay mobile={mobile} />
         <Sidebar activeId={activeId} mobile={mobile} />
-        <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }}>
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'auto', scrollbarGutter: 'stable' }}>
           <TopBar activeId={activeId} mobile={mobile} />
           {children}
         </div>

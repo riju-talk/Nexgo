@@ -47,6 +47,9 @@
   --nx-loader-label: #58718B;
   --nx-loader-track: rgba(31,73,108,.16);
   --nx-loader-accent: #008F85;
+  --nx-glass-1: rgba(255,255,255,.58);
+  --nx-glass-2: rgba(255,255,255,.34);
+  --nx-glass-border: rgba(255,255,255,.36);
 
   /* Admin/Operations theme colors */
   --ops-bg: #eef2f5;

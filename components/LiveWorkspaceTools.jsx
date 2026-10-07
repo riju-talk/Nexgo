@@ -21,7 +21,13 @@ const CONFIG = {
   abandoned: ['Abandoned checkout notifications', 'Remind shoppers who left your store before paying.', [['enabled', 'Send abandoned-checkout reminders', 'boolean'], ['channel', 'Send through', 'select:WhatsApp|SMS|Email'], ['delayMinutes', 'First reminder after (minutes)', 'number'], ['maxReminders', 'Maximum reminders', 'number']]],
   profile: ['Profile settings', 'Your business details as they appear on documents and notifications.', [['displayName', 'Business display name', 'text'], ['contactPhone', 'Contact phone', 'text'], ['supportEmail', 'Support email', 'text'], ['website', 'Website', 'text'], ['billingAddress', 'Billing address', 'text']]],
 };
-const LINKS = { profile: [['Change password', 'password'], ['Team & roles', 'team'], ['KYC', 'kyc']] };
+const PROFILE_DOCUMENTS = [
+  ['pancard_vimalenterprises.jpeg', 'PAN card', 'Verified'],
+  ['GST Certificate Vimal Enterprises.pdf', 'GST certificate', 'Verified'],
+  ['aadhar_front_vimal_enterprises.jpg', 'Aadhaar front', 'Pending'],
+  ['aadhar_back_bvimla_enterprises.jpg', 'Aadhaar back', 'Pending'],
+];
+const LINKS = { profile: [['Change password', 'password'], ['KYC', 'kyc']] };
 
 function Settings({ activeId, mobile }) {
   const c = CONFIG[activeId]; const { showToast, nav } = useAppState();
@@ -39,6 +45,7 @@ function Settings({ activeId, mobile }) {
     <main style={{ padding: mobile ? '14px 12px 42px' : '18px 22px 48px', maxWidth: 900 }}>
       <div style={{ marginBottom: 15 }}><h2 style={{ margin: 0, color: T.TEXT, fontSize: 19 }}>{c[0]}</h2><p style={{ margin: '5px 0 0', color: T.TEXT_SECONDARY, fontSize: 13 }}>{c[1]}</p></div>
       {identity && <section style={{ ...CARD, padding: 17, marginBottom: 13, display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3,1fr)', gap: 12 }}>{[['Legal name', identity.legal_name], ['Account owner', `${identity.full_name} · ${title(identity.role)}`], ['Sign-in email', identity.email]].map(([k, v]) => <div key={k}><span style={{ color: T.TEXT_MUTED, fontSize: 11, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase' }}>{k}</span><b style={{ display: 'block', marginTop: 6, color: T.TEXT_LABEL, fontSize: 13.5 }}>{v}</b></div>)}</section>}
+      {identity && activeId === 'profile' && <section style={{ ...CARD, padding: 0, marginBottom: 13, overflow: 'hidden' }}><div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#246AF4,#5538F5)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}><div><div style={{ fontSize: 18, fontWeight: 800 }}>Account Status</div><div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}><span style={{ padding: '5px 9px', borderRadius: 99, background: 'rgba(255,255,255,.22)', fontSize: 11, fontWeight: 850, letterSpacing: '.05em' }}>VERIFIED</span><span style={{ fontSize: 12.5, opacity: .86 }}>Member since Apr 2025</span></div></div><div style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(2,minmax(0,1fr))' : 'repeat(5,minmax(82px,1fr))', gap: 9 }}>{[['Email', 'Verified'], ['Phone', 'Verified'], ['Aadhaar', 'Pending'], ['PAN', 'Verified'], ['Bank', 'Pending']].map(([name, state]) => <div key={name} style={{ minHeight: 64, padding: '9px 10px', borderRadius: 8, background: 'rgba(255,255,255,.12)' }}><b style={{ display: 'block', fontSize: 12 }}>{name}</b><span style={{ display: 'block', marginTop: 6, fontSize: 11.5, color: state === 'Verified' ? '#B8F7D0' : '#FFD48A' }}>{state === 'Verified' ? '✓' : '△'} {state}</span></div>)}</div></div></section>}
       <section style={{ ...CARD, padding: 17, display: 'grid', gap: 13 }}>
         {!loaded && <span style={{ color: T.TEXT_MUTED, fontSize: 13 }}>Loading your saved settings…</span>}
         {c[2].map(([key, label, kind]) => (
@@ -51,6 +58,7 @@ function Settings({ activeId, mobile }) {
         ))}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><Button primary disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</Button>{(LINKS[activeId] || []).map(([label, dest]) => <Button key={dest} onClick={() => nav(dest)}>{label}</Button>)}</div>
       </section>
+      {activeId === 'profile' && <section style={{ ...CARD, padding: 17, marginTop: 13 }}><div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 13 }}><div><h3 style={{ margin: 0, color: T.TEXT, fontSize: 16 }}>Documents</h3><p style={{ margin: '4px 0 0', color: T.TEXT_MUTED, fontSize: 12.5 }}>{PROFILE_DOCUMENTS.length} documents uploaded</p></div><span style={{ display: 'inline-flex', padding: '4px 8px', borderRadius: 99, color: T.GREEN, background: `${T.GREEN}14`, fontSize: 11.5, fontWeight: 720 }}>Read only</span></div><div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3,minmax(0,1fr))', gap: 10 }}>{PROFILE_DOCUMENTS.map(([name, kind, state]) => <article key={name} style={{ border: `1px solid ${T.BORDER}`, borderRadius: 9, padding: 11, background: T.SURFACE_SOFT }}><b style={{ display: 'block', color: T.TEXT, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</b><small style={{ display: 'block', marginTop: 4, color: T.TEXT_MUTED }}>{kind} · {state}</small><button type="button" onClick={() => showToast('Document preview is read-only and cannot be modified.')} style={{ marginTop: 10, width: '100%', height: 30, border: 0, borderRadius: 7, color: '#fff', background: 'linear-gradient(90deg,#9333EA,#DB2777)', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>View Document</button></article>)}</div></section>}
     </main>
   );
 }
@@ -67,6 +75,36 @@ function Reports({ activeId, mobile }) {
     else apiFetch('/v1/reports/summary').then(setData).catch(() => { setData({}); setFailed(true); });
   }, [activeId]);
   const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
+
+  if (activeId === 'mis') {
+    return (
+      <main style={{ padding: pad, maxWidth: 1120 }}>
+        <section style={{ ...CARD, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', background: '#2454D6', color: '#fff', fontWeight: 800, fontSize: 13 }}>Generate Report</div>
+          <div style={{ padding: 16, display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr 1fr 1fr', gap: 12 }}>
+            <label style={{ color: T.TEXT_LABEL, fontSize: 12, fontWeight: 700 }}>Type<select defaultValue="MIS" style={{ ...field, marginTop: 6 }}><option>MIS</option><option>NDR Report</option><option>Weight Discrepancy</option></select></label>
+            <label style={{ color: T.TEXT_LABEL, fontSize: 12, fontWeight: 700 }}>From<input type="date" style={{ ...field, marginTop: 6 }} /></label>
+            <label style={{ color: T.TEXT_LABEL, fontSize: 12, fontWeight: 700 }}>To<input type="date" style={{ ...field, marginTop: 6 }} /></label>
+            <label style={{ color: T.TEXT_LABEL, fontSize: 12, fontWeight: 700 }}>Status<select defaultValue="All" style={{ ...field, marginTop: 6 }}><option>All</option><option>Delivered</option><option>NDR</option><option>RTO</option></select></label>
+          </div>
+          <div style={{ padding: '0 16px 15px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', borderBottom: `1px solid ${T.DIVIDER}` }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.TEXT_SECONDARY, fontSize: 12.5 }}><input type="checkbox" style={{ accentColor: T.ACCENT }} />Send report to my email when ready</label>
+            <Button primary onClick={() => showToast('Report generation queued')}>Generate</Button>
+          </div>
+          <div style={{ padding: '11px 16px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {['Today', '7 days', '30 days', 'This month', 'Last month'].map((preset) => <button key={preset} type="button" style={{ height: 28, padding: '0 10px', border: `1px solid ${T.DIVIDER}`, borderRadius: 7, background: T.SURFACE_SOFT, color: T.TEXT_SECONDARY, fontSize: 11.5, fontWeight: 700 }}>{preset}</button>)}
+          </div>
+        </section>
+        <section style={{ ...CARD, overflow: 'hidden', marginTop: 14 }}>
+          <div style={{ padding: '12px 16px', background: '#2454D6', color: '#fff', display: 'flex', justifyContent: 'space-between', gap: 12, fontWeight: 800, fontSize: 13 }}><span>Latest Generated Report</span><span style={{ padding: '2px 7px', borderRadius: 6, background: 'rgba(255,255,255,.18)', fontSize: 11 }}>New</span></div>
+          <div style={{ padding: 16, display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr 1fr 1fr', gap: 14 }}>
+            {['Report Type', 'Generated By', 'Duration', 'Generated On'].map((label, i) => <div key={label}><span style={{ display: 'block', color: T.TEXT_MUTED, fontSize: 10.5, fontWeight: 850, letterSpacing: '.06em', textTransform: 'uppercase' }}>{label}</span><b style={{ display: 'block', marginTop: 6, color: T.TEXT_LABEL, fontSize: 13 }}>{['MIS', 'Vimla Enterprises', '2025-07-01 to 2025-10-12', '12 Oct 2025, 08:01:49 pm'][i]}</b></div>)}
+          </div>
+          <div style={{ padding: '0 16px 16px' }}><Button onClick={() => showToast('Latest MIS report download started')}>Download</Button></div>
+        </section>
+      </main>
+    );
+  }
 
   if (activeId === 'weight') {
     const extra = rows?.reduce((s, r) => s + Number(r.difference_g), 0) || 0;

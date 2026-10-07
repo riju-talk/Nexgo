@@ -20,6 +20,16 @@ const GROUPS = [
   ['Settings', [['System settings', 'a-system', '⚙'], ['API management', 'a-api', '⌁'], ['Audit logs', 'a-audit', '◫'], ['Role permissions', 'a-roles', '♙']]],
 ];
 
+const DEMO_ADMIN = {
+  fullName: 'Demo Admin',
+  email: 'admin@nexgo.in',
+  role: 'super_admin',
+};
+
+function hasDemoAdminSession() {
+  return typeof window !== 'undefined' && window.sessionStorage.getItem('nx-demo-admin') === 'true';
+}
+
 function AdminNav({ mobile }) {
   const pathname = usePathname();
   const { navOpen, setNavOpen } = useAppState();
@@ -69,27 +79,16 @@ function AdminNav({ mobile }) {
 export default function AdminShell({ children }) {
   const router = useRouter();
   const { vw, navOpen, setNavOpen, setPaletteOpen, theme, toggleTheme, showToast } = useAppState();
-  const [sessionReady, setSessionReady] = useState(false);
+  const [sessionReady, setSessionReady] = useState(() => hasDemoAdminSession());
   const [profileOpen, setProfileOpen] = useState(false);
-  const [admin, setAdmin] = useState(null);
+  const [admin, setAdmin] = useState(() => (hasDemoAdminSession() ? DEMO_ADMIN : null));
   const mobile = vw <= T.MOBILE_BREAK;
   const dark = theme === 'dark';
   useEffect(() => {
-    // Check if this is a demo session (no backend needed)
-    const isDemoSession = typeof window !== 'undefined' && window.sessionStorage.getItem('nx-demo-admin') === 'true';
-    
-    if (isDemoSession) {
-      // Use demo admin data
-      setAdmin({
-        fullName: 'Demo Admin',
-        email: 'admin@nexgo.in',
-        role: 'super_admin'
-      });
-      setSessionReady(true);
+    if (hasDemoAdminSession()) {
       return;
     }
-    
-    // Normal backend authentication flow
+
     let cancelled = false;
     adminApi.me()
       .then((me) => { if (!cancelled) { setAdmin(me); setSessionReady(true); } })
