@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
@@ -9,7 +10,22 @@ const uuid = z.string().uuid();
 const pincode = z.string().regex(/^\d{6}$/);
 const phone = z.string().trim().regex(/^[0-9+() -]{7,24}$/);
 const address = z.object({ fullName: z.string().trim().min(2).max(120), email: z.string().email().max(254).optional(), phone, addressLine1: z.string().trim().min(3).max(200), addressLine2: z.string().trim().max(200).optional(), city: z.string().trim().min(2).max(100), state: z.string().trim().min(2).max(100), pincode });
-const warehouseInput = address.extend({ name: z.string().trim().min(2).max(120), contactName: z.string().trim().min(2).max(100), isReturnAddress: z.boolean().default(false), cutoffTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional() });
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const warehouseBase = z.object({
+  name: z.string().trim().min(2).max(120), warehouseType: z.enum(['primary', 'secondary', 'fulfilment', 'returns']).default('primary'),
+  contactName: z.string().trim().min(2).max(100), phone, email: z.string().trim().email().max(254).optional().or(z.literal('').transform(() => undefined)),
+  addressLine1: z.string().trim().min(3).max(200), addressLine2: z.string().trim().max(200).optional(), city: z.string().trim().min(2).max(100), state: z.string().trim().min(2).max(100), pincode,
+  latitude: z.number().min(-90).max(90).optional(), longitude: z.number().min(-180).max(180).optional(),
+  capacitySqft: z.number().int().positive().max(100_000_000).optional(), opensAt: hhmm.optional(), closesAt: hhmm.optional(),
+  managerName: z.string().trim().max(100).optional(), notes: z.string().trim().max(1000).optional(),
+  isDefault: z.boolean().default(false), isReturnAddress: z.boolean().default(false), cutoffTime: hhmm.optional(),
+});
+const warehouseChecks = (v: { opensAt?: string; closesAt?: string; latitude?: number; longitude?: number }, ctx: z.RefinementCtx) => {
+  if (v.opensAt && v.closesAt && v.closesAt <= v.opensAt) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Closing time must be after opening time', path: ['closesAt'] });
+  if ((v.latitude === undefined) !== (v.longitude === undefined)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter both latitude and longitude', path: ['latitude'] });
+};
+const warehouseInput = warehouseBase.superRefine(warehouseChecks);
+const warehousePatch = warehouseBase.partial().superRefine(warehouseChecks);
 const productInput = z.object({ sku: z.string().trim().min(1).max(80), name: z.string().trim().min(2).max(200), description: z.string().trim().max(2000).optional(), hsnCode: z.string().trim().max(20).optional(), unitPricePaise: z.number().int().min(0).default(0), weightG: z.number().int().positive().optional(), lengthMm: z.number().int().positive().optional(), widthMm: z.number().int().positive().optional(), heightMm: z.number().int().positive().optional() });
 const consignee = address.extend({ companyName: z.string().trim().max(120).optional(), alternatePhone: phone.optional(), landmark: z.string().trim().max(200).optional() });
 const paise = z.number().int().min(0).max(1_000_000_000);
@@ -17,7 +33,7 @@ const orderInput = z.object({
   warehouseId: uuid, orderNumber: z.string().trim().min(1).max(100), externalReference: z.string().trim().min(1).max(150).optional(),
   orderFlow: z.enum(['forward','reverse','dropship','ship_now']).default('forward'), paymentMode: z.enum(['prepaid', 'cod']).default('prepaid'),
   codAmountPaise: paise.default(0), notes: z.string().trim().max(2000).optional(), customer: consignee,
-  items: z.array(z.object({ productId: uuid.optional(), sku: z.string().trim().min(1).max(80), name: z.string().trim().min(2).max(200), hsnCode: z.string().trim().regex(/^\d{4,8}$/).optional(), quantity: z.number().int().min(1).max(10_000), unitPricePaise: paise, weightG: z.number().int().min(0).default(0) })).min(1).max(500),
+  items: z.array(z.object({ productId: uuid.optional(), sku: z.string().trim().min(1).max(80), name: z.string().trim().min(2).max(200), hsnCode: z.string().trim().regex(/^\d{4,8}$/).optional(), quantity: z.number().int().min(1).max(10_000), unitPricePaise: paise, weightG: z.number().int().min(0).default(0) })).min(1, 'Add at least one product').max(5, 'An order can contain at most 5 products'),
   // Physical parcel. weightG overrides the item-weight sum (it includes packaging); dimensions drive volumetric weight.
   package: z.object({ weightG: z.number().int().min(1).max(500_000).optional(), lengthMm: z.number().int().min(10).max(5_000).optional(), widthMm: z.number().int().min(10).max(5_000).optional(), heightMm: z.number().int().min(10).max(5_000).optional() }).default({}),
   charges: z.object({ shippingPaise: paise.default(0), giftWrapPaise: paise.default(0), transactionPaise: paise.default(0), otherPaise: paise.default(0), discountPaise: paise.default(0), taxRateBps: z.number().int().min(0).max(10_000).default(0) }).default({}),
@@ -47,14 +63,71 @@ function getPrincipal(request: FastifyRequest) { if (!request.principal) throw O
 
 export async function operationsRoutes(app: FastifyInstance) {
   app.get('/v1/warehouses', { preHandler: requireSeller }, async (request) => {
-    const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query('SELECT * FROM warehouses WHERE seller_id = $1 ORDER BY is_active DESC, name', [p.sellerId])).rows }));
+    const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query('SELECT * FROM warehouses WHERE seller_id = $1 ORDER BY is_active DESC, is_default DESC, name', [p.sellerId])).rows }));
   });
+  // A known pincode must match the city/state typed, so a mistyped pincode cannot silently misroute pickups.
+  const checkLocation = async (client: PoolClient, pin: string, state?: string) => {
+    const known = (await client.query<{ city: string; state: string }>('SELECT city, state FROM pincodes WHERE pincode=$1', [pin])).rows[0];
+    if (known && state && known.state.toLowerCase() !== state.toLowerCase()) throw Object.assign(new Error(`Pincode ${pin} belongs to ${known.state}, not ${state}`), { statusCode: 400 });
+  };
+  const WAREHOUSE_COLUMNS: Record<string, string> = { name: 'name', warehouseType: 'warehouse_type', contactName: 'contact_name', phone: 'phone', email: 'email', addressLine1: 'address_line_1', addressLine2: 'address_line_2', city: 'city', state: 'state', pincode: 'pincode', latitude: 'latitude', longitude: 'longitude', capacitySqft: 'capacity_sqft', opensAt: 'opens_at', closesAt: 'closes_at', managerName: 'manager_name', notes: 'notes', isReturnAddress: 'is_return_address', cutoffTime: 'cutoff_time' };
+
   app.post('/v1/warehouses', { preHandler: requireSeller }, async (request, reply) => {
     const input = warehouseInput.parse(request.body); const p = getPrincipal(request);
     const row = await withSellerTransaction(p.sellerId, async (client) => {
-      const result = await client.query(`INSERT INTO warehouses (seller_id,name,contact_name,phone,email,address_line_1,address_line_2,city,state,pincode,is_return_address,cutoff_time) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`, [p.sellerId, input.name, input.contactName, input.phone, input.email ?? null, input.addressLine1, input.addressLine2 ?? null, input.city, input.state, input.pincode, input.isReturnAddress, input.cutoffTime ?? null]);
+      await checkLocation(client, input.pincode, input.state);
+      const existing = (await client.query<{ n: string }>('SELECT count(*) AS n FROM warehouses WHERE seller_id=$1 AND is_active', [p.sellerId])).rows[0];
+      const makeDefault = input.isDefault || Number(existing.n) === 0; // the first warehouse is always the default
+      if (makeDefault) await client.query('UPDATE warehouses SET is_default=false, updated_at=now() WHERE seller_id=$1 AND is_default', [p.sellerId]);
+      const result = await client.query(`INSERT INTO warehouses (seller_id,name,warehouse_type,contact_name,phone,email,address_line_1,address_line_2,city,state,pincode,latitude,longitude,capacity_sqft,opens_at,closes_at,manager_name,notes,is_default,is_return_address,cutoff_time)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
+        [p.sellerId, input.name, input.warehouseType, input.contactName, input.phone, input.email ?? null, input.addressLine1, input.addressLine2 ?? null, input.city, input.state, input.pincode, input.latitude ?? null, input.longitude ?? null, input.capacitySqft ?? null, input.opensAt ?? null, input.closesAt ?? null, input.managerName ?? null, input.notes ?? null, makeDefault, input.isReturnAddress, input.cutoffTime ?? null]).catch((e) => { if (e.code === '23505') throw Object.assign(new Error('You already have a warehouse with this name'), { statusCode: 409 }); throw e; });
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'warehouse.created', targetType: 'warehouse', targetId: result.rows[0].id, requestId: request.id }); return result.rows[0];
     }); return reply.code(201).send(row);
+  });
+
+  app.patch('/v1/warehouses/:warehouseId', { preHandler: requireSeller }, async (request) => {
+    const id = uuid.parse((request.params as { warehouseId: string }).warehouseId); const input = warehousePatch.parse(request.body); const p = getPrincipal(request);
+    return withSellerTransaction(p.sellerId, async (client) => {
+      const current = (await client.query('SELECT id, pincode, state, is_default FROM warehouses WHERE id=$1 AND seller_id=$2 FOR UPDATE', [id, p.sellerId])).rows[0];
+      if (!current) throw Object.assign(new Error('Warehouse not found'), { statusCode: 404 });
+      await checkLocation(client, input.pincode ?? current.pincode, input.state ?? current.state);
+      const sets: string[] = []; const values: unknown[] = [id, p.sellerId];
+      for (const [key, column] of Object.entries(WAREHOUSE_COLUMNS)) { const v = (input as Record<string, unknown>)[key]; if (v !== undefined) { values.push(v === '' ? null : v); sets.push(`${column}=$${values.length}`); } }
+      if (input.isDefault === true && !current.is_default) { await client.query('UPDATE warehouses SET is_default=false, updated_at=now() WHERE seller_id=$1 AND is_default', [p.sellerId]); sets.push('is_default=true'); }
+      if (!sets.length) return (await client.query('SELECT * FROM warehouses WHERE id=$1', [id])).rows[0];
+      const result = await client.query(`UPDATE warehouses SET ${sets.join(', ')}, updated_at=now() WHERE id=$1 AND seller_id=$2 RETURNING *`, values).catch((e) => { if (e.code === '23505') throw Object.assign(new Error('You already have a warehouse with this name'), { statusCode: 409 }); throw e; });
+      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'warehouse.updated', targetType: 'warehouse', targetId: id, requestId: request.id, metadata: { fields: Object.keys(input) } });
+      return result.rows[0];
+    });
+  });
+
+  app.post('/v1/warehouses/:warehouseId/default', { preHandler: requireSeller }, async (request) => {
+    const id = uuid.parse((request.params as { warehouseId: string }).warehouseId); const p = getPrincipal(request);
+    return withSellerTransaction(p.sellerId, async (client) => {
+      const target = (await client.query('SELECT id, is_active FROM warehouses WHERE id=$1 AND seller_id=$2 FOR UPDATE', [id, p.sellerId])).rows[0];
+      if (!target) throw Object.assign(new Error('Warehouse not found'), { statusCode: 404 });
+      if (!target.is_active) throw Object.assign(new Error('An inactive warehouse cannot be the default'), { statusCode: 409 });
+      await client.query('UPDATE warehouses SET is_default=false, updated_at=now() WHERE seller_id=$1 AND is_default', [p.sellerId]);
+      const result = await client.query('UPDATE warehouses SET is_default=true, updated_at=now() WHERE id=$1 RETURNING *', [id]);
+      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'warehouse.default_set', targetType: 'warehouse', targetId: id, requestId: request.id });
+      return result.rows[0];
+    });
+  });
+
+  // Soft delete: orders and shipments keep their pickup address. A new default is promoted if the default is removed.
+  app.delete('/v1/warehouses/:warehouseId', { preHandler: requireSeller }, async (request) => {
+    const id = uuid.parse((request.params as { warehouseId: string }).warehouseId); const p = getPrincipal(request);
+    return withSellerTransaction(p.sellerId, async (client) => {
+      const target = (await client.query('SELECT id, is_default FROM warehouses WHERE id=$1 AND seller_id=$2 AND is_active FOR UPDATE', [id, p.sellerId])).rows[0];
+      if (!target) throw Object.assign(new Error('Warehouse not found'), { statusCode: 404 });
+      const others = (await client.query('SELECT id FROM warehouses WHERE seller_id=$1 AND is_active AND id<>$2 ORDER BY created_at LIMIT 1', [p.sellerId, id])).rows[0];
+      if (!others) throw Object.assign(new Error('You need at least one active warehouse. Add another before removing this one.'), { statusCode: 409 });
+      await client.query('UPDATE warehouses SET is_active=false, is_default=false, updated_at=now() WHERE id=$1', [id]);
+      if (target.is_default) await client.query('UPDATE warehouses SET is_default=true, updated_at=now() WHERE id=$1', [others.id]);
+      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'warehouse.deactivated', targetType: 'warehouse', targetId: id, requestId: request.id });
+      return { id, deactivated: true, newDefaultId: target.is_default ? others.id : null };
+    });
   });
   app.get('/v1/customers', { preHandler: requireSeller }, async (request) => { const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query('SELECT * FROM customers WHERE seller_id = $1 ORDER BY created_at DESC LIMIT 100', [p.sellerId])).rows })); });
   app.get('/v1/products', { preHandler: requireSeller }, async (request) => { const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query('SELECT * FROM products WHERE seller_id = $1 ORDER BY sku LIMIT 250', [p.sellerId])).rows })); });

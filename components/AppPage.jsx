@@ -23,6 +23,10 @@ import LiveSellerSecurity from './LiveSellerSecurity';
 import LiveShipmentDetail from './LiveShipmentDetail';
 import CreateOrder from './CreateOrder';
 import LiveBilling from './LiveBilling';
+import LiveNdr from './LiveNdr';
+import LiveWarehouse from './LiveWarehouse';
+import LiveRateCalculator from './LiveRateCalculator';
+import LivePincodeServiceability from './LivePincodeServiceability';
 import LiveBillingDocs from './LiveBillingDocs';
 import LiveTrack from './LiveTrack';
 import ComingSoon from './ComingSoon';
@@ -38,7 +42,11 @@ export default function AppPage({ id, isDashboard = false }) {
   const isAccountConfig = id === 'account-config';
   const isAdminOverview = id === 'a-overview';
   const isAdminPage = id.startsWith('a-');
-  const isLiveSellerPage = ['orders', 'ndr', 'wallet'].includes(id);
+  const isLiveSellerPage = ['orders', 'wallet'].includes(id);
+  const isNdr = id === 'ndr';
+  const isWarehouse = id === 'warehouse';
+  const isRateCalc = id === 'ratecalc';
+  const isPincode = id === 'pincode';
   const isLiveAdminPage = ['a-sellers', 'a-orders', 'a-shipments', 'a-ndr', 'a-rto', 'a-pickups', 'a-couriers'].includes(id);
   const isCreateOrder = id === 'b2c' || id === 'bulk-orders';
   const isLiveCreateOrder = ['dropship', 'shipnow', 'reverse'].includes(id);
@@ -49,7 +57,7 @@ export default function AppPage({ id, isDashboard = false }) {
   const isLiveMarketing = ['whatsapp', 'email'].includes(id);
   const isLiveSellerSecurity = id === 'password';
   const isLiveShipmentDetail = id === 'ship-detail';
-  const isLiveSellerWorkspace = ['recharges', 'warehouse', 'team', 'kyc', 'invoice', 'cod', 'charges', 'shopify', 'woo', 'magento', 'opencart', 'amazon', 'ratecalc', 'ratecard', 'pincode'].includes(id);
+  const isLiveSellerWorkspace = ['recharges', 'team', 'kyc', 'invoice', 'cod', 'charges', 'shopify', 'woo', 'magento', 'opencart', 'amazon', 'ratecard'].includes(id);
   const isLiveAdminOperations = ['a-kyc', 'a-wallets', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
   const isLiveWorkspaceTool = ['courier-rules', 'label', 'printer', 'inv-settings', 'notifications', 'mis', 'weight', 'a-tickets', 'wa-api', 'sms-api', 'abandoned', 'email-reports', 'profile'].includes(id);
   const isLiveAdminReport = ['a-revenue', 'a-sla-report', 'a-analytics', 'a-gst'].includes(id);
@@ -61,6 +69,10 @@ export default function AppPage({ id, isDashboard = false }) {
       {isAdminPage && !isAdminOverview && <AdminPageHeader activeId={id} phone={phone} />}
       {isAdminOverview && <AdminDashboard mobile={mobile} phone={phone} />}
       {isDashboard && !isAdminOverview && <DashboardContent mobile={mobile} narrow={narrow} phone={phone} />}
+      {isNdr && <LiveNdr mobile={mobile} />}
+      {isWarehouse && <LiveWarehouse mobile={mobile} />}
+      {isRateCalc && <LiveRateCalculator mobile={mobile} />}
+      {isPincode && <LivePincodeServiceability mobile={mobile} />}
       {isLiveSellerPage && <LiveSellerOperations activeId={id} mobile={mobile} />}
       {isLiveAdminPage && <LiveAdminQueues activeId={id} mobile={mobile} />}
       {isCreateOrder && <CreateOrder tab={id === 'bulk-orders' ? 'bulk' : 'single'} mobile={mobile} />}
@@ -76,8 +88,8 @@ export default function AppPage({ id, isDashboard = false }) {
       {isLiveAdminOperations && <LiveAdminOperations activeId={id} mobile={mobile} />}
       {isLiveAdminReport && <LiveAdminReports activeId={id} mobile={mobile} />}
       {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
-      {hasTable && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <TablePage activeId={id} mobile={mobile} phone={phone} />}
-      {hasForm && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <FormPage activeId={id} mobile={mobile} phone={phone} />}
+      {hasTable && !isNdr && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <TablePage activeId={id} mobile={mobile} phone={phone} />}
+      {hasForm && !isWarehouse && !isRateCalc && !isPincode && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <FormPage activeId={id} mobile={mobile} phone={phone} />}
       {isAdminUtility && !isLiveAdminOperations && !isLiveWorkspaceTool && <AdminUtilityPage activeId={id} mobile={mobile} />}
       {isAccountConfig && <AccountConfiguration mobile={mobile} phone={phone} />}
     </>

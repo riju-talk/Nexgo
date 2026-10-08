@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
+import CourierComparison from './CourierComparison';
 
 const FIELD = { width: '100%', height: 40, boxSizing: 'border-box', border: '1px solid var(--nx-input-border)', borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 11px', fontSize: 13.5 };
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, padding: 18, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
@@ -15,6 +16,7 @@ const newOrderNumber = (flow) => `${PREFIX[flow] || 'WEB'}-${Date.now().toString
 const toPaise = (rupees) => Math.round((Number(rupees) || 0) * 100);
 const inr = (paise) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const blankItem = () => ({ key: Math.random().toString(36).slice(2), productId: '', sku: '', name: '', hsn: '', quantity: '1', price: '', weight: '' });
+const MAX_PRODUCTS = 5; // hard cap, same as the API, the database and bulk upload
 const EMPTY_CHARGES = { shipping: '', giftWrap: '', transaction: '', other: '', discount: '', taxPercent: '' };
 
 function Section({ title, hint, children, aside }) {
@@ -61,14 +63,30 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
   const [paymentMode, setPaymentMode] = useState('prepaid');
   const [customer, setCustomer] = useState({ fullName: '', companyName: '', phone: '', alternatePhone: '', email: '', address: '', address2: '', landmark: '', pincode: '', city: '', state: '' });
   const [located, setLocated] = useState('');
+  const [pinInfo, setPinInfo] = useState({ pin: '', info: null });
+  const [selected, setSelected] = useState({ key: '', name: '', providerCode: '', serviceCode: '' });
   const [items, setItems] = useState(() => [blankItem()]);
   const [charges, setCharges] = useState(EMPTY_CHARGES);
   const [pkg, setPkg] = useState({ weightKg: '', length: '', width: '', height: '' });
-  const [fetchedQuotes, setQuotes] = useState({ key: '', items: [] });
+  const [fetchedQuotes, setQuotes] = useState({ key: '', items: [], unavailable: [] });
 
   useEffect(() => {
     Promise.all([apiFetch('/v1/warehouses'), apiFetch('/v1/products')])
-      .then(([w, p]) => setSetup({ warehouses: (w.items || []).filter((x) => x.is_active !== false), products: p.items || [] }))
+      .then(([w, p]) => {
+        setSetup({ warehouses: (w.items || []).filter((x) => x.is_active !== false), products: p.items || [] });
+        // A courier picked in Rate calculator / Pincode serviceability arrives here pre-filled.
+        try {
+          const raw = window.sessionStorage.getItem('nx-order-prefill');
+          if (raw) {
+            window.sessionStorage.removeItem('nx-order-prefill');
+            const pre = JSON.parse(raw);
+            if (pre.pincode) setCustomer((c) => ({ ...c, pincode: pre.pincode }));
+            if (pre.weightKg) setPkg((k) => ({ ...k, weightKg: String(pre.weightKg) }));
+            if (pre.paymentMode) setPaymentMode(pre.paymentMode);
+            if (pre.courier) setSelected(pre.courier);
+          }
+        } catch { /* prefill is optional */ }
+      })
       .catch(() => setSetup({ warehouses: [], products: [] }));
   }, []);
 
@@ -80,8 +98,8 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
     if (!/^\d{6}$/.test(customer.pincode)) return;
     const pin = customer.pincode;
     const timer = window.setTimeout(() => apiFetch(`/v1/locations/pincode/${pin}`)
-      .then((x) => { setCustomer((c) => (c.pincode === pin ? { ...c, city: x.city, state: x.state } : c)); setLocated(pin); })
-      .catch(() => {}), 220);
+      .then((x) => { setCustomer((c) => (c.pincode === pin ? { ...c, city: x.city, state: x.state } : c)); setLocated(pin); setPinInfo({ pin, info: x }); })
+      .catch(() => setPinInfo({ pin, info: null })), 220);
     return () => window.clearTimeout(timer);
   }, [customer.pincode]);
 
@@ -106,15 +124,18 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
   // Live courier rates for the chargeable parcel.
   const canQuote = /^\d{6}$/.test(customer.pincode) && deadWeightG > 0;
   const quoteMode = isReverse ? 'prepaid' : paymentMode;
-  const quoteKey = `${customer.pincode}|${deadWeightG}|${dims.join('x')}|${quoteMode}`;
+  const quoteKey = `${customer.pincode}|${deadWeightG}|${dims.join('x')}|${quoteMode}|${warehouse?.pincode || ''}`;
   const quotesLoaded = canQuote && fetchedQuotes.key === quoteKey;
   const quotes = quotesLoaded ? fetchedQuotes.items : [];
+  const unavailable = quotesLoaded ? fetchedQuotes.unavailable : [];
+  const pinStatus = !/^\d{6}$/.test(customer.pincode) ? 'idle' : pinInfo.pin === customer.pincode ? (pinInfo.info ? 'found' : 'missing') : 'loading';
+  const chosen = quotes.find((q) => `${q.provider.code}:${q.service.code}` === selected.key) || null;
   useEffect(() => {
     if (!canQuote) return;
-    const body = { destinationPincode: customer.pincode, weightG: deadWeightG, paymentMode: quoteMode, ...(hasDims ? { lengthMm: dims[0], widthMm: dims[1], heightMm: dims[2] } : {}) };
+    const body = { destinationPincode: customer.pincode, ...(warehouse?.pincode ? { pickupPincode: warehouse.pincode } : {}), weightG: deadWeightG, paymentMode: quoteMode, ...(hasDims ? { lengthMm: dims[0], widthMm: dims[1], heightMm: dims[2] } : {}) };
     const timer = window.setTimeout(() => apiFetch('/v1/shipping/quotes', { method: 'POST', body })
-      .then((x) => setQuotes({ key: quoteKey, items: x.quotes || [] }))
-      .catch(() => setQuotes({ key: quoteKey, items: [] })), 300);
+      .then((x) => setQuotes({ key: quoteKey, items: x.quotes || [], unavailable: x.unavailable || [] }))
+      .catch(() => setQuotes({ key: quoteKey, items: [], unavailable: [] })), 300);
     return () => window.clearTimeout(timer);
   }, [quoteKey]); // eslint-disable-line react-hooks/exhaustive-deps -- quoteKey encodes every input the request reads
 
@@ -134,11 +155,14 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
       return next;
     }));
   };
-  const addItem = () => setItems((list) => [...list, blankItem()]);
+  const addItem = () => setItems((list) => {
+    if (list.length >= MAX_PRODUCTS) { showToast(`An order can contain at most ${MAX_PRODUCTS} products.`, 'error'); return list; }
+    return [...list, blankItem()];
+  });
   const removeItem = (key) => setItems((list) => (list.length > 1 ? list.filter((i) => i.key !== key) : list));
 
-  const submit = async (e) => {
-    e.preventDefault();
+  const submit = async (e, book = false) => {
+    e?.preventDefault();
     if (!warehouse) return showToast('Add a pickup warehouse in Settings → Warehouse first.', 'error');
     if (totals.discount > totals.gross) return showToast('Discount cannot exceed the order value.', 'error');
     if (quoteMode === 'cod' && totals.total <= 0) return showToast('COD orders need a value to collect.', 'error');
@@ -148,7 +172,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
     try {
       const c = customer;
       const opt = (v) => (v.trim() ? v.trim() : undefined);
-      await apiFetch('/v1/orders', { method: 'POST', body: {
+      const created = await apiFetch('/v1/orders', { method: 'POST', body: {
         warehouseId: warehouse.id, orderNumber: orderNumber.trim(), orderFlow: flow,
         paymentMode: quoteMode, codAmountPaise: quoteMode === 'cod' ? totals.total : 0,
         customer: { fullName: c.fullName.trim(), companyName: opt(c.companyName), phone: c.phone.trim(), alternatePhone: opt(c.alternatePhone), email: opt(c.email), addressLine1: c.address.trim(), addressLine2: opt(c.address2), landmark: opt(c.landmark), city: c.city.trim(), state: c.state.trim(), pincode: c.pincode },
@@ -156,6 +180,19 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
         package: { weightG: deadWeightG, ...(hasDims ? { lengthMm: dims[0], widthMm: dims[1], heightMm: dims[2] } : {}) },
         charges: isReverse ? {} : { shippingPaise: totals.shipping, giftWrapPaise: totals.giftWrap, transactionPaise: totals.transaction, otherPaise: totals.other, discountPaise: totals.discount, taxRateBps: totals.taxRateBps },
       } });
+      if (book && chosen && !isReverse) {
+        try {
+          await apiFetch(`/v1/orders/${created.id}/state`, { method: 'PATCH', body: { state: 'ready_to_ship' } });
+          const booked = await apiFetch('/v1/shipments/book', { method: 'POST', headers: { 'Idempotency-Key': `web-book-${created.id}` }, body: { orderId: created.id, providerCode: chosen.provider.code, serviceCode: chosen.service.code } });
+          showToast(`Order ${orderNumber.trim()} booked with ${chosen.provider.name}. AWB ${booked.shipment?.awb || ''}`);
+          nav('shipments');
+          return;
+        } catch (bookingError) {
+          showToast(`Order created, but booking failed: ${bookingError instanceof ApiError ? bookingError.message : 'try again from All orders'}`, 'error');
+          nav('orders');
+          return;
+        }
+      }
       showToast(isReverse ? 'Return pickup created. Book a courier from All orders.' : 'Order created. Mark it ready and book a courier from All orders.');
       nav('orders');
     } catch (x) {
@@ -212,14 +249,15 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
             <Field label="Address line 1" required>{input(customer.address, setCust('address'), { required: true, minLength: 3, maxLength: 200, placeholder: 'House / flat, street' })}</Field>
             <Field label="Address line 2">{input(customer.address2, setCust('address2'), { maxLength: 200, placeholder: 'Area, locality' })}</Field>
             <Field label="Landmark">{input(customer.landmark, setCust('landmark'), { maxLength: 200 })}</Field>
-            <Field label="Pincode" required note={located && located === customer.pincode ? 'City and state filled from pincode' : undefined} noteTone="ok">{input(customer.pincode, setCust('pincode'), { required: true, inputMode: 'numeric', pattern: '[0-9]{6}', placeholder: '6-digit pincode' })}</Field>
+            <Field label="Pincode" required note={pinStatus === 'found' ? `${pinInfo.info.city}, ${pinInfo.info.state} — city and state filled${pinInfo.info.outOfDeliveryArea ? ' · remote area, fewer couriers' : ''}` : pinStatus === 'missing' ? 'Pincode not in our directory. Enter city and state manually.' : pinStatus === 'loading' ? 'Looking up pincode…' : undefined} noteTone={pinStatus === 'missing' ? undefined : 'ok'}>{input(customer.pincode, setCust('pincode'), { required: true, inputMode: 'numeric', pattern: '[0-9]{6}', placeholder: '6-digit pincode' })}</Field>
             <Field label="City" required>{input(customer.city, setCust('city'), { required: true, minLength: 2 })}</Field>
             <Field label="State" required>{input(customer.state, setCust('state'), { required: true, minLength: 2 })}</Field>
             <Field label="Country"><input value="India" readOnly style={{ ...FIELD, background: T.SURFACE_SOFT }} /></Field>
           </Grid>
+          {paymentMode === 'cod' && !isReverse && pinStatus === 'found' && pinInfo.info.codAvailable === false && <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 8, background: `${T.AMBER}14`, color: T.AMBER, fontSize: 12.5, fontWeight: 650 }}>Cash on delivery is not available at {customer.pincode}. Switch to prepaid to see courier options.</div>}
         </Section>
 
-        <Section title={isReverse ? 'Returned products' : 'Products'} hint="Enter a saved SKU to fill name, HSN, price and weight from your catalog." aside={<button type="button" onClick={addItem} style={{ ...FIELD, width: 'auto', height: 34, padding: '0 12px', cursor: 'pointer', fontWeight: 750 }}>+ Add product</button>}>
+        <Section title={`${isReverse ? 'Returned products' : 'Products'} (${items.length}/${MAX_PRODUCTS})`} hint={`Enter a saved SKU to fill name, HSN, price and weight. Up to ${MAX_PRODUCTS} products per order.`} aside={<button type="button" disabled={items.length >= MAX_PRODUCTS} onClick={addItem} title={items.length >= MAX_PRODUCTS ? `Maximum ${MAX_PRODUCTS} products reached` : undefined} style={{ ...FIELD, width: 'auto', height: 34, padding: '0 12px', cursor: items.length >= MAX_PRODUCTS ? 'not-allowed' : 'pointer', fontWeight: 750, opacity: items.length >= MAX_PRODUCTS ? 0.5 : 1 }}>{items.length >= MAX_PRODUCTS ? 'Limit reached' : '+ Add product'}</button>}>
           <div style={{ display: 'grid', gap: 12 }}>
             {items.map((item, index) => (
               <div key={item.key} style={{ padding: 12, borderRadius: 10, border: `1px solid ${T.BORDER}`, background: T.SURFACE }}>
@@ -259,6 +297,15 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
             <span>Chargeable: <b style={{ color: T.ACCENT }}>{(chargeableG / 1000).toFixed(3)} kg</b></span>
           </div>
         </Section>
+        {!isReverse && (
+          <CourierComparison
+            quotes={quotes} unavailable={unavailable} loading={canQuote && !quotesLoaded}
+            message={!canQuote ? 'Enter the delivery pincode and package weight to compare couriers.' : undefined}
+            paymentMode={quoteMode} selectedKey={selected.key} actionLabel="Select"
+            title="Courier comparison" subtitle="Pick a courier to book right after creating the order"
+            onSelect={(q, key) => setSelected(selected.key === key ? { key: '', name: '', providerCode: '', serviceCode: '' } : { key, name: q.provider.name, providerCode: q.provider.code, serviceCode: q.service.code })}
+          />
+        )}
       </div>
 
       <aside style={{ display: 'grid', gap: 14, position: mobile ? 'static' : 'sticky', top: 76 }}>
@@ -273,20 +320,6 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
           )}
         </Section>
 
-        <Section title="Courier rates" hint={canQuote ? `For ${(chargeableG / 1000).toFixed(3)} kg chargeable` : 'Enter pincode and weight to compare.'}>
-          {canQuote && !quotes.length ? <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>{quotesLoaded ? 'No courier enabled for your account serves this pincode and weight.' : 'Fetching rates…'}</span> : (
-            <div style={{ display: 'grid', gap: 8 }}>
-              {quotes.slice(0, 4).map((q, i) => (
-                <div key={`${q.provider.code}:${q.service.code}`} style={{ padding: '9px 11px', border: `1px solid ${i === 0 ? T.ACCENT : T.BORDER}`, borderRadius: 9, background: i === 0 ? 'rgba(0,215,195,.08)' : T.SURFACE, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <span><b style={{ display: 'block', fontSize: 12.5, color: T.TEXT }}>{q.provider.name}{i === 0 && <span style={{ color: T.ACCENT }}> · Cheapest</span>}</b><span style={{ fontSize: 11.5, color: T.TEXT_MUTED }}>{q.service.name}</span></span>
-                  <b style={{ fontSize: 14, color: T.TEXT }}>₹{q.price.total.toFixed(2)}</b>
-                </div>
-              ))}
-            </div>
-          )}
-          <span style={{ display: 'block', marginTop: 9, fontSize: 11.5, color: T.TEXT_MUTED }}>You book the courier after creating the order, from All orders.</span>
-        </Section>
-
         <Section title="Total summary">
           <SummaryRow label="Products" value={inr(totals.subtotal)} />
           {totals.tax > 0 && <SummaryRow label={`Tax (${(totals.taxRateBps / 100).toFixed(2)}%)`} value={inr(totals.tax)} />}
@@ -298,8 +331,10 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
           <div style={{ borderTop: `1px solid ${T.DIVIDER}`, marginTop: 6, paddingTop: 6 }}><SummaryRow label="Order total" value={inr(Math.max(totals.total, 0))} strong /></div>
           {quoteMode === 'cod' && <SummaryRow label="Collect on delivery" value={inr(Math.max(totals.total, 0))} />}
           {totals.discount > totals.gross && <small style={{ display: 'block', color: T.RED, fontSize: 11.5 }}>Discount is larger than the order value.</small>}
-          <button disabled={busy || !warehouse} type="submit" style={{ marginTop: 12, width: '100%', height: 42, border: 0, borderRadius: 9, background: T.NAVY, color: '#fff', fontWeight: 750, fontSize: 13.5, cursor: busy ? 'wait' : 'pointer', opacity: busy || !warehouse ? 0.6 : 1 }}>
-            {busy ? 'Creating…' : isReverse ? 'Create return pickup' : 'Create order'}
+          {chosen && !isReverse && <SummaryRow label={`Shipping with ${chosen.provider.name}`} value={inr(Math.round(chosen.price.total * 100))} />}
+          {chosen && !isReverse && <button disabled={busy || !warehouse} type="button" onClick={() => submit(null, true)} style={{ marginTop: 12, width: '100%', height: 42, border: 0, borderRadius: 9, background: T.ACCENT, color: '#06212C', fontWeight: 800, fontSize: 13.5, cursor: busy ? 'wait' : 'pointer', opacity: busy || !warehouse ? 0.6 : 1 }}>{busy ? 'Working…' : `Create & book with ${chosen.provider.name}`}</button>}
+          <button disabled={busy || !warehouse} type="submit" style={{ marginTop: 10, width: '100%', height: 42, border: chosen && !isReverse ? `1px solid ${T.NAVY}` : 0, borderRadius: 9, background: chosen && !isReverse ? T.SURFACE : T.NAVY, color: chosen && !isReverse ? T.NAVY : '#fff', fontWeight: 750, fontSize: 13.5, cursor: busy ? 'wait' : 'pointer', opacity: busy || !warehouse ? 0.6 : 1 }}>
+            {busy ? 'Creating…' : isReverse ? 'Create return pickup' : chosen ? 'Create order only' : 'Create order'}
           </button>
         </Section>
       </aside>

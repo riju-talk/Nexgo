@@ -8,6 +8,7 @@ import * as T from '@/lib/theme';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
 const MAX_ORDERS = 5000;
+const MAX_PRODUCTS_PER_ORDER = 5; // hard cap, same as the API and the database
 const MAX_ROWS = 20000;
 
 // Header text (any case/spacing/punctuation) → field. Kept loose so seller-made sheets import too.
@@ -95,6 +96,7 @@ function validate(order) {
   if (alternatePhone && !/^[6-9]\d{9}$/.test(alternatePhone)) errors.push('Alternate phone must be a 10-digit number');
   if (!order.address || order.address.length < 3) errors.push('Address is required');
   if (!/^\d{6}$/.test(order.pincode || '')) errors.push('Enter a 6-digit pincode');
+  if (order.items.length > MAX_PRODUCTS_PER_ORDER) errors.push(`An order can have at most ${MAX_PRODUCTS_PER_ORDER} products, but this order number has ${order.items.length} product rows. Split it into separate orders`);
   order.items.forEach((item) => {
     const at = order.items.length > 1 ? ` (row ${item.line})` : '';
     if (!item.name || item.name.length < 2) errors.push(`Product name or a saved SKU is required${at}`);

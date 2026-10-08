@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { reportsApi } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
+import { FORMATS } from '@/lib/exportFile';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-glass-border)', borderRadius: 12, boxShadow: '0 2px 8px rgba(15,31,61,.05)' };
 const field = { width: '100%', height: 40, boxSizing: 'border-box', borderRadius: 8, border: `1px solid ${T.INPUT_BORDER}`, background: T.SURFACE, color: T.TEXT, padding: '0 11px', fontSize: 13 };
@@ -35,6 +36,7 @@ export default function LiveReports({ mobile }) {
   const [form, setForm] = useState(() => ({ type: 'mis', status: 'all', from: daysAgo(29), to: daysAgo(0) }));
   const [busy, setBusy] = useState(false);
   const [current, setCurrent] = useState(null);
+  const [format, setFormat] = useState('csv');
 
   const fetchRuns = useCallback(async () => {
     try { return { items: (await reportsApi.list()).items || [], error: '' }; }
@@ -69,7 +71,7 @@ export default function LiveReports({ mobile }) {
       showToast(e.body?.details ? 'Check the selected dates and filters' : e.message || 'Report could not be generated', 'error');
     } finally { setBusy(false); }
   };
-  const download = async (run) => { try { await reportsApi.download(run.id, run.file_name); } catch (e) { showToast(e.message || 'Download failed', 'error'); } };
+  const download = async (run, fmt = format) => { try { await reportsApi.download(run.id, run.file_name, fmt); } catch (e) { showToast(e.message || 'Download failed', 'error'); } };
   const open = async (run) => { try { setCurrent(await reportsApi.get(run.id)); } catch (e) { showToast(e.message || 'Report could not be opened', 'error'); } };
   const preview = current?.preview;
 
@@ -128,8 +130,9 @@ export default function LiveReports({ mobile }) {
                 </div>
               ) : <div style={{ padding: '0 16px 12px', color: T.TEXT_SECONDARY, fontSize: 13 }}>No records matched this period and filter. Try a wider date range.</div>}
               <div style={{ padding: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <Button primary disabled={!current.row_count} onClick={() => download(current)}>Download CSV</Button>
-                {current.row_count > (preview?.rows?.length || 0) && <span style={{ color: T.TEXT_MUTED, fontSize: 12.5 }}>Showing the first {preview.rows.length} of {current.row_count} rows — download for the full report.</span>}
+                <select aria-label="Export format" value={format} onChange={(e) => setFormat(e.target.value)} style={{ ...field, width: 'auto', height: 34 }}>{FORMATS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
+                <Button primary disabled={!current.row_count} onClick={() => download(current)}>Download {format === 'xlsx' ? 'Excel' : 'CSV'}</Button>
+                {current.row_count > (preview?.rows?.length || 0) && <span style={{ color: T.TEXT_MUTED, fontSize: 12.5 }}>Showing the first {preview.rows.length} of {current.row_count} rows — the download contains every row.</span>}
               </div>
             </>
           )}
@@ -144,7 +147,7 @@ export default function LiveReports({ mobile }) {
                 <b style={{ color: T.TEXT, fontSize: 13 }}>{label(run.report_type)}</b>
                 <small style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED }}>{run.range_start} to {run.range_end} · {run.row_count} rows · {when(run.created_at)}{run.generated_by ? ` · ${run.generated_by}` : ''}</small>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}><Button onClick={() => open(run)}>View</Button><Button disabled={!run.row_count} onClick={() => download(run)}>Download</Button></div>
+              <div style={{ display: 'flex', gap: 8 }}><Button onClick={() => open(run)}>View</Button><Button disabled={!run.row_count} onClick={() => download(run, 'csv')}>CSV</Button><Button disabled={!run.row_count} onClick={() => download(run, 'xlsx')}>Excel</Button></div>
             </div>
           ))}
         </section>

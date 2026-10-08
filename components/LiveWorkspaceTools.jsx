@@ -5,6 +5,7 @@ import { apiFetch, adminApi } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 import LiveReports from './LiveReports';
+import { saveRows } from '@/lib/exportFile';
 const CARD={background:'var(--nx-surface)',border:'1px solid var(--nx-glass-border)',borderRadius:12,boxShadow:'0 2px 8px rgba(15,31,61,.05)'};
 const field={width:'100%',height:40,boxSizing:'border-box',borderRadius:8,border:`1px solid ${T.INPUT_BORDER}`,background:T.SURFACE,color:T.TEXT,padding:'0 11px',fontSize:13};
 const title=v=>(v||'').replaceAll('-',' ').replace(/\b\w/g,c=>c.toUpperCase());
@@ -78,9 +79,10 @@ function Reports({ activeId, mobile }) {
 
   if (activeId === 'weight') {
     const extra = rows?.reduce((s, r) => s + Number(r.difference_g), 0) || 0;
-    const exportCsv = () => {
-      const csv = ['AWB,Order,Courier,Declared g,Billed g,Difference g,Charge INR', ...rows.map((r) => [r.awb, r.order_number, r.courier_name, r.declared_weight_g, r.billed_weight_g, r.difference_g, (r.shipping_charge_paise / 100).toFixed(2)].join(','))].join('\n');
-      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'weight-discrepancies.csv'; a.click(); URL.revokeObjectURL(a.href); showToast('Weight discrepancy report downloaded');
+    const exportRows = async (format) => {
+      const header = ['AWB', 'Order', 'Courier', 'Declared g', 'Billed g', 'Difference g', 'Charge INR'];
+      await saveRows([header, ...rows.map((r) => [r.awb, r.order_number, r.courier_name, r.declared_weight_g, r.billed_weight_g, r.difference_g, r.shipping_charge_paise / 100])], 'weight-discrepancies', format, 'Weight discrepancies');
+      showToast(`Weight discrepancy report downloaded (${format === 'xlsx' ? 'Excel' : 'CSV'})`);
     };
     return (
       <main style={{ padding: pad, maxWidth: 1100 }}>
@@ -88,7 +90,7 @@ function Reports({ activeId, mobile }) {
         {!rows ? <section style={{ ...CARD, padding: 22, color: T.TEXT_MUTED, fontSize: 13 }}>Loading discrepancies…</section>
           : failed ? <section style={{ ...CARD, padding: 22, color: T.TEXT_SECONDARY, fontSize: 13 }}>Weight discrepancies could not be loaded. Check that you are signed in.</section>
           : !rows.length ? <section style={{ ...CARD, padding: 22, color: T.TEXT_SECONDARY, fontSize: 13 }}>No discrepancies. Every booked shipment was billed at or below its declared weight.</section>
-          : <section style={{ ...CARD, overflow: 'hidden' }}><div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${T.DIVIDER}` }}><b style={{ color: T.TEXT, fontSize: 14 }}>Billed above declared weight</b><Button onClick={exportCsv}>Export CSV</Button></div><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse' }}><thead><tr>{['AWB', 'Order', 'Courier', 'Declared', 'Billed', 'Difference', 'Charge'].map((h) => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10.5, letterSpacing: '.07em', color: T.TEXT_MUTED, background: T.TABLE_HEAD_BG, textTransform: 'uppercase' }}>{h}</th>)}</tr></thead><tbody>{rows.map((r) => <tr key={r.id}>{[<b key="a" style={{ fontFamily: T.MONO }}>{r.awb}</b>, r.order_number, r.courier_name, fmtG(r.declared_weight_g), fmtG(r.billed_weight_g), <b key="d" style={{ color: T.AMBER }}>+{fmtG(r.difference_g)}</b>, inr(r.shipping_charge_paise)].map((cell, i) => <td key={i} style={{ padding: '12px 14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{cell}</td>)}</tr>)}</tbody></table></div></section>}
+          : <section style={{ ...CARD, overflow: 'hidden' }}><div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${T.DIVIDER}` }}><b style={{ color: T.TEXT, fontSize: 14 }}>Billed above declared weight</b><div style={{ display: 'flex', gap: 8 }}><Button onClick={() => exportRows('csv')}>Export CSV</Button><Button onClick={() => exportRows('xlsx')}>Export Excel</Button></div></div><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse' }}><thead><tr>{['AWB', 'Order', 'Courier', 'Declared', 'Billed', 'Difference', 'Charge'].map((h) => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10.5, letterSpacing: '.07em', color: T.TEXT_MUTED, background: T.TABLE_HEAD_BG, textTransform: 'uppercase' }}>{h}</th>)}</tr></thead><tbody>{rows.map((r) => <tr key={r.id}>{[<b key="a" style={{ fontFamily: T.MONO }}>{r.awb}</b>, r.order_number, r.courier_name, fmtG(r.declared_weight_g), fmtG(r.billed_weight_g), <b key="d" style={{ color: T.AMBER }}>+{fmtG(r.difference_g)}</b>, inr(r.shipping_charge_paise)].map((cell, i) => <td key={i} style={{ padding: '12px 14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{cell}</td>)}</tr>)}</tbody></table></div></section>}
       </main>
     );
   }

@@ -13,7 +13,7 @@ The frontend never calls the API cross-origin. `next.config.mjs` proxies `/v1/*`
 
 The demo is fully hardcoded: the API defaults to the Neon test database and the frontend defaults to `https://nexgo-zpcx.vercel.app` on Vercel, so **no environment variables are required**. Deploy `backend` and the repo root as two projects and open the frontend.
 
-Demo logins (seeded by `npm run seed:demo`, already applied to Neon): seller `demo@acmeexports.com` / `Demo@123`, admin `admin@nexgo.in` / `Admin@456`. Label and invoice-PDF actions show a "coming soon" message.
+Demo logins (already in the Neon database; the seed scripts were removed after loading): seller `demo@acmeexports.com` / `Demo@123`, admin `admin@nexgo.in` / `Admin@456`. Label and invoice-PDF actions show a "coming soon" message.
 
 The Neon connection string is committed in `backend/src/config.ts`. That is acceptable only for this throwaway demo: delete the Neon project after review. The sections below are the proper setup for real data.
 
@@ -29,11 +29,7 @@ Vercel does not host Postgres itself; use Neon, Supabase or any managed Postgres
    ```
    (`0026_report_runs.sql` creates the table behind the Reports page.)
    If the provider's pooler rejects the migration (some run in transaction mode), use its **direct** connection string for this step only.
-3. Create the first platform admin. The seed scripts refuse to run with `NODE_ENV=production`, so run them locally with development mode against the remote DB, set a strong password, and only do this for your own admin:
-   ```bash
-   NODE_ENV=development DATABASE_URL="…" LOCAL_ADMIN_EMAIL=you@company.com LOCAL_ADMIN_PASSWORD='long-unique-password' LOCAL_ADMIN_NAME='Your Name' npm run seed:admin
-   ```
-   For a demo with sample data, `seed:demo-seller`, `seed:demo-network` and `seed:demo-data` work the same way.
+3. Create the first platform admin directly in SQL (insert a `users` row with an argon2id hash and a `platform_admins` row), or restore a seed script from git history.
 
 ## 2. Deploy the API (`nexgo-api`)
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { reportsApi } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
+import { FORMATS, saveRows } from '@/lib/exportFile';
 
 const CARD = { border: '1px solid var(--ops-border)', borderRadius: 15, background: 'var(--ops-surface)', boxShadow: 'var(--ops-shadow)' };
 const KIND = { 'a-revenue': 'revenue', 'a-sla-report': 'sla', 'a-analytics': 'courier-analytics', 'a-gst': 'gst' };
@@ -38,6 +39,7 @@ export default function LiveAdminReports({ activeId, mobile }) {
   const kind = KIND[activeId];
   const [state, setState] = useState({ kind: null, data: null, error: '' });
   const [reloading, setReloading] = useState(false);
+  const [format, setFormat] = useState('csv');
 
   const load = useCallback(async () => {
     try { return { kind, data: await reportsApi.admin(kind), error: '' }; }
@@ -51,6 +53,12 @@ export default function LiveAdminReports({ activeId, mobile }) {
   }, [load]);
 
   const refresh = async () => { setReloading(true); const next = await load(); setState(next); setReloading(false); if (next.error) showToast(next.error, 'error'); else showToast('Report refreshed'); };
+  const exportReport = async () => {
+    const d = state.data; if (!d) return;
+    const plain = (f, v) => (f === 'inr' ? Number(v) / 100 : v);
+    const rows = [[d.headline.label, plain(d.headline.format, d.headline.value)], [], ['Key signals'], ...d.signals.map((x) => [x.label, plain(x.format, x.value)]), [], [d.series.label, ''], ['Day', 'Value'], ...d.series.points.map((p) => [p.day, plain(d.series.format, p.value)]), [], [d.table.title], d.table.columns, ...d.table.rows.map((r) => r.map((c, j) => plain(d.table.formats[j], c)))];
+    try { await saveRows(rows, `${kind}-report-${new Date().toISOString().slice(0, 10)}`, format, 'Report'); showToast(`Report exported as ${format === 'xlsx' ? 'Excel' : 'CSV'}`); } catch { showToast('Export failed', 'error'); }
+  };
   const loading = state.kind !== kind;
   const { data, error } = state;
   const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
@@ -67,7 +75,8 @@ export default function LiveAdminReports({ activeId, mobile }) {
           <div style={{ marginTop: 8, fontSize: 30, fontWeight: 780, letterSpacing: '-.045em', color: 'var(--ops-heading)' }}>{fmt(headline.format, headline.value)}</div>
           <p style={{ margin: '5px 0 0', color: 'var(--ops-muted)', fontSize: 13 }}>{headline.note}</p>
         </div>
-        <button type="button" disabled={reloading} onClick={refresh} style={{ height: 34, padding: '0 12px', borderRadius: 8, border: `1px solid ${T.NAVY}`, background: T.NAVY, color: '#fff', fontSize: 12, fontWeight: 750, cursor: reloading ? 'wait' : 'pointer', opacity: reloading ? 0.7 : 1 }}>{reloading ? 'Refreshing…' : 'Refresh'}</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><select aria-label="Export format" value={format} onChange={(e) => setFormat(e.target.value)} style={{ height: 34, borderRadius: 8, border: '1px solid var(--ops-border)', background: 'var(--ops-surface)', color: 'var(--ops-heading)', padding: '0 8px', fontSize: 12 }}>{FORMATS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select><button type="button" onClick={exportReport} style={{ height: 34, padding: '0 12px', borderRadius: 8, border: '1px solid var(--ops-border)', background: 'var(--ops-surface)', color: 'var(--ops-heading)', fontSize: 12, fontWeight: 750, cursor: 'pointer' }}>Export</button>
+        <button type="button" disabled={reloading} onClick={refresh} style={{ height: 34, padding: '0 12px', borderRadius: 8, border: `1px solid ${T.NAVY}`, background: T.NAVY, color: '#fff', fontSize: 12, fontWeight: 750, cursor: reloading ? 'wait' : 'pointer', opacity: reloading ? 0.7 : 1 }}>{reloading ? 'Refreshing…' : 'Refresh'}</button></div>
       </section>
 
       <section style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.45fr .9fr', gap: 14, marginTop: 14 }}>

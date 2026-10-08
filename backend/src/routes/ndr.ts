@@ -31,71 +31,48 @@ function principal(request: FastifyRequest) {
 }
 
 export async function ndrRoutes(app: FastifyInstance) {
-  // Get all NDR cases for seller
+  // Board status shown to sellers, derived from the case state and age:
+  // new (open < 48h) -> action_pending (open, older) -> redelivery_scheduled | rto | resolved.
+  const STATUS_SQL = `CASE WHEN nc.state = 'resolved' THEN 'resolved' WHEN nc.state = 'rto_requested' THEN 'rto' WHEN nc.state = 'reattempt_requested' THEN 'redelivery_scheduled' WHEN nc.opened_at > now() - interval '48 hours' THEN 'new' ELSE 'action_pending' END`;
+  const TABS = ['all', 'new', 'action_pending', 'redelivery_scheduled', 'resolved', 'rto'] as const;
+
+  // NDR cases for the seller: tabs, search, reason/courier/date filters, pagination.
   app.get('/v1/ndr/cases', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
     const query = z.object({
-      state: z.enum(['open', 'reattempt_requested', 'rto_requested', 'resolved']).optional(),
-      reason: z.enum(['customer_unavailable', 'address_incomplete', 'address_incorrect', 'refused_delivery', 'payment_not_ready', 'customer_requested_reschedule', 'premises_closed', 'customer_not_contactable', 'incorrect_product', 'damaged_product', 'other']).optional(),
+      tab: z.enum(TABS).default('all'),
+      q: z.string().trim().max(80).optional(),
+      reason: z.string().trim().max(60).optional(),
+      courier: z.string().trim().max(64).optional(),
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       attemptNumber: z.coerce.number().int().min(1).max(3).optional(),
-      courierId: uuid.optional(),
+      page: z.coerce.number().int().min(1).default(1),
+      pageSize: z.coerce.number().int().min(1).max(50).default(8),
     }).parse(request.query);
 
     return withSellerTransaction(p.sellerId, async (client) => {
-      let sql = `
-        SELECT 
-          nc.*,
-          s.awb,
-          s.state AS shipment_state,
-          o.order_number,
-          o.payment_mode,
-          o.cod_amount_paise,
-          c.full_name AS customer_name,
-          c.phone AS customer_phone,
-          c.city AS customer_city,
-          c.pincode AS customer_pincode,
-          cp.name AS courier_name,
-          cs.display_name AS service_name,
-          EXTRACT(EPOCH FROM (nc.sla_deadline_at - now())) / 3600 AS hours_until_deadline
-        FROM ndr_cases nc
-        JOIN shipments s ON s.id = nc.shipment_id
-        JOIN orders o ON o.id = s.order_id
-        JOIN customers c ON c.id = o.customer_id
-        JOIN courier_providers cp ON cp.id = s.provider_id
-        JOIN courier_services cs ON cs.id = s.service_id
-        WHERE nc.seller_id = $1
-      `;
-      
-      const params: any[] = [p.sellerId];
-      let paramIdx = 2;
-
-      if (query.state) {
-        sql += ` AND nc.state = $${paramIdx}::ndr_state`;
-        params.push(query.state);
-        paramIdx++;
-      }
-
-      if (query.reason) {
-        sql += ` AND nc.ndr_reason = $${paramIdx}::ndr_reason_enum`;
-        params.push(query.reason);
-        paramIdx++;
-      }
-
-      if (query.attemptNumber) {
-        sql += ` AND nc.attempt_number = $${paramIdx}`;
-        params.push(query.attemptNumber);
-        paramIdx++;
-      }
-
-      if (query.courierId) {
-        sql += ` AND s.provider_id = $${paramIdx}`;
-        params.push(query.courierId);
-        paramIdx++;
-      }
-
-      sql += ` ORDER BY nc.sla_deadline_at ASC, nc.opened_at DESC LIMIT 200`;
-
-      return { items: (await client.query(sql, params)).rows };
+      const where = ['nc.seller_id = $1']; const params: unknown[] = [p.sellerId];
+      const add = (sql: string, value: unknown) => { params.push(value); where.push(sql.replaceAll('?', `$${params.length}`)); };
+      if (query.tab !== 'all') add(`(${STATUS_SQL}) = ?`, query.tab);
+      if (query.reason) add('nc.ndr_reason::text = ?', query.reason);
+      if (query.courier) add('cp.code = ?', query.courier);
+      if (query.attemptNumber) add('nc.attempt_number = ?', query.attemptNumber);
+      if (query.from) add('nc.opened_at >= ?::date', query.from);
+      if (query.to) add("nc.opened_at < ?::date + 1", query.to);
+      if (query.q) add("(o.order_number ILIKE ? OR s.awb ILIKE ? OR c.full_name ILIKE ? OR c.phone ILIKE ?)".replace(/\?/g, '$' + (params.length + 1)), `%${query.q}%`);
+      const from = `FROM ndr_cases nc JOIN shipments s ON s.id = nc.shipment_id JOIN orders o ON o.id = s.order_id JOIN customers c ON c.id = o.customer_id
+        JOIN courier_providers cp ON cp.id = s.provider_id JOIN courier_services cs ON cs.id = s.service_id WHERE ${where.join(' AND ')}`;
+      const total = Number((await client.query<{ n: string }>(`SELECT count(*) AS n ${from}`, params)).rows[0].n);
+      const rows = await client.query(
+        `SELECT nc.id, nc.shipment_id, nc.state, nc.ndr_reason, nc.reason_detail, nc.attempt_number, nc.max_attempts, nc.opened_at, nc.sla_deadline_at, nc.resolution_action, nc.resolution_notes, nc.resolved_at,
+                (${STATUS_SQL}) AS ndr_status, s.awb, s.state AS shipment_state, o.id AS order_id, o.order_number, o.payment_mode, o.cod_amount_paise,
+                c.full_name AS customer_name, c.phone AS customer_phone, c.city AS customer_city, c.pincode AS customer_pincode,
+                cp.code AS courier_code, cp.name AS courier_name, cs.display_name AS service_name,
+                (SELECT h.next_attempt_scheduled_at FROM ndr_attempt_history h WHERE h.ndr_case_id = nc.id ORDER BY h.occurred_at DESC LIMIT 1) AS scheduled_delivery_at,
+                EXTRACT(EPOCH FROM (nc.sla_deadline_at - now())) / 3600 AS hours_until_deadline
+         ${from} ORDER BY nc.opened_at DESC, nc.id LIMIT ${query.pageSize} OFFSET ${(query.page - 1) * query.pageSize}`, params);
+      return { items: rows.rows, total, page: query.page, pageSize: query.pageSize, pages: Math.max(1, Math.ceil(total / query.pageSize)) };
     });
   });
 
@@ -352,42 +329,26 @@ export async function ndrRoutes(app: FastifyInstance) {
   });
 
   // Get NDR statistics
+  // Board overview: KPI counts, share of shipments, reason mix and courier filter options.
   app.get('/v1/ndr/stats', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
-
     return withSellerTransaction(p.sellerId, async (client) => {
-      const stats = await client.query(`
-        SELECT
-          COUNT(*) FILTER (WHERE nc.state = 'open') AS open_count,
-          COUNT(*) FILTER (WHERE nc.state = 'open' AND nc.sla_deadline_at < now() + interval '24 hours') AS urgent_count,
-          COUNT(*) FILTER (WHERE nc.state = 'reattempt_requested') AS reattempt_requested_count,
-          COUNT(*) FILTER (WHERE nc.state = 'rto_requested') AS rto_requested_count,
-          COUNT(*) FILTER (WHERE nc.state = 'resolved') AS resolved_count,
-          SUM(CASE WHEN o.payment_mode = 'cod' THEN o.cod_amount_paise ELSE 0 END) 
-            FILTER (WHERE nc.state = 'open') AS cod_at_risk_paise,
-          COUNT(*) FILTER (WHERE nc.state = 'open' AND nc.attempt_number = 1) AS first_attempt_count,
-          COUNT(*) FILTER (WHERE nc.state = 'open' AND nc.attempt_number = 2) AS second_attempt_count,
-          COUNT(*) FILTER (WHERE nc.state = 'open' AND nc.attempt_number = 3) AS third_attempt_count
-        FROM ndr_cases nc
-        JOIN shipments s ON s.id = nc.shipment_id
-        JOIN orders o ON o.id = s.order_id
-        WHERE nc.seller_id = $1
-      `, [p.sellerId]);
-
-      const reasonBreakdown = await client.query(`
-        SELECT 
-          ndr_reason,
-          COUNT(*) AS count,
-          COUNT(*) FILTER (WHERE state = 'open') AS open_count
-        FROM ndr_cases
-        WHERE seller_id = $1
-        GROUP BY ndr_reason
-        ORDER BY count DESC
-      `, [p.sellerId]);
-
+      const [counts, shipments, reasons, couriers, cod] = await Promise.all([
+        client.query<{ status: string; n: string }>(`SELECT (${STATUS_SQL}) AS status, count(*) AS n FROM ndr_cases nc WHERE nc.seller_id = $1 GROUP BY 1`, [p.sellerId]),
+        client.query<{ n: string }>('SELECT count(*) AS n FROM shipments WHERE seller_id = $1 AND state <> \'cancelled\'', [p.sellerId]),
+        client.query<{ reason: string; n: string }>('SELECT ndr_reason::text AS reason, count(*) AS n FROM ndr_cases WHERE seller_id = $1 GROUP BY 1 ORDER BY 2 DESC', [p.sellerId]),
+        client.query<{ code: string; name: string; n: string }>('SELECT cp.code, cp.name, count(*) AS n FROM ndr_cases nc JOIN shipments s ON s.id = nc.shipment_id JOIN courier_providers cp ON cp.id = s.provider_id WHERE nc.seller_id = $1 GROUP BY cp.code, cp.name ORDER BY cp.name', [p.sellerId]),
+        client.query<{ v: string }>(`SELECT COALESCE(SUM(o.cod_amount_paise), 0) AS v FROM ndr_cases nc JOIN shipments s ON s.id = nc.shipment_id JOIN orders o ON o.id = s.order_id WHERE nc.seller_id = $1 AND nc.state = 'open' AND o.payment_mode = 'cod'`, [p.sellerId]),
+      ]);
+      const by = Object.fromEntries(counts.rows.map((r) => [r.status, Number(r.n)])) as Record<string, number>;
+      const total = Object.values(by).reduce((a, b) => a + b, 0);
+      const shipmentTotal = Number(shipments.rows[0].n);
       return {
-        ...stats.rows[0],
-        reasonBreakdown: reasonBreakdown.rows,
+        total, shareOfShipmentsPct: shipmentTotal ? +((total / shipmentTotal) * 100).toFixed(1) : 0,
+        counts: { new: by.new ?? 0, action_pending: by.action_pending ?? 0, redelivery_scheduled: by.redelivery_scheduled ?? 0, resolved: by.resolved ?? 0, rto: by.rto ?? 0 },
+        codAtRiskPaise: Number(cod.rows[0].v),
+        reasons: reasons.rows.map((r) => ({ reason: r.reason, count: Number(r.n), pct: total ? +((Number(r.n) / total) * 100).toFixed(1) : 0 })),
+        couriers: couriers.rows.map((r) => ({ code: r.code, name: r.name, count: Number(r.n) })),
       };
     });
   });
