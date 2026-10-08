@@ -24,9 +24,13 @@ export async function invoiceRoutes(app: FastifyInstance) {
     const input = generateInput.parse(request.body);
     if (input.periodEnd < input.periodStart) return reply.code(400).send({ error: 'INVALID_PERIOD' });
     const invoice = await withTransaction(async (client) => {
+      // One generation per seller at a time, so two concurrent requests cannot both pass the overlap check.
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`invoice:${input.sellerId}`]);
+      const overlap = await client.query(`SELECT invoice_number FROM invoices WHERE seller_id=$1 AND status<>'void' AND period_start<=$3::date AND period_end>=$2::date LIMIT 1`, [input.sellerId, input.periodStart, input.periodEnd]);
+      if (overlap.rows[0]) throw Object.assign(new Error(`This period overlaps invoice ${overlap.rows[0].invoice_number}. Choose a period that does not overlap an existing invoice.`), { statusCode: 409 });
       const charges = await client.query<{ subtotal: string; count: string }>(
         `SELECT COALESCE(SUM(shipping_charge_paise),0)::bigint AS subtotal, count(*)::int AS count
-         FROM shipments WHERE seller_id = $1 AND booked_at::date BETWEEN $2 AND $3`,
+         FROM shipments WHERE seller_id = $1 AND state <> 'cancelled' AND booked_at::date BETWEEN $2 AND $3`,
         [input.sellerId, input.periodStart, input.periodEnd],
       );
       const subtotalPaise = BigInt(charges.rows[0].subtotal);
@@ -66,27 +70,32 @@ export async function invoiceRoutes(app: FastifyInstance) {
 
   app.post('/v1/admin/invoices/:invoiceId/issue', { preHandler: [requirePlatformAdmin, requireAccountAdmin] }, async (request, reply) => {
     const invoiceId = z.string().uuid().parse((request.params as { invoiceId: string }).invoiceId);
-    const current = await db.query<{ status: string; seller_id: string; invoice_number: string }>('SELECT status, seller_id, invoice_number FROM invoices WHERE id = $1 FOR UPDATE', [invoiceId]);
-    if (!current.rows[0]) return reply.code(404).send({ error: 'INVOICE_NOT_FOUND' });
-    if (current.rows[0].status !== 'draft') return reply.code(409).send({ error: 'INVOICE_NOT_DRAFT' });
-    const doc = await db.query<{ id: string }>(
-      `INSERT INTO documents (seller_id, kind, storage_key, content_type) VALUES ($1,'invoice',$2,'application/pdf') RETURNING id`,
-      [current.rows[0].seller_id, `invoices/${current.rows[0].seller_id}/${current.rows[0].invoice_number.replace(/\//g, '-')}.pdf`],
-    );
-    const job = await db.query<{ id: string }>(
-      `INSERT INTO job_runs (seller_id, job_type, payload) VALUES ($1,'invoice.generate',$2) RETURNING id`,
-      [current.rows[0].seller_id, JSON.stringify({ documentId: doc.rows[0].id, invoiceId })],
-    );
-    const result = await db.query(
-      'UPDATE invoices SET status=\'issued\', document_id=$1, issued_by=$2, issued_at=now() WHERE id=$3 RETURNING id, status, document_id',
-      [doc.rows[0].id, request.adminPrincipal!.userId, invoiceId],
-    );
-    await db.query(
-      `INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id, metadata)
-       VALUES ($1,$2,'invoice.issued','invoice',$3,$4,$5)`,
-      [current.rows[0].seller_id, request.adminPrincipal!.userId, invoiceId, request.id, JSON.stringify({ jobId: job.rows[0].id })],
-    );
-    return result.rows[0];
+    const outcome = await withTransaction(async (client) => {
+      // Row lock held for the whole transaction, so a double-click cannot create two documents and two PDF jobs.
+      const current = await client.query<{ status: string; seller_id: string; invoice_number: string }>('SELECT status, seller_id, invoice_number FROM invoices WHERE id = $1 FOR UPDATE', [invoiceId]);
+      if (!current.rows[0]) return { error: 'INVOICE_NOT_FOUND', status: 404 } as { error: string; status: number };
+      if (current.rows[0].status !== 'draft') return { error: 'INVOICE_NOT_DRAFT', status: 409 } as { error: string; status: number };
+      const doc = await client.query<{ id: string }>(
+        `INSERT INTO documents (seller_id, kind, storage_key, content_type) VALUES ($1,'invoice',$2,'application/pdf') RETURNING id`,
+        [current.rows[0].seller_id, `invoices/${current.rows[0].seller_id}/${current.rows[0].invoice_number.replace(/\//g, '-')}.pdf`],
+      );
+      const job = await client.query<{ id: string }>(
+        `INSERT INTO job_runs (seller_id, job_type, payload) VALUES ($1,'invoice.generate',$2) RETURNING id`,
+        [current.rows[0].seller_id, JSON.stringify({ documentId: doc.rows[0].id, invoiceId })],
+      );
+      const result = await client.query(
+        'UPDATE invoices SET status=\'issued\', document_id=$1, issued_by=$2, issued_at=now() WHERE id=$3 RETURNING id, invoice_number, status, document_id',
+        [doc.rows[0].id, request.adminPrincipal!.userId, invoiceId],
+      );
+      await client.query(
+        `INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id, metadata)
+         VALUES ($1,$2,'invoice.issued','invoice',$3,$4,$5)`,
+        [current.rows[0].seller_id, request.adminPrincipal!.userId, invoiceId, request.id, JSON.stringify({ jobId: job.rows[0].id })],
+      );
+      return { row: result.rows[0] };
+    });
+    if (!('row' in outcome)) return reply.code(outcome.status).send({ error: outcome.error });
+    return outcome.row;
   });
 
   app.get('/v1/admin/invoices', { preHandler: requirePlatformAdmin }, async (request) => {

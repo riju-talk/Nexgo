@@ -17,6 +17,7 @@ import LiveCreateOrder from './LiveCreateOrder';
 import LiveSellerWorkspace from './LiveSellerWorkspace';
 import LiveAdminOperations from './LiveAdminOperations';
 import LiveWorkspaceTools from './LiveWorkspaceTools';
+import LiveAdminReports from './LiveAdminReports';
 import LiveMarketing from './LiveMarketing';
 import LiveSellerSecurity from './LiveSellerSecurity';
 import LiveShipmentDetail from './LiveShipmentDetail';
@@ -51,7 +52,8 @@ export default function AppPage({ id, isDashboard = false }) {
   const isLiveSellerWorkspace = ['recharges', 'warehouse', 'team', 'kyc', 'invoice', 'cod', 'charges', 'shopify', 'woo', 'magento', 'opencart', 'amazon', 'ratecalc', 'ratecard', 'pincode'].includes(id);
   const isLiveAdminOperations = ['a-kyc', 'a-wallets', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
   const isLiveWorkspaceTool = ['courier-rules', 'label', 'printer', 'inv-settings', 'notifications', 'mis', 'weight', 'a-tickets', 'wa-api', 'sms-api', 'abandoned', 'email-reports', 'profile'].includes(id);
-  const isAdminUtility = isAdminPage && !isAdminOverview && !hasTable;
+  const isLiveAdminReport = ['a-revenue', 'a-sla-report', 'a-analytics', 'a-gst'].includes(id);
+  const isAdminUtility = isAdminPage && !isAdminOverview && !hasTable && !isLiveAdminReport;
 
   return (
     <>
@@ -72,6 +74,7 @@ export default function AppPage({ id, isDashboard = false }) {
       {isLiveShipmentDetail && <LiveShipmentDetail mobile={mobile} />}
       {isLiveSellerWorkspace && <LiveSellerWorkspace activeId={id} mobile={mobile} />}
       {isLiveAdminOperations && <LiveAdminOperations activeId={id} mobile={mobile} />}
+      {isLiveAdminReport && <LiveAdminReports activeId={id} mobile={mobile} />}
       {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
       {hasTable && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <TablePage activeId={id} mobile={mobile} phone={phone} />}
       {hasForm && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <FormPage activeId={id} mobile={mobile} phone={phone} />}

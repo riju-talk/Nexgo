@@ -335,7 +335,7 @@ export async function ndrRoutes(app: FastifyInstance) {
         actorUserId: p.userId,
         action: 'ndr.bulk_resolve',
         targetType: 'ndr_case',
-        targetId: null,
+        targetId: 'bulk',
         requestId: request.id,
         metadata: { count: input.caseIds.length, action: input.resolutionAction },
       });
@@ -358,16 +358,16 @@ export async function ndrRoutes(app: FastifyInstance) {
     return withSellerTransaction(p.sellerId, async (client) => {
       const stats = await client.query(`
         SELECT
-          COUNT(*) FILTER (WHERE state = 'open') AS open_count,
-          COUNT(*) FILTER (WHERE state = 'open' AND sla_deadline_at < now() + interval '24 hours') AS urgent_count,
-          COUNT(*) FILTER (WHERE state = 'reattempt_requested') AS reattempt_requested_count,
-          COUNT(*) FILTER (WHERE state = 'rto_requested') AS rto_requested_count,
-          COUNT(*) FILTER (WHERE state = 'resolved') AS resolved_count,
+          COUNT(*) FILTER (WHERE nc.state = 'open') AS open_count,
+          COUNT(*) FILTER (WHERE nc.state = 'open' AND nc.sla_deadline_at < now() + interval '24 hours') AS urgent_count,
+          COUNT(*) FILTER (WHERE nc.state = 'reattempt_requested') AS reattempt_requested_count,
+          COUNT(*) FILTER (WHERE nc.state = 'rto_requested') AS rto_requested_count,
+          COUNT(*) FILTER (WHERE nc.state = 'resolved') AS resolved_count,
           SUM(CASE WHEN o.payment_mode = 'cod' THEN o.cod_amount_paise ELSE 0 END) 
             FILTER (WHERE nc.state = 'open') AS cod_at_risk_paise,
-          COUNT(*) FILTER (WHERE state = 'open' AND attempt_number = 1) AS first_attempt_count,
-          COUNT(*) FILTER (WHERE state = 'open' AND attempt_number = 2) AS second_attempt_count,
-          COUNT(*) FILTER (WHERE state = 'open' AND attempt_number = 3) AS third_attempt_count
+          COUNT(*) FILTER (WHERE nc.state = 'open' AND nc.attempt_number = 1) AS first_attempt_count,
+          COUNT(*) FILTER (WHERE nc.state = 'open' AND nc.attempt_number = 2) AS second_attempt_count,
+          COUNT(*) FILTER (WHERE nc.state = 'open' AND nc.attempt_number = 3) AS third_attempt_count
         FROM ndr_cases nc
         JOIN shipments s ON s.id = nc.shipment_id
         JOIN orders o ON o.id = s.order_id

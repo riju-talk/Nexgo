@@ -1,9 +1,6 @@
 -- Phase 3: Shipment State Enhancements & SLA Tracking
 
 -- Add missing shipment states to match frontend PIPELINE
-ALTER TYPE shipment_state ADD VALUE IF NOT EXISTS 'pickup_pending';
-ALTER TYPE shipment_state ADD VALUE IF NOT EXISTS 'pickup_scheduled';
-ALTER TYPE shipment_state ADD VALUE IF NOT EXISTS 'rto_in_transit';
 
 -- Note: Can't reorder enum values, so new values append to the end
 -- Frontend will handle display order
@@ -138,60 +135,7 @@ CREATE POLICY sla_breaches_tenant_scope ON sla_breaches
 -- PICKUP MANAGEMENT
 -- ============================================================================
 
-CREATE TYPE pickup_status_enum AS ENUM (
-  'scheduled',
-  'pending',
-  'in_progress',
-  'completed',
-  'failed',
-  'cancelled'
-);
-
-CREATE TABLE pickup_requests (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  seller_id uuid NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
-  warehouse_id uuid NOT NULL REFERENCES warehouses(id) ON DELETE RESTRICT,
-  provider_id uuid NOT NULL REFERENCES courier_providers(id) ON DELETE RESTRICT,
-  
-  -- Pickup details
-  scheduled_date date NOT NULL,
-  time_slot_start time NOT NULL,
-  time_slot_end time NOT NULL,
-  
-  status pickup_status_enum NOT NULL DEFAULT 'scheduled',
-  
-  -- Shipments in this pickup
-  shipment_count integer NOT NULL DEFAULT 0,
-  actual_shipment_count integer,
-  
-  -- External references
-  provider_pickup_id text,
-  
-  -- Timeline
-  scheduled_at timestamptz NOT NULL DEFAULT now(),
-  pickup_started_at timestamptz,
-  pickup_completed_at timestamptz,
-  failed_at timestamptz,
-  
-  -- Failure details
-  failure_reason text,
-  rider_notes text,
-  
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  
-  CHECK (time_slot_end > time_slot_start),
-  CHECK (status <> 'completed' OR pickup_completed_at IS NOT NULL),
-  CHECK (status <> 'failed' OR failed_at IS NOT NULL)
-);
-
-CREATE INDEX pickup_requests_seller_schedule ON pickup_requests (seller_id, scheduled_date, status);
-CREATE INDEX pickup_requests_warehouse_schedule ON pickup_requests (warehouse_id, scheduled_date);
-CREATE INDEX pickup_requests_provider_lookup ON pickup_requests (provider_id, scheduled_date);
-
-ALTER TABLE pickup_requests ENABLE ROW LEVEL SECURITY;
-CREATE POLICY pickup_requests_tenant_scope ON pickup_requests 
-  USING (seller_id = NULLIF(current_setting('app.seller_id', true), '')::uuid);
+-- pickup_requests already exists (0012_manifests_pickups.sql) and is the shape the API uses; only the shipment link is added here.
 
 -- Link shipments to pickup requests
 ALTER TABLE shipments ADD COLUMN pickup_request_id uuid REFERENCES pickup_requests(id) ON DELETE SET NULL;

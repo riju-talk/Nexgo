@@ -169,7 +169,7 @@ export async function weightDisputeRoutes(app: FastifyInstance) {
       } else if (input.action === 'accept') {
         newStatus = 'accepted';
         amountToDeduct = current.rows[0].additional_charge_paise;
-      } else if (input.action === 'withdrawn') {
+      } else if (input.action === 'withdraw') {
         newStatus = 'withdrawn';
         amountToDeduct = current.rows[0].additional_charge_paise;
       } else {
@@ -324,7 +324,7 @@ export async function weightDisputeRoutes(app: FastifyInstance) {
         actorUserId: p.userId,
         action: 'weight_dispute.bulk_action',
         targetType: 'weight_dispute',
-        targetId: null,
+        targetId: 'bulk',
         requestId: request.id,
         metadata: { 
           count: input.disputeIds.length, 

@@ -30,11 +30,11 @@ CREATE TABLE bank_accounts (
   notes text,
   
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  
-  -- Only one primary account per seller
-  UNIQUE (seller_id, is_primary) WHERE is_primary = true
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Only one primary account per seller
+CREATE UNIQUE INDEX bank_accounts_one_primary ON bank_accounts (seller_id) WHERE is_primary = true;
 
 CREATE INDEX bank_accounts_seller_lookup ON bank_accounts (seller_id, is_active, is_primary);
 ALTER TABLE bank_accounts ENABLE ROW LEVEL SECURITY;
@@ -53,24 +53,25 @@ INSERT INTO bank_accounts (
   key_reference
 )
 SELECT 
-  seller_id,
-  COALESCE(bank_account_holder, legal_name) AS account_holder_name,
-  bank_account_number_encrypted,
-  bank_ifsc,
+  k.seller_id,
+  COALESCE(k.bank_account_holder, sl.legal_name) AS account_holder_name,
+  k.bank_account_number_encrypted,
+  k.bank_ifsc,
   CASE 
-    WHEN bank_ifsc IS NOT NULL THEN substring(bank_ifsc from 1 for 4)
+    WHEN k.bank_ifsc IS NOT NULL THEN substring(k.bank_ifsc from 1 for 4)
     ELSE 'UNKNOWN'
   END AS bank_name,
   CASE 
-    WHEN status = 'verified' THEN 'verified'
+    WHEN k.status = 'verified' THEN 'verified'
     ELSE 'pending'
   END AS verification_status,
   true AS is_primary,
-  key_reference
-FROM seller_kyc
-WHERE bank_account_number_encrypted IS NOT NULL 
-  AND bank_ifsc IS NOT NULL
-  AND key_reference IS NOT NULL
+  k.key_reference
+FROM seller_kyc k
+JOIN sellers sl ON sl.id = k.seller_id
+WHERE k.bank_account_number_encrypted IS NOT NULL 
+  AND k.bank_ifsc IS NOT NULL
+  AND k.key_reference IS NOT NULL
 ON CONFLICT DO NOTHING;
 
 -- Link COD remittance cycles to bank accounts
@@ -212,10 +213,10 @@ GROUP BY p.id, p.code, p.name, p.status;
 COMMENT ON VIEW partner_order_stats IS 'Marketplace partner order statistics for admin dashboard';
 
 -- Insert some common partners (examples)
-INSERT INTO marketplace_partners (code, name, legal_name, status, commission_percentage, fulfillment_fee_paise) VALUES
-  ('nestasia', 'Nestasia', 'Nestasia Home Decor Pvt Ltd', 'active', 15.00, 0),
-  ('pepperfry', 'Pepperfry', 'Pepperfry Limited', 'active', 12.00, 0),
-  ('tatacliq', 'Tata CLiQ', 'Tata UniStore Limited', 'active', 18.00, 0)
+INSERT INTO marketplace_partners (code, name, legal_name, status, onboarded_at, commission_percentage, fulfillment_fee_paise) VALUES
+  ('nestasia', 'Nestasia', 'Nestasia Home Decor Pvt Ltd', 'active', now(), 15.00, 0),
+  ('pepperfry', 'Pepperfry', 'Pepperfry Limited', 'active', now(), 12.00, 0),
+  ('tatacliq', 'Tata CLiQ', 'Tata UniStore Limited', 'active', now(), 18.00, 0)
 ON CONFLICT (code) DO NOTHING;
 
 COMMENT ON TABLE marketplace_partners IS 'Marketplace and dropshipping partners who send orders to sellers';

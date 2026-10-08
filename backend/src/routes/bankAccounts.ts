@@ -144,7 +144,7 @@ export async function bankAccountRoutes(app: FastifyInstance) {
         // Mask for display (show last 4 digits)
         accountNumber = '****' + accountNumber.slice(-4);
       } catch (error) {
-        app.log.error('Failed to decrypt account number', error);
+        app.log.error({ err: error }, 'Failed to decrypt account number');
       }
 
       return {

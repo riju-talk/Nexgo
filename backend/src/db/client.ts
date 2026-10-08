@@ -1,7 +1,9 @@
 import { Pool, type PoolClient } from 'pg';
 import { config } from '../config.js';
 
-export const db = new Pool({ connectionString: config.DATABASE_URL, max: 12 });
+// Serverless functions each hold their own pool, so keep it small in production
+// and point DATABASE_URL at the provider's pooled (pgbouncer) connection string.
+export const db = new Pool({ connectionString: config.DATABASE_URL, max: config.DB_POOL_MAX });
 
 export async function withTransaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await db.connect();

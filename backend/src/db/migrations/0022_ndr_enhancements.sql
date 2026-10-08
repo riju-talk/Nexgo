@@ -79,7 +79,7 @@ SELECT
   c.full_name AS customer_name,
   c.city AS customer_city,
   c.pincode AS customer_pincode,
-  c.phone AS customer_phone,
+  c.phone AS customer_contact_phone,
   cp.name AS courier_name,
   EXTRACT(EPOCH FROM (nc.sla_deadline_at - now())) / 3600 AS hours_until_deadline
 FROM ndr_cases nc
