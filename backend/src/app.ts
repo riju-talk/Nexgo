@@ -1,4 +1,5 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -99,4 +100,19 @@ await app.register(partnerRoutes);
 await app.register(reportRoutes);
 await app.register(adminReportRoutes);
 return app;
+}
+
+// Vercel runs this file as the serverless entrypoint (it auto-detects `app`), so it must default-export a
+// request handler. The Fastify instance is built once per warm container and reused. Local dev uses local.ts.
+let ready: Promise<FastifyInstance> | undefined;
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  ready ??= buildApp().then(async (app) => { await app.ready(); return app; });
+  try {
+    const app = await ready;
+    app.server.emit('request', req, res);
+  } catch (error) {
+    ready = undefined;
+    console.error('API failed to start', error);
+    res.statusCode = 500; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ error: 'API_START_FAILED' }));
+  }
 }

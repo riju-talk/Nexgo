@@ -76,7 +76,7 @@ export default function LiveReports({ mobile }) {
   const preview = current?.preview;
 
   return (
-    <main style={{ padding: pad, maxWidth: 1120 }}>
+    <main style={{ padding: pad, maxWidth: '100%' }}>
       <section style={{ ...CARD, overflow: 'hidden' }}>
         <div style={band}>Generate Report</div>
         <div style={{ padding: 16, display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.3fr 1fr 1fr 1fr', gap: 12 }}>

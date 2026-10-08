@@ -48,7 +48,7 @@ export default function LivePincodeServiceability({ mobile }) {
   const ok = result?.serviceable;
   const sum = result?.summary;
   return (
-    <div style={{ padding: mobile ? '14px 12px 42px' : '18px 22px 48px', maxWidth: 1280 }}>
+    <div style={{ padding: mobile ? '14px 12px 42px' : '18px 22px 48px', maxWidth: '100%' }}>
       <p style={{ margin: '0 0 14px', color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Check if your shipment can be delivered to the destination pincode and view available courier partners.</p>
       <form onSubmit={check} style={{ ...CARD, padding: 18, display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr .8fr auto', gap: 14, alignItems: 'start' }}>
         <PincodeInput label="Pickup Pincode" value={form.pickup} onChange={(v) => setForm((f) => ({ ...f, pickup: v }))} />

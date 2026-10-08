@@ -73,7 +73,7 @@ export default function FormPage({ activeId, mobile, phone }) {
   return (
     <div style={{ flex: 1, padding: `${phone ? 14 : 24}px ${pagePad}px 52px`, position: 'relative' }}>
       <ScenicBackdrop mode="workspace" />
-      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1680, margin: '0 auto', display: 'grid', gridTemplateColumns: formCols, gap: 20, alignItems: 'start' }}>
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: '100%', margin: '0 auto', display: 'grid', gridTemplateColumns: formCols, gap: 20, alignItems: 'start' }}>
         <div>
           {form.sections.map((sec, si) => (
             <div key={si} style={{ ...CARD, marginBottom: 20, overflow: 'hidden' }}>

@@ -24,68 +24,39 @@ function principal(request: FastifyRequest) {
 }
 
 export async function weightDisputeRoutes(app: FastifyInstance) {
-  // Get all weight disputes for seller
+  // Weight disputes for the seller: status tab, search, courier/date filters, pagination.
   app.get('/v1/weight-disputes', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
     const query = z.object({
       status: z.enum(['open', 'disputed', 'accepted', 'won', 'lost', 'withdrawn']).optional(),
-      courierId: uuid.optional(),
-      minAmount: z.coerce.number().int().optional(),
+      q: z.string().trim().max(80).optional(),
+      courier: z.string().trim().max(64).optional(),
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      page: z.coerce.number().int().min(1).default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(8),
     }).parse(request.query);
 
     return withSellerTransaction(p.sellerId, async (client) => {
-      let sql = `
-        SELECT 
-          wd.*,
-          s.awb,
-          o.order_number,
-          cp.name AS courier_name,
-          cs.display_name AS service_name,
-          EXTRACT(EPOCH FROM (wd.dispute_deadline - now())) / 86400 AS days_until_deadline,
-          CASE 
-            WHEN array_length(wd.seller_evidence_document_ids, 1) > 0 THEN true 
-            ELSE false 
-          END AS has_evidence
-        FROM weight_disputes wd
-        JOIN shipments s ON s.id = wd.shipment_id
-        JOIN orders o ON o.id = s.order_id
-        JOIN courier_providers cp ON cp.id = wd.raised_by_provider
-        JOIN courier_services cs ON cs.id = s.service_id
-        WHERE wd.seller_id = $1
-      `;
-      
-      const params: any[] = [p.sellerId];
-      let paramIdx = 2;
-
-      if (query.status) {
-        sql += ` AND wd.status = $${paramIdx}::dispute_status_enum`;
-        params.push(query.status);
-        paramIdx++;
-      }
-
-      if (query.courierId) {
-        sql += ` AND wd.raised_by_provider = $${paramIdx}`;
-        params.push(query.courierId);
-        paramIdx++;
-      }
-
-      if (query.minAmount) {
-        sql += ` AND wd.held_amount_paise >= $${paramIdx}`;
-        params.push(query.minAmount);
-        paramIdx++;
-      }
-
-      sql += ` ORDER BY 
-        CASE WHEN wd.status IN ('open', 'disputed') THEN 0 ELSE 1 END,
-        wd.dispute_deadline ASC,
-        wd.raised_at DESC 
-        LIMIT 200`;
-
-      return { items: (await client.query(sql, params)).rows };
+      const where = ['wd.seller_id = $1']; const params: unknown[] = [p.sellerId];
+      const add = (sql: string, value: unknown) => { params.push(value); where.push(sql.replaceAll('?', `$${params.length}`)); };
+      if (query.status) add('wd.status = ?::dispute_status_enum', query.status);
+      if (query.courier) add('cp.code = ?', query.courier);
+      if (query.from) add('wd.raised_at >= ?::date', query.from);
+      if (query.to) add('wd.raised_at < ?::date + 1', query.to);
+      if (query.q) { params.push(`%${query.q}%`); where.push(`(s.awb ILIKE $${params.length} OR o.order_number ILIKE $${params.length})`); }
+      const from = `FROM weight_disputes wd JOIN shipments s ON s.id = wd.shipment_id JOIN orders o ON o.id = s.order_id
+        JOIN courier_providers cp ON cp.id = wd.raised_by_provider JOIN courier_services cs ON cs.id = s.service_id WHERE ${where.join(' AND ')}`;
+      const total = Number((await client.query<{ n: string }>(`SELECT count(*) AS n ${from}`, params)).rows[0].n);
+      const rows = await client.query(
+        `SELECT wd.*, s.awb, o.order_number, cp.code AS courier_code, cp.name AS courier_name, cs.display_name AS service_name,
+                EXTRACT(EPOCH FROM (wd.dispute_deadline - now())) / 86400 AS days_until_deadline,
+                COALESCE(array_length(wd.seller_evidence_document_ids, 1), 0) > 0 AS has_evidence
+         ${from} ORDER BY (wd.status IN ('open','disputed')) DESC, wd.dispute_deadline ASC, wd.id LIMIT ${query.pageSize} OFFSET ${(query.page - 1) * query.pageSize}`, params);
+      return { items: rows.rows, total, page: query.page, pageSize: query.pageSize, pages: Math.max(1, Math.ceil(total / query.pageSize)) };
     });
   });
 
-  // Get dispute by ID
   app.get('/v1/weight-disputes/:disputeId', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
     const disputeId = uuid.parse((request.params as { disputeId: string }).disputeId);

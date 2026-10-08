@@ -58,7 +58,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
     <div style={{ flex: 1, padding: '0 0 48px', position: 'relative' }}>
       <ScenicBackdrop />
 
-      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1680, margin: '0 auto' }}>
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: '100%', margin: '0 auto' }}>
       <div style={{ padding: `${phone ? 14 : 22}px ${pagePad}px 6px`, display: 'grid', gridTemplateColumns: statCols, gap: phone ? 10 : 14 }}>
         {statCards.map((c) => (
           <DashboardStatCard key={c.id} card={c} hidden={expandedCardId === c.id} onOpen={setExpandedCardId} />

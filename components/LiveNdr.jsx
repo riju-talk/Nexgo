@@ -172,7 +172,7 @@ export default function LiveNdr({ mobile }) {
   const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
 
   return (
-    <div style={{ padding: pad, maxWidth: 1480 }}>
+    <div style={{ padding: pad, maxWidth: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
         <p style={{ margin: 0, color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Track and manage Non-Delivery Reports (NDR) and take appropriate actions to ensure successful redelivery.</p>
         <div style={{ display: 'flex', gap: 8 }}><Btn onClick={() => setHelp((h) => !h)}>ⓘ How it works?</Btn><select aria-label="Report format" value={format} onChange={(e) => setFormat(e.target.value)} style={{ ...FIELD, height: 38 }}>{FORMATS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select><Btn onClick={exportReport} disabled={busy}>⤓ Download Report</Btn></div>

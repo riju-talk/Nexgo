@@ -132,7 +132,7 @@ export default function LiveWarehouse({ mobile }) {
 
   if (editing) {
     return (
-      <div style={{ padding: pad, maxWidth: 1180 }}>
+      <div style={{ padding: pad, maxWidth: '100%' }}>
         <button type="button" onClick={() => setEditing(null)} style={{ border: 0, background: 'transparent', color: '#2454D6', fontWeight: 700, cursor: 'pointer', padding: 0, marginBottom: 8 }}>← Back</button>
         <h2 style={{ margin: '0 0 4px', color: T.TEXT, fontSize: 24 }}>{editing.id ? 'Edit Warehouse' : 'Add Warehouse'}</h2>
         <p style={{ margin: '0 0 16px', color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Add your warehouse details to manage inventory, shipments and faster order processing.</p>
@@ -143,7 +143,7 @@ export default function LiveWarehouse({ mobile }) {
 
   const active = (items || []).filter((w) => w.is_active); const inactive = (items || []).filter((w) => !w.is_active);
   return (
-    <div style={{ padding: pad, maxWidth: 1180 }}>
+    <div style={{ padding: pad, maxWidth: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
         <p style={{ margin: 0, color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Pickup locations used when creating orders and booking couriers. {active.length} active.</p>
         <button type="button" onClick={() => setEditing({ initial: { ...blank, isDefault: active.length === 0 } })} style={{ height: 40, padding: '0 20px', border: 0, borderRadius: 9, background: '#2454D6', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>+ Add Warehouse</button>

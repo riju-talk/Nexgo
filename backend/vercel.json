@@ -2,6 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build && npm run migrate",
   "installCommand": "npm install",
-  "functions": { "api/index.js": { "maxDuration": 30, "includeFiles": "dist/**" } },
+  "functions": { "api/index.js": { "maxDuration": 30, "includeFiles": "{dist/**,node_modules/argon2/**}" } },
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
 }

@@ -56,7 +56,7 @@ export default function LiveBillingDocs({ kind, mobile }) {
   };
 
   return (
-    <main style={{ padding: pad, maxWidth: 1100 }}>
+    <main style={{ padding: pad, maxWidth: '100%' }}>
       <p style={{ margin: '0 0 14px', color: T.TEXT_SECONDARY, fontSize: 13 }}>{cfg.intro}</p>
       {error ? (
         <section style={{ ...CARD, padding: 26, color: T.TEXT_SECONDARY, fontSize: 13.5 }}>{unauth ? 'Sign in to see your ' : 'Could not load your '}{cfg.noun}.{unauth && <button onClick={() => nav('login')} style={{ marginLeft: 10, border: 0, background: 'transparent', color: T.ACCENT, fontWeight: 750, cursor: 'pointer' }}>Sign in</button>}</section>

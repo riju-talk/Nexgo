@@ -107,7 +107,7 @@ export default function TablePage({ activeId, mobile, phone }) {
   return (
     <div style={{ flex: 1, padding: `${phone ? 14 : 24}px ${pagePad}px 52px`, position: 'relative' }}>
       <ScenicBackdrop mode="workspace" />
-      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1680, margin: '0 auto' }}>
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: '100%', margin: '0 auto' }}>
       {t.stats && !directTable && (
         <div style={{ ...card, display: 'grid', gridTemplateColumns: miniCols, marginBottom: 20, overflow: 'hidden' }}>
           {t.stats.map(([label, value, delta, dir, sub], i) => (

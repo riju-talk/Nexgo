@@ -24,12 +24,14 @@ import LiveShipmentDetail from './LiveShipmentDetail';
 import CreateOrder from './CreateOrder';
 import LiveBilling from './LiveBilling';
 import LiveNdr from './LiveNdr';
+import LiveWeightDisputes from './LiveWeightDisputes';
 import LiveWarehouse from './LiveWarehouse';
 import LiveRateCalculator from './LiveRateCalculator';
 import LivePincodeServiceability from './LivePincodeServiceability';
 import LiveBillingDocs from './LiveBillingDocs';
 import LiveTrack from './LiveTrack';
 import ComingSoon from './ComingSoon';
+import PageContainer from './PageContainer';
 
 export default function AppPage({ id, isDashboard = false }) {
   const { vw } = useAppState();
@@ -44,6 +46,7 @@ export default function AppPage({ id, isDashboard = false }) {
   const isAdminPage = id.startsWith('a-');
   const isLiveSellerPage = ['orders', 'wallet'].includes(id);
   const isNdr = id === 'ndr';
+  const isWeight = id === 'weight';
   const isWarehouse = id === 'warehouse';
   const isRateCalc = id === 'ratecalc';
   const isPincode = id === 'pincode';
@@ -59,7 +62,7 @@ export default function AppPage({ id, isDashboard = false }) {
   const isLiveShipmentDetail = id === 'ship-detail';
   const isLiveSellerWorkspace = ['recharges', 'team', 'kyc', 'invoice', 'cod', 'charges', 'shopify', 'woo', 'magento', 'opencart', 'amazon', 'ratecard'].includes(id);
   const isLiveAdminOperations = ['a-kyc', 'a-wallets', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
-  const isLiveWorkspaceTool = ['courier-rules', 'label', 'printer', 'inv-settings', 'notifications', 'mis', 'weight', 'a-tickets', 'wa-api', 'sms-api', 'abandoned', 'email-reports', 'profile'].includes(id);
+  const isLiveWorkspaceTool = ['courier-rules', 'label', 'printer', 'inv-settings', 'notifications', 'mis', 'a-tickets', 'wa-api', 'sms-api', 'abandoned', 'email-reports', 'profile'].includes(id);
   const isLiveAdminReport = ['a-revenue', 'a-sla-report', 'a-analytics', 'a-gst'].includes(id);
   const isAdminUtility = isAdminPage && !isAdminOverview && !hasTable && !isLiveAdminReport;
 
@@ -67,31 +70,34 @@ export default function AppPage({ id, isDashboard = false }) {
     <>
       {!isAccountConfig && !isAdminOverview && !isAdminPage && <PageHeader activeId={id} isDashboard={isDashboard} mobile={mobile} phone={phone} />}
       {isAdminPage && !isAdminOverview && <AdminPageHeader activeId={id} phone={phone} />}
+      <PageContainer admin={isAdminPage}>
       {isAdminOverview && <AdminDashboard mobile={mobile} phone={phone} />}
       {isDashboard && !isAdminOverview && <DashboardContent mobile={mobile} narrow={narrow} phone={phone} />}
-      {isNdr && <LiveNdr mobile={mobile} />}
-      {isWarehouse && <LiveWarehouse mobile={mobile} />}
-      {isRateCalc && <LiveRateCalculator mobile={mobile} />}
-      {isPincode && <LivePincodeServiceability mobile={mobile} />}
-      {isLiveSellerPage && <LiveSellerOperations activeId={id} mobile={mobile} />}
-      {isLiveAdminPage && <LiveAdminQueues activeId={id} mobile={mobile} />}
-      {isCreateOrder && <CreateOrder tab={id === 'bulk-orders' ? 'bulk' : 'single'} mobile={mobile} />}
-      {isLiveCreateOrder && <LiveCreateOrder mobile={mobile} flow={id === 'shipnow' ? 'ship_now' : id} />}
-      {isLiveBilling && <LiveBilling mobile={mobile} />}
-      {isBillingDoc && <LiveBillingDocs kind={id} mobile={mobile} />}
-      {isTrack && <LiveTrack mobile={mobile} />}
-      {isComingSoon && <ComingSoon mobile={mobile} name="B2B orders" blurb="Business shipments with GST invoicing and multi-box handling are not enabled by the current API contract yet." />}
-      {isLiveMarketing && <LiveMarketing channel={id} mobile={mobile} />}
-      {isLiveSellerSecurity && <LiveSellerSecurity mobile={mobile} />}
-      {isLiveShipmentDetail && <LiveShipmentDetail mobile={mobile} />}
-      {isLiveSellerWorkspace && <LiveSellerWorkspace activeId={id} mobile={mobile} />}
-      {isLiveAdminOperations && <LiveAdminOperations activeId={id} mobile={mobile} />}
-      {isLiveAdminReport && <LiveAdminReports activeId={id} mobile={mobile} />}
-      {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
-      {hasTable && !isNdr && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <TablePage activeId={id} mobile={mobile} phone={phone} />}
-      {hasForm && !isWarehouse && !isRateCalc && !isPincode && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <FormPage activeId={id} mobile={mobile} phone={phone} />}
-      {isAdminUtility && !isLiveAdminOperations && !isLiveWorkspaceTool && <AdminUtilityPage activeId={id} mobile={mobile} />}
-      {isAccountConfig && <AccountConfiguration mobile={mobile} phone={phone} />}
+        {isNdr && <LiveNdr mobile={mobile} />}
+        {isWeight && <LiveWeightDisputes mobile={mobile} />}
+        {isWarehouse && <LiveWarehouse mobile={mobile} />}
+        {isRateCalc && <LiveRateCalculator mobile={mobile} />}
+        {isPincode && <LivePincodeServiceability mobile={mobile} />}
+        {isLiveSellerPage && <LiveSellerOperations activeId={id} mobile={mobile} />}
+        {isLiveAdminPage && <LiveAdminQueues activeId={id} mobile={mobile} />}
+        {isCreateOrder && <CreateOrder tab={id === 'bulk-orders' ? 'bulk' : 'single'} mobile={mobile} />}
+        {isLiveCreateOrder && <LiveCreateOrder mobile={mobile} flow={id === 'shipnow' ? 'ship_now' : id} />}
+        {isLiveBilling && <LiveBilling mobile={mobile} />}
+        {isBillingDoc && <LiveBillingDocs kind={id} mobile={mobile} />}
+        {isTrack && <LiveTrack mobile={mobile} />}
+        {isComingSoon && <ComingSoon mobile={mobile} name="B2B orders" blurb="Business shipments with GST invoicing and multi-box handling are not enabled by the current API contract yet." />}
+        {isLiveMarketing && <LiveMarketing channel={id} mobile={mobile} />}
+        {isLiveSellerSecurity && <LiveSellerSecurity mobile={mobile} />}
+        {isLiveShipmentDetail && <LiveShipmentDetail mobile={mobile} />}
+        {isLiveSellerWorkspace && <LiveSellerWorkspace activeId={id} mobile={mobile} />}
+        {isLiveAdminOperations && <LiveAdminOperations activeId={id} mobile={mobile} />}
+        {isLiveAdminReport && <LiveAdminReports activeId={id} mobile={mobile} />}
+        {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
+        {hasTable && !isNdr && !isWeight && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <TablePage activeId={id} mobile={mobile} phone={phone} />}
+        {hasForm && !isWeight && !isWarehouse && !isRateCalc && !isPincode && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <FormPage activeId={id} mobile={mobile} phone={phone} />}
+        {isAdminUtility && !isLiveAdminOperations && !isLiveWorkspaceTool && <AdminUtilityPage activeId={id} mobile={mobile} />}
+        {isAccountConfig && <AccountConfiguration mobile={mobile} phone={phone} />}
+      </PageContainer>
     </>
   );
 }
