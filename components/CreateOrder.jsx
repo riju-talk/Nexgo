@@ -12,7 +12,7 @@ const TABS = [['single', 'Single order', 'b2c'], ['bulk', 'Bulk upload', 'bulk-o
 export default function CreateOrder({ tab, mobile }) {
   const { nav } = useAppState();
   return (
-    <div style={{ padding: mobile ? '14px 12px 42px' : '18px 22px 48px' }}>
+    <div style={{ padding: mobile ? '14px 12px 42px' : '18px 28px 48px' }}>
       <div role="tablist" style={{ display: 'inline-flex', gap: 4, padding: 4, marginBottom: 16, borderRadius: 11, border: `1px solid ${T.BORDER}`, background: T.SURFACE_SOFT }}>
         {TABS.map(([key, label, screen]) => {
           const on = key === tab;

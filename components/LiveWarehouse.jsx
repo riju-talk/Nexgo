@@ -128,7 +128,7 @@ export default function LiveWarehouse({ mobile }) {
 
   const makeDefault = async (w) => { try { await apiFetch(`/v1/warehouses/${w.id}/default`, { method: 'POST' }); showToast(`${w.name} is now the default warehouse`); load(); } catch (e) { showToast(e.message || 'Could not change the default', 'error'); } };
   const remove = async (w) => { try { await apiFetch(`/v1/warehouses/${w.id}`, { method: 'DELETE' }); showToast(`${w.name} removed`); setConfirmId(''); load(); } catch (e) { showToast(e.message || 'Could not remove the warehouse', 'error'); setConfirmId(''); } };
-  const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
+  const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
 
   if (editing) {
     return (

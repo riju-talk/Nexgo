@@ -110,7 +110,7 @@ export default function LiveWeightDisputes({ mobile }) {
   };
 
   const kpis = [['Needs action', n(s.open_count), 'Respond before the deadline', '#F58220'], ['Disputed', n(s.disputed_count), 'Awaiting courier decision', '#2454D6'], ['Won', n(s.won_count), `${inr(s.total_saved_paise)} recovered`, '#14724F'], ['Accepted / lost', n(s.accepted_count) + n(s.lost_count), `${inr(s.total_cost_paise)} charged`, '#6B7280'], ['Amount on hold', inr(s.total_held_paise), n(s.urgent_count) ? `${n(s.urgent_count)} due within 3 days` : 'Held until resolved', '#B23A2B']];
-  const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
+  const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
   return (
     <div style={{ padding: pad }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>

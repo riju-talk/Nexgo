@@ -40,7 +40,7 @@ export default function AdminPageHeader({ activeId, phone }) {
   const { showToast } = useAppState();
   const [, title, sub] = PAGES[activeId] || ['', 'Operations', ''];
   const [eyebrow, attention, action, color] = CONTEXT[activeId] || ['Platform operations', 'This workspace is ready for review', 'Open workspace', T.ACCENT];
-  return <div style={{ position: 'relative', zIndex: 2, padding: phone ? '20px 12px 2px' : '30px 22px 4px', background: 'transparent' }}>
+  return <div style={{ position: 'relative', zIndex: 2, padding: phone ? '20px 12px 2px' : '30px 28px 4px', background: 'transparent' }}>
     <div style={{ maxWidth: 1560, margin: '0 auto', display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
       <div>
         <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: T.ACCENT }}>Operations / {eyebrow}</div>

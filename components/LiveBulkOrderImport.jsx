@@ -208,7 +208,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
   const failedCount = orders.filter((o) => o.errors.length || o.failure).length;
 
   return (
-    <div style={{ flex: 1, padding: embedded ? 0 : mobile ? '14px 12px 42px' : '18px 22px 48px' }}>
+    <div style={{ flex: 1, padding: embedded ? 0 : mobile ? '14px 12px 42px' : '18px 28px 48px' }}>
       <div style={{ ...CARD, padding: mobile ? 17 : 22 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
           <div>

@@ -44,7 +44,7 @@ export default function LiveBillingDocs({ kind, mobile }) {
   }, [cfg.path]);
 
   const stats = useMemo(() => (rows ? cfg.stats(rows) : null), [rows, cfg]);
-  const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
+  const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
   const unauth = error instanceof ApiError && error.status === 401;
 
   const exportCsv = () => {

@@ -20,7 +20,7 @@ const ITEMS = [
 export default function AccountConfiguration({ phone, mobile }) {
   const { nav } = useAppState();
   const cols = phone ? '1fr' : mobile ? 'repeat(2,minmax(0,1fr))' : 'repeat(auto-fit,minmax(230px,1fr))';
-  const pad = phone ? 12 : mobile ? 16 : 22;
+  const pad = phone ? 12 : mobile ? 16 : 28;
 
   return (
     <div style={{ flex: 1, position: 'relative', padding: `${phone ? 14 : 20}px ${pad}px 48px` }}>

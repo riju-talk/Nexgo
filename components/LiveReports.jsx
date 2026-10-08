@@ -29,7 +29,7 @@ const band = { padding: '12px 16px', background: '#2454D6', color: '#fff', fontW
 
 export default function LiveReports({ mobile }) {
   const { showToast } = useAppState();
-  const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
+  const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
   const [types, setTypes] = useState([]);
   const [runs, setRuns] = useState(null);
   const [loadError, setLoadError] = useState('');

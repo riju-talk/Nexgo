@@ -61,14 +61,14 @@ export default function LiveAdminReports({ activeId, mobile }) {
   };
   const loading = state.kind !== kind;
   const { data, error } = state;
-  const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
+  const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
 
-  if (loading) return <div style={{ padding: pad, maxWidth: 1560, margin: '0 auto' }}><section style={{ ...CARD, padding: 22, color: 'var(--ops-muted)', fontSize: 13 }}>Loading report…</section></div>;
-  if (error || !data) return <div style={{ padding: pad, maxWidth: 1560, margin: '0 auto' }}><section style={{ ...CARD, padding: 22, color: T.RED, fontSize: 13 }}>{error || 'This report could not be loaded.'}</section></div>;
+  if (loading) return <div style={{ padding: pad, maxWidth: '100%', margin: '0 auto' }}><section style={{ ...CARD, padding: 22, color: 'var(--ops-muted)', fontSize: 13 }}>Loading report…</section></div>;
+  if (error || !data) return <div style={{ padding: pad, maxWidth: '100%', margin: '0 auto' }}><section style={{ ...CARD, padding: 22, color: T.RED, fontSize: 13 }}>{error || 'This report could not be loaded.'}</section></div>;
 
   const { headline, series, signals, table } = data;
   return (
-    <div style={{ padding: pad, maxWidth: 1560, margin: '0 auto' }}>
+    <div style={{ padding: pad, maxWidth: '100%', margin: '0 auto' }}>
       <section style={{ ...CARD, padding: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: 16, flexWrap: 'wrap' }}>
         <div>
           <div style={{ color: T.ACCENT, fontSize: 11, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase' }}>{headline.label}</div>

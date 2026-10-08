@@ -42,7 +42,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
   const total = dashboardPipeline.reduce((a, p) => a + p[1], 0);
   const statCols = mobile ? 'repeat(2,minmax(0,1fr))' : narrow ? 'repeat(3,minmax(0,1fr))' : 'repeat(5,minmax(0,1fr))';
   const pipeCols = phone ? 'repeat(2,minmax(0,1fr))' : mobile ? 'repeat(3,minmax(0,1fr))' : narrow ? 'repeat(5,minmax(0,1fr))' : 'repeat(9,minmax(0,1fr))';
-  const pagePad = phone ? 12 : mobile ? 16 : 22;
+  const pagePad = phone ? 12 : mobile ? 16 : 28;
 
   const queueTabs = ['All', 'Time critical', 'Money at risk'];
 

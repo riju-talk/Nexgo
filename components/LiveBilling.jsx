@@ -47,7 +47,7 @@ export default function LiveBilling({ mobile }) {
       .catch(setError);
   }, []);
 
-  const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
+  const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
   if (error) {
     const unauth = error instanceof ApiError && error.status === 401;
     return <div style={{ padding: pad }}><div style={{ ...CARD, padding: 30, color: T.TEXT_SECONDARY, fontSize: 13.5 }}>{unauth ? 'Sign in to see your billing.' : 'Billing could not be loaded right now.'}{unauth && <button onClick={() => nav('login')} style={{ marginLeft: 10, border: 0, background: 'transparent', color: T.ACCENT, fontWeight: 750, cursor: 'pointer' }}>Sign in</button>}</div></div>;

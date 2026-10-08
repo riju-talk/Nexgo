@@ -208,7 +208,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
   const money = (value, onChange) => input(value, onChange, { type: 'number', min: 0, step: '0.01', inputMode: 'decimal', placeholder: '0.00' });
 
   return (
-    <form onSubmit={submit} style={{ padding: embedded ? 0 : mobile ? '14px 12px 42px' : '18px 22px 48px', display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'minmax(0,1fr) 330px', gap: 16, alignItems: 'start' }}>
+    <form onSubmit={submit} style={{ padding: embedded ? 0 : mobile ? '14px 12px 42px' : '18px 28px 48px', display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'minmax(0,1fr) 330px', gap: 16, alignItems: 'start' }}>
       <div style={{ display: 'grid', gap: 14, minWidth: 0 }}>
         <Section title={isReverse ? 'Return details' : 'Order information'} hint={isReverse ? 'Return pickups are prepaid — no COD is collected.' : 'Identify the order and how the customer pays.'}>
           <Grid cols={two}>

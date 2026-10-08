@@ -64,7 +64,7 @@ export default function LiveRateCalculator({ mobile }) {
   };
 
   return (
-    <div style={{ padding: mobile ? '14px 12px 42px' : '18px 22px 48px', maxWidth: '100%' }}>
+    <div style={{ padding: mobile ? '14px 12px 42px' : '18px 28px 48px', maxWidth: '100%' }}>
       <p style={{ margin: '0 0 14px', color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Enter your shipment details to compare the best courier rates across multiple partners.</p>
       <form onSubmit={calculate} style={{ ...CARD, padding: 18 }}>
         <b style={{ color: T.TEXT, fontSize: 15 }}>Shipment Details</b>

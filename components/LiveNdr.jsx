@@ -169,7 +169,7 @@ export default function LiveNdr({ mobile }) {
   };
 
   const kpis = [['Total NDR', stats?.total ?? '—', stats ? `${stats.shareOfShipmentsPct}% of total shipments` : '', '#6D28D9'], ['New NDR', counts.new ?? '—', 'Requires attention', '#F58220'], ['Action Pending', counts.action_pending ?? '—', 'Awaiting your action', '#F5B301'], ['Redelivery Scheduled', counts.redelivery_scheduled ?? '—', 'Scheduled for redelivery', '#2454D6'], ['Resolved', counts.resolved ?? '—', 'Successfully resolved', '#14724F'], ['Auto RTO', counts.rto ?? '—', 'Marked as RTO', '#B23A2B']];
-  const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
+  const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
 
   return (
     <div style={{ padding: pad, maxWidth: '100%' }}>

@@ -10,7 +10,7 @@ const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-bord
 export default function ComingSoon({ name, blurb, mobile }) {
   const { nav } = useAppState();
   return (
-    <div style={{ padding: mobile ? '14px 12px 42px' : '18px 22px 48px', position: 'relative', maxWidth: '100%' }}>
+    <div style={{ padding: mobile ? '14px 12px 42px' : '18px 28px 48px', position: 'relative', maxWidth: '100%' }}>
       <div aria-hidden="true" style={{ filter: 'blur(5px)', opacity: 0.55, pointerEvents: 'none', userSelect: 'none', display: 'grid', gap: 12 }}>
         <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(4,1fr)', gap: 12 }}>
           {[0, 1, 2, 3].map((i) => <div key={i} style={{ ...CARD, height: 84 }} />)}
