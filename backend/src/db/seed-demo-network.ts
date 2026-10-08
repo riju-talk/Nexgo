@@ -1,6 +1,6 @@
 import { db } from './client.js';
 
-const email = 'demo-2026@nexgo.local';
+const email = 'demo@acmeexports.com';
 const partners = [
   ['delhivery-demo', 'Delhivery', 'surface', 'Delhivery Surface', 12450, 2850],
   ['bluedart-demo', 'Blue Dart', 'air', 'Blue Dart Air', 21800, 5400],

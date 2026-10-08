@@ -57,12 +57,8 @@ export default function LiveBilling({ mobile }) {
   const pendingCod = data.cod.filter((c) => c.status !== 'remitted').reduce((s, c) => s + Number(c.net_remitted_paise || 0), 0);
   const remittedCod = data.cod.filter((c) => c.status === 'remitted').reduce((s, c) => s + Number(c.net_remitted_paise || 0), 0);
   const invoiced = data.invoices.reduce((s, i) => s + Number(i.total_paise || 0), 0);
-  const download = async (inv) => {
-    try {
-      const x = await apiFetch(`/v1/seller/invoices/${inv.id}/download`);
-      if (x?.downloadUrl) window.open(x.downloadUrl, '_blank', 'noopener'); else showToast('Invoice PDF is still being generated.', 'error');
-    } catch (e) { showToast(e instanceof ApiError ? e.message : 'Invoice could not be downloaded', 'error'); }
-  };
+  // Invoice PDFs need object storage, which is not connected yet.
+  const download = () => showToast('Invoice PDF download is coming soon. It needs file storage, which is not connected yet.');
 
   const kpis = [
     ['Wallet balance', inr(data.wallet.balancePaise), data.wallet.balancePaise < 0 ? T.RED : T.TEXT, 'recharges', 'Recharge'],

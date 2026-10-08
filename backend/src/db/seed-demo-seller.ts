@@ -2,15 +2,15 @@ import argon2 from 'argon2';
 import { db, withTransaction } from './client.js';
 
 // Local presentation account only. Do not use this identity outside demo data.
-const email = 'demo-2026@nexgo.local';
-const password = 'NexgoDemo2026!';
+const email = 'demo@acmeexports.com';
+const password = 'Demo@123';
 
 async function main() {
   await withTransaction(async (client) => {
     const hash = await argon2.hash(password, { type: argon2.argon2id });
     const seller = await client.query<{ id: string }>(
       `INSERT INTO sellers (legal_name, slug, state)
-       VALUES ('Karma Living Demo', 'karma-living-demo', 'active')
+       VALUES ('Acme Exports', 'acme-exports', 'active')
        ON CONFLICT (slug) DO UPDATE SET legal_name = EXCLUDED.legal_name, state = 'active', updated_at = now()
        RETURNING id`,
     );

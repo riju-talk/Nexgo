@@ -16,7 +16,10 @@
     "seed:demo-admin": "tsx src/db/seed-demo-admin.ts",
     "seed:demo-data": "tsx src/db/seed-demo-data.ts",
     "seed:comprehensive": "tsx src/db/seed-comprehensive-test-data.ts",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "seed:demo": "npm run seed:demo-seller && npm run seed:demo-network && npm run seed:demo-admin && npm run seed:demo-data && npm run seed:demo-activity",
+    "seed:demo-activity": "tsx src/db/seed-demo-activity.ts",
+    "seed:demo-if-needed": "tsx src/db/seed-demo-if-needed.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

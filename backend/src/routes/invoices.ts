@@ -122,6 +122,7 @@ export async function invoiceRoutes(app: FastifyInstance) {
   });
 
   app.get('/v1/seller/invoices/:invoiceId/download', { preHandler: requireSeller }, async (request, reply) => {
+    if (!config.STORAGE_ENABLED) return reply.code(501).send({ error: 'FILE_STORAGE_NOT_CONNECTED', message: 'File storage is not connected yet; this will be available soon.' });
     const p = principal(request);
     const invoiceId = z.string().uuid().parse((request.params as { invoiceId: string }).invoiceId);
     return withSellerTransaction(p.sellerId, async (client) => {

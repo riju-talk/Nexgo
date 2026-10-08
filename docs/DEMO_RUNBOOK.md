@@ -26,8 +26,8 @@ npm run seed:demo-admin
 
 | Workspace | Email | Password |
 | --- | --- | --- |
-| Seller | `demo-2026@nexgo.local` | `NexgoDemo2026!` |
-| Platform admin | `demo-admin@nexgo.local` | `NexgoAdmin2026!` |
+| Seller | `demo@acmeexports.com` | `Demo@123` |
+| Platform admin | `admin@nexgo.in` | `Admin@456` |
 
 These are local demo-only accounts. Do not reuse them in a deployed environment.
 

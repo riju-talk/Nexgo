@@ -9,6 +9,14 @@ Two Vercel projects from the same repo:
 
 The frontend never calls the API cross-origin. `next.config.mjs` proxies `/v1/*` to `BACKEND_URL`, so the session and CSRF cookies stay first-party on the frontend domain (no `SameSite=None` or CORS changes needed).
 
+## Test-data deploy (no settings needed)
+
+The demo is fully hardcoded: the API defaults to the Neon test database and the frontend defaults to `https://nexgo-zpcx.vercel.app` on Vercel, so **no environment variables are required**. Deploy `backend` and the repo root as two projects and open the frontend.
+
+Demo logins (seeded by `npm run seed:demo`, already applied to Neon): seller `demo@acmeexports.com` / `Demo@123`, admin `admin@nexgo.in` / `Admin@456`. Label and invoice-PDF actions show a "coming soon" message.
+
+The Neon connection string is committed in `backend/src/config.ts`. That is acceptable only for this throwaway demo: delete the Neon project after review. The sections below are the proper setup for real data.
+
 ## 1. Create the production database
 
 Vercel does not host Postgres itself; use Neon, Supabase or any managed Postgres 14+ (needs the `pgcrypto` and `citext` extensions, which all of them provide).
@@ -44,7 +52,7 @@ Vercel does not host Postgres itself; use Neon, Supabase or any managed Postgres
    | `COURIER_WEBHOOK_SECRET` | 32+ random characters |
    | `RAZORPAY_WEBHOOK_SECRET` | random string (the boot check rejects the committed default in production) |
    | `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` | S3-compatible credentials (must not be the committed `nexgo_local` defaults, or the API refuses to boot) |
-   | `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_USE_SSL`, `MINIO_BUCKET` | your S3-compatible store (e.g. `s3.amazonaws.com`, `443`, `true`, bucket name). Needed for label/invoice PDFs and KYC documents |
+   | `STORAGE_ENABLED` | leave unset (`false`). Label and invoice-PDF buttons then show a "coming soon" message; set `true` only after the `MINIO_*` bucket settings below are configured |
    | `SMTP_HOST`, `SMTP_PORT` | a real SMTP provider (password-reset and invite emails) |
    | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | optional; unset keeps the mock gateway |
 

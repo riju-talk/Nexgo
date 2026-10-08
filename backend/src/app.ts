@@ -60,6 +60,7 @@ app.setErrorHandler((error, request, reply) => {
   return reply.code((error as { statusCode?: number }).statusCode || 500).send({ error: 'INTERNAL_ERROR' });
 });
 
+app.get('/', async (_request, reply) => reply.type('text/html; charset=utf-8').send('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NEXGO demo API</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;background:#fff;color:#0f1f3d}main{text-align:center;padding:24px}h1{margin:0 0 8px;font-size:22px}p{margin:0;color:#64748b}</style></head><body><main><h1>NEXGO demo API</h1><p>This is the demo API for NEXGO. Open the NEXGO app to use it.</p></main></body></html>'));
 app.get('/health', async () => ({ status: 'ok', service: 'nexgo-api' }));
 app.get('/ready', async (_request, reply) => {
   try { await db.query('SELECT 1'); return { status: 'ready' }; }

@@ -12,11 +12,12 @@ const SWITCHER = [
 ];
 
 const FIELD = { height: 38, border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, display: 'flex', alignItems: 'center', padding: '0 12px', fontSize: 13.5, color: T.TEXT };
-const AUTH_TEXT = '#F8FAFC';
-const AUTH_SUB = '#D6E2F2';
-const AUTH_MUTED = '#AFC0D7';
-const AUTH_LINK = '#00D7C3';
-const FIELD_LABEL = { fontSize: 12.5, fontWeight: 700, color: AUTH_SUB, marginBottom: 6, display: 'flex', gap: 3, textShadow: '0 1px 2px rgba(0,0,0,.28)' };
+// The sign-in card is solid white, so these are the dark-on-white text colours.
+const AUTH_TEXT = '#0F1F3D';
+const AUTH_SUB = '#334155';
+const AUTH_MUTED = '#64748B';
+const AUTH_LINK = '#0F766E';
+const FIELD_LABEL = { fontSize: 12.5, fontWeight: 700, color: AUTH_SUB, marginBottom: 6, display: 'flex', gap: 3 };
 const REQUIRED = <span style={{ color: '#DC2626' }}>*</span>;
 const PRIMARY_BTN = { height: 40, borderRadius: 8, background: '#0F766E', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 4 };
 
@@ -39,23 +40,13 @@ export default function AuthScreen({ mode }) {
   // Demo credentials helper
   const fillDemo = () => {
     setForm({ ...form, email: 'demo@acmeexports.com', password: 'Demo@123' });
-    showToast('Demo credentials filled! Click Sign In to continue.');
+    showToast('Demo credentials filled. Click Sign In to continue.');
   };
   
   const submit = async (event) => {
     event.preventDefault(); setSubmitting(true);
     try {
       if (mode === 'login') {
-        // Check for hardcoded demo credentials - bypass backend
-        if (form.email === 'demo@acmeexports.com' && form.password === 'Demo@123') {
-          showToast('Demo login successful! Redirecting...');
-          // Set demo session flag
-          if (typeof window !== 'undefined') {
-            window.sessionStorage.setItem('nx-demo-seller', 'true');
-          }
-          setTimeout(() => nav('dashboard'), 800);
-          return;
-        }
         await apiFetch('/v1/auth/login', { method: 'POST', body: { email: form.email, password: form.password } });
       }
       if (mode === 'signup') {
@@ -120,14 +111,14 @@ export default function AuthScreen({ mode }) {
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
         <div style={{
           width: '100%', maxWidth: 400,
-          background: 'transparent', backdropFilter: 'blur(16px) saturate(170%)',
-          border: '1px solid rgba(0,215,195,.26)', borderRadius: 16,
-          boxShadow: '0 24px 70px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.14)',
+          background: '#FFFFFF',
+          border: '1px solid #E2E8F0', borderRadius: 16,
+          boxShadow: '0 24px 70px rgba(0,0,0,.34)',
           padding: '32px 34px 30px',
         }}>
           <form onSubmit={submit}>{mode === 'login' && (
             <>
-              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT, textShadow: '0 1px 2px rgba(0,0,0,.34)' }}>Sign in</div>
+              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT, textShadow: 'none' }}>Sign in</div>
               <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 4 }}>Access your shipping workspace</div>
               
               {/* Demo Credentials Banner */}
@@ -178,7 +169,7 @@ export default function AuthScreen({ mode }) {
                   <span onClick={() => nav('forgot')} style={{ fontSize: 12, color: AUTH_LINK, fontWeight: 700, cursor: 'pointer' }}>Forgot Password</span>
                   <span style={{ fontSize: 12, color: AUTH_SUB }}>New here? <span onClick={() => nav('signup')} style={{ color: AUTH_LINK, fontWeight: 700, cursor: 'pointer' }}>Sign Up</span></span>
                 </div>
-                <div style={{ marginTop: 12, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,.34)', textAlign: 'center', fontSize: 12, color: AUTH_SUB }}>
+                <div style={{ marginTop: 12, paddingTop: 14, borderTop: '1px solid #E2E8F0', textAlign: 'center', fontSize: 12, color: AUTH_SUB }}>
                   Platform staff? <Link href="/admin/login" style={{ color: AUTH_LINK, fontWeight: 700, textDecoration: 'none' }}>Sign in as admin</Link>
                 </div>
               </div>
@@ -221,7 +212,7 @@ export default function AuthScreen({ mode }) {
               </div>
             </form>
           )}
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 22, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,.34)' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 22, paddingTop: 16, borderTop: '1px solid #E2E8F0' }}>
             {SWITCHER.map(([label, id]) => (
               <div key={id} onClick={() => nav(id)} style={{ fontSize: 11, fontWeight: 700, color: mode === id ? AUTH_LINK : AUTH_MUTED, cursor: 'pointer' }}>{label}</div>
             ))}

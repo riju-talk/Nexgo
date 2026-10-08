@@ -8,6 +8,9 @@ import { adminApi, ApiError } from '@/lib/api';
 
 const METRICS = [['8', 'Courier partners'], ['29,000', 'Serviceable pincodes'], ['99.4%', 'Platform availability']];
 
+// The card stays white in both colour modes, so pin the light-mode tokens for everything inside it.
+const WHITE_CARD_TOKENS = { '--nx-surface': '#ffffff', '--nx-surface-soft': '#f6f8fa', '--nx-border': '#d8e0e7', '--nx-divider': '#e8edf1', '--nx-input-border': '#c6d1da', '--nx-text': '#17212b', '--nx-text-label': '#334454', '--nx-text-secondary': '#647587', '--nx-text-muted': '#8391a0', '--nx-text-faint': '#a5b0ba' };
+
 export default function AdminLogin() {
   const { nav, vw, theme, toggleTheme, showToast } = useAppState();
   const [showPassword, setShowPassword] = useState(false);
@@ -31,17 +34,6 @@ export default function AdminLogin() {
     event.preventDefault();
     setError(''); setBusy(true);
     try {
-      // Check for hardcoded demo admin credentials - bypass backend
-      if (email === 'admin@nexgo.in' && password === 'Admin@456') {
-        await new Promise(resolve => setTimeout(resolve, 600)); // Simulate loading
-        // Set demo session flag
-        if (typeof window !== 'undefined') {
-          window.sessionStorage.setItem('nx-demo-admin', 'true');
-        }
-        nav('a-overview');
-        return;
-      }
-      
       const result = await adminApi.login(email, password);
       if (result.requiresMfa) { setMfaToken(result.mfaToken); return; }
       nav('a-overview');
@@ -92,7 +84,7 @@ export default function AdminLogin() {
 
       <section style={{ position: 'relative', zIndex: 1, minHeight: '100vh', padding: mobile ? 20 : 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <motion.button whileTap={{ scale: .94 }} onClick={toggleTheme} aria-label="Toggle colour mode" style={{ position: 'absolute', top: mobile ? 18 : 24, right: mobile ? 18 : 24, width: 37, height: 37, border: '1px solid var(--nx-glass-border)', borderRadius: 10, background: 'var(--nx-glass-1)', backdropFilter: 'blur(14px)', color: T.ACCENT, cursor: 'pointer', fontSize: 16 }}>{dark ? '☾' : '☀'}</motion.button>
-        <div style={{ width: 'min(100%, 400px)', padding: mobile ? '29px 26px 26px' : '32px 34px 29px', background: 'var(--nx-glass-1)', backdropFilter: 'blur(18px) saturate(160%)', border: '1px solid var(--nx-glass-border)', borderRadius: 16, boxShadow: '0 1px 1px rgba(15,23,42,.05), 0 24px 60px rgba(6,12,10,.35)' }}>
+        <div style={{ width: 'min(100%, 400px)', padding: mobile ? '29px 26px 26px' : '32px 34px 29px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow: '0 1px 1px rgba(15,23,42,.05), 0 24px 60px rgba(6,12,10,.35)', ...WHITE_CARD_TOKENS }}>
           {mobile && <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><div style={{ width: 26, height: 26, display: 'grid', placeItems: 'center', background: T.ACCENT, color: '#06212C', fontSize: 12, fontWeight: 850, clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div><div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '.13em', color: T.TEXT }}>NEXGO</div></div>}
           <div style={{ marginTop: mobile ? 25 : 0 }}>
             <div style={{ color: T.TEXT, fontSize: 23, lineHeight: 1.12, letterSpacing: '-.02em', fontWeight: 750 }}>{mfaToken ? 'Verification code' : 'Admin sign in'}</div>

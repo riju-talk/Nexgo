@@ -45,6 +45,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
     return reply.code(result.replay ? 200 : 201).send(result);
   });
   app.post('/v1/shipments/:shipmentId/label', { preHandler: requireSeller }, async (request, reply) => {
+    if (!config.STORAGE_ENABLED) return reply.code(501).send({ error: 'FILE_STORAGE_NOT_CONNECTED', message: 'File storage is not connected yet; this will be available soon.' });
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
     const result = await withSellerTransaction(p.sellerId, async (client) => {
       const shipment = await client.query<{ awb: string }>('SELECT awb FROM shipments WHERE id=$1 AND seller_id=$2', [shipmentId, p.sellerId]);
@@ -55,7 +56,8 @@ export async function shipmentRoutes(app: FastifyInstance) {
     });
     return reply.code(202).send(result);
   });
-  app.get('/v1/shipments/:shipmentId/label', { preHandler: requireSeller }, async (request) => {
+  app.get('/v1/shipments/:shipmentId/label', { preHandler: requireSeller }, async (request, reply) => {
+    if (!config.STORAGE_ENABLED) return reply.code(501).send({ error: 'FILE_STORAGE_NOT_CONNECTED', message: 'File storage is not connected yet; this will be available soon.' });
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
     return withSellerTransaction(p.sellerId, async (client) => {
       const doc = await client.query<{ storage_key: string; status: string }>(`SELECT storage_key,status FROM documents WHERE shipment_id=$1 AND seller_id=$2 AND kind='shipping_label' ORDER BY created_at DESC LIMIT 1`, [shipmentId, p.sellerId]);

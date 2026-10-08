@@ -50,15 +50,8 @@ function Detail({ shipment, mobile, onClose }) {
     return () => { live = false; };
   }, [shipment.id]);
 
-  const label = async () => {
-    setBusy(true);
-    try {
-      const existing = await apiFetch(`/v1/shipments/${shipment.id}/label`).catch(() => null);
-      if (existing?.status === 'ready' && existing.downloadUrl) { window.open(existing.downloadUrl, '_blank', 'noopener'); return; }
-      if (!existing) { await apiFetch(`/v1/shipments/${shipment.id}/label`, { method: 'POST' }); showToast('Label is being generated. Press Get label again in a moment.'); return; }
-      showToast('Label is still being generated. Try again in a moment.');
-    } catch (e) { showToast(e instanceof ApiError ? e.message : 'Label could not be fetched', 'error'); } finally { setBusy(false); }
-  };
+  // Label PDFs need object storage, which is not connected yet.
+  const label = () => showToast('Label download is coming soon. It needs file storage, which is not connected yet.');
   const copy = () => { navigator.clipboard?.writeText(shipment.awb).then(() => showToast('AWB copied')).catch(() => showToast('Copy is not available in this browser', 'error')); };
 
   return (

@@ -106,21 +106,21 @@ export async function adminReportRoutes(app: FastifyInstance) {
     const [totals, series, sellers] = await Promise.all([
       db.query(`SELECT COALESCE(sum(subtotal_paise),0) AS taxable,COALESCE(sum(gst_paise),0) AS gst,count(*)::int AS invoices,
         (SELECT count(*) FROM sellers s LEFT JOIN seller_kyc k ON k.seller_id=s.id WHERE s.state='active' AND k.gstin IS NULL)::int AS missing_gstin
-        FROM invoices WHERE status='issued' AND issued_at>=date_trunc('month',current_date)`),
+        FROM invoices WHERE status='issued' AND issued_at>=current_date-interval '29 days'`),
       db.query(`SELECT to_char(d::date,'DD Mon') AS day,(SELECT COALESCE(sum(gst_paise),0) FROM invoices i WHERE i.status='issued' AND i.issued_at::date=d::date) AS v FROM ${DAYS} d ORDER BY d`),
       db.query(`SELECT s.legal_name,COALESCE(k.gstin,'') AS gstin,count(*)::int AS invoices,sum(i.subtotal_paise) AS taxable,sum(i.gst_paise) AS gst
-        FROM invoices i JOIN sellers s ON s.id=i.seller_id LEFT JOIN seller_kyc k ON k.seller_id=s.id WHERE i.status='issued' AND i.issued_at>=date_trunc('month',current_date) GROUP BY s.legal_name,k.gstin ORDER BY taxable DESC LIMIT 50`),
+        FROM invoices i JOIN sellers s ON s.id=i.seller_id LEFT JOIN seller_kyc k ON k.seller_id=s.id WHERE i.status='issued' AND i.issued_at>=current_date-interval '29 days' GROUP BY s.legal_name,k.gstin ORDER BY taxable DESC LIMIT 50`),
     ]);
     const t = totals.rows[0];
     return {
-      headline: { label: 'GST on invoices issued this month', value: num(t.gst), format: 'inr', note: `${num(t.invoices)} invoices issued` },
+      headline: { label: 'GST on invoices issued, last 30 days', value: num(t.gst), format: 'inr', note: `${num(t.invoices)} invoices issued` },
       series: { label: 'Daily GST invoiced', format: 'inr', points: series.rows.map((r) => ({ day: r.day, value: num(r.v) })) },
       signals: [
         { label: 'Taxable value', value: num(t.taxable), format: 'inr' },
         { label: 'Active sellers missing GSTIN', value: num(t.missing_gstin), format: 'number' },
         { label: 'Invoices issued', value: num(t.invoices), format: 'number' },
       ],
-      table: { title: 'Invoices by seller this month', columns: ['Seller', 'GSTIN', 'Invoices', 'Taxable value', 'GST'], formats: ['text', 'text', 'number', 'inr', 'inr'], rows: sellers.rows.map((r) => [r.legal_name, r.gstin || 'Missing', r.invoices, num(r.taxable), num(r.gst)]) },
+      table: { title: 'Invoices by seller, last 30 days', columns: ['Seller', 'GSTIN', 'Invoices', 'Taxable value', 'GST'], formats: ['text', 'text', 'number', 'inr', 'inr'], rows: sellers.rows.map((r) => [r.legal_name, r.gstin || 'Missing', r.invoices, num(r.taxable), num(r.gst)]) },
       generatedAt: new Date().toISOString(),
     };
   });

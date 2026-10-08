@@ -1,6 +1,6 @@
 import { db } from './client.js';
 
-const email = 'demo-2026@nexgo.local';
+const email = 'demo@acmeexports.com';
 
 async function main() {
   const found = await db.query<{ seller_id: string }>('SELECT m.seller_id FROM seller_memberships m JOIN users u ON u.id=m.user_id WHERE u.email=$1', [email]);
