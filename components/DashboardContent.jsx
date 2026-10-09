@@ -16,11 +16,15 @@ function GlassSheen() {
   return <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 1, background: 'var(--nx-glass-border)' }} />;
 }
 
+const NDR_REASONS = { customer_unavailable: 'Customer Not Available', address_incomplete: 'Incomplete Address', address_incorrect: 'Wrong Address', refused_delivery: 'Customer Refused', payment_not_ready: 'Payment Not Ready', customer_requested_reschedule: 'Reschedule Requested', premises_closed: 'Premises Closed', customer_not_contactable: 'Not Contactable', incorrect_product: 'Incorrect Product', damaged_product: 'Damaged Product', other: 'Other' };
+
 export default function DashboardContent({ mobile, narrow, phone }) {
   const { kpis, stage, setStage, expanded, toggleExpanded, queueTab, setQueueTab, setDrawerOpen } = useAppState();
   const [expandedCardId, setExpandedCardId] = useState(null);
   const [live, setLive] = useState(null);
   useEffect(() => { apiFetch('/v1/analytics/dashboard').then(setLive).catch(() => {}); }, []);
+  const [ndr, setNdr] = useState(null);
+  useEffect(() => { apiFetch('/v1/ndr/stats').then(setNdr).catch(() => setNdr({ reasons: [] })); }, []);
   const formatMoney = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((value || 0) / 100);
   const liveValues = live ? { order_volume: String(live.metrics.orderVolume), in_transit: String(live.metrics.inTransit), delivery_rate: `${live.metrics.deliveryRate}%`, ndr_rate: `${live.metrics.ndrRate}%`, rto_rate: `${live.metrics.rtoRate}%`, revenue: formatMoney(live.metrics.shippingSpendPaise) } : {};
 
@@ -266,6 +270,20 @@ export default function DashboardContent({ mobile, narrow, phone }) {
               </div>
             </div>
           )}
+          <div style={{ ...GLASS, overflow: 'hidden', gridColumn: '1 / -1' }}>
+            <GlassSheen />
+            <div style={{ padding: '13px 18px', borderBottom: `1px solid ${T.DIVIDER}`, fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.SECTION_HEAD }}>Top NDR reasons</div>
+            <div style={{ padding: '14px 18px 16px', display: 'grid', gap: 12, gridTemplateColumns: mobile ? '1fr' : '1fr 1fr' }}>
+              {!ndr && <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>Loading…</span>}
+              {ndr && !(ndr.reasons || []).length && <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>No NDR reasons recorded yet.</span>}
+              {(ndr?.reasons || []).slice(0, 6).map((r) => (
+                <div key={r.reason}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: T.TEXT_SECONDARY }}><span>{NDR_REASONS[r.reason] || r.reason}</span><b style={{ color: T.TEXT }}>{r.count} ({r.pct}%)</b></div>
+                  <div style={{ height: 5, marginTop: 4, borderRadius: 3, background: T.DIVIDER }}><div style={{ height: 5, borderRadius: 3, width: `${r.pct}%`, background: T.ACCENT }} /></div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
       </div>

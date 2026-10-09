@@ -169,7 +169,7 @@ export default function LiveNdr({ mobile }) {
         {kpis.map(([label, value, note, color]) => <div key={label} style={{ ...CARD, padding: 14, display: 'flex', gap: 11, alignItems: 'center' }}><span style={{ width: 40, height: 40, borderRadius: 10, background: `${color}18`, color, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 18 }}>●</span><div><span style={{ fontSize: 11.5, color: T.TEXT_MUTED }}>{label}</span><b style={{ display: 'block', fontSize: 22, color: T.TEXT, lineHeight: 1.15 }}>{value}</b><small style={{ color: T.TEXT_MUTED, fontSize: 10.5 }}>{note}</small></div></div>)}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'minmax(0,1fr) 300px', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16, alignItems: 'start' }}>
         <section style={{ ...CARD, minWidth: 0 }}>
           <div role="tablist" style={{ display: 'flex', gap: 4, padding: '4px 14px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
             {TABS.map(([id, label]) => { const n = id === 'all' ? stats?.total : counts[id]; const on = tab === id; return <button key={id} role="tab" aria-selected={on} type="button" onClick={() => { setTab(id); setPage(1); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#3877fc' : 'transparent'}`, background: 'transparent', color: on ? '#3877fc' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{id !== 'all' && n > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'new' || id === 'action_pending' ? T.RED : '#3877fc', color: '#fff', fontSize: 11 }}>{n}</span>}</button>; })}
@@ -221,15 +221,6 @@ export default function LiveNdr({ mobile }) {
           </div>
         </section>
 
-        <aside style={{ display: 'grid', gap: 14 }}>
-          <section style={{ ...CARD, padding: 16 }}>
-            <b style={{ color: T.TEXT, fontSize: 14 }}>Top NDR Reasons</b>
-            <div style={{ marginTop: 10, display: 'grid', gap: 9 }}>
-              {(stats?.reasons || []).slice(0, 6).map((r) => <div key={r.reason}><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: T.TEXT_SECONDARY }}><span>{REASONS[r.reason] || r.reason}</span><b style={{ color: T.TEXT }}>{r.count} ({r.pct}%)</b></div><div style={{ height: 5, marginTop: 4, borderRadius: 3, background: T.DIVIDER }}><div style={{ height: 5, borderRadius: 3, width: `${r.pct}%`, background: '#3877fc' }} /></div></div>)}
-              {stats && !stats.reasons.length && <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>No NDR reasons recorded yet.</span>}
-            </div>
-          </section>
-        </aside>
       </div>
       {dialog && <CaseDialog row={dialog.row} initialAction={dialog.action} onClose={() => setDialog(null)} onDone={() => { setDialog(null); refresh(); }} />}
     </div>
