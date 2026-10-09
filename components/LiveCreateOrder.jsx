@@ -219,6 +219,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
             <Grid cols={two}>
               <Field label="Pickup warehouse" required>
                 <select required value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} style={FIELD}><option value="" disabled>Select a warehouse</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
+                <button type="button" onClick={() => nav('warehouse')} style={{ marginTop: 8, border: 0, background: 'transparent', color: T.ACCENT, fontWeight: 750, fontSize: 12.5, cursor: 'pointer', padding: 0 }}>+ Add a warehouse</button>
               </Field>
               <div style={{ alignSelf: 'end', paddingBottom: 10, color: T.TEXT_SECONDARY, fontSize: 12.5 }}>{warehouse ? <>{warehouse.address_line_1}, {warehouse.city} · <b style={{ color: T.TEXT }}>{warehouse.pincode}</b></> : <span style={{ color: T.AMBER }}>Select a warehouse to see courier rates.</span>}</div>
             </Grid>

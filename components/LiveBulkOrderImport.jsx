@@ -24,7 +24,11 @@ const ALIASES = {
   weightg: 'weight', unitweightg: 'weight', weight: 'weight',
   lengthcm: 'length', breadthcm: 'width', widthcm: 'width', heightcm: 'height',
   paymentmode: 'paymentMode', payment: 'paymentMode', codamount: 'codAmount', cod: 'codAmount',
+  // SwiftCourier bulk sheet: one row per order, products in sku(1)/product(1)/quantity(1)/per_product_price(1)/total_price(1) ... columns.
+  firstname: 'firstName', lastname: 'lastName', address1: 'address', paymenttype: 'paymentMode', codcollectableamount: 'codAmount', weightkg: 'weightKg',
 };
+const WIDE_PRODUCT = /^(sku|product|quantity|perproductprice|totalprice)(\d{1,2})$/;
+const WIDE_FIELD = { sku: 'sku', product: 'productName', quantity: 'quantity', perproductprice: 'price', totalprice: 'totalPrice' };
 const cleanKey = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const text = (value) => String(value ?? '').trim();
 const toPaise = (value) => Math.round((Number(value) || 0) * 100);
@@ -53,14 +57,31 @@ function readRows(workbook) {
     const grid = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '', blankrows: false });
     const headerIndex = grid.findIndex((row) => row.some((cell) => ALIASES[cleanKey(cell)] === 'orderNumber'));
     if (headerIndex < 0) continue;
-    const fields = grid[headerIndex].map((cell) => ALIASES[cleanKey(cell)]);
-    return grid.slice(headerIndex + 1)
-      .map((cells, offset) => {
-        const row = { line: headerIndex + offset + 2 };
-        fields.forEach((field, i) => { if (field && row[field] === undefined) row[field] = text(cells[i]); });
-        return row;
-      })
-      .filter((row) => fields.some((field) => field && row[field]));
+    const keys = grid[headerIndex].map((cell) => cleanKey(cell));
+    const fields = keys.map((k) => ALIASES[k]);
+    // Wide (SwiftCourier) layout: product columns numbered 1..n on the same row as the order.
+    const wide = keys.map((k, i) => { const m = WIDE_PRODUCT.exec(k); return m ? { i, n: Number(m[2]), field: WIDE_FIELD[m[1]] } : null; }).filter(Boolean);
+    const out = [];
+    grid.slice(headerIndex + 1).forEach((cells, offset) => {
+      const row = { line: headerIndex + offset + 2 };
+      fields.forEach((field, i) => { if (field && row[field] === undefined) row[field] = text(cells[i]); });
+      if (!fields.some((field) => field && row[field])) return;
+      if (!row.customerName && (row.firstName || row.lastName)) row.customerName = [row.firstName, row.lastName].filter(Boolean).join(' ');
+      if (!wide.length) { out.push(row); return; }
+      const numbers = [...new Set(wide.map((w) => w.n))].sort((x, y) => x - y);
+      let first = true;
+      for (const n of numbers) {
+        const item = {};
+        wide.filter((w) => w.n === n).forEach((w) => { item[w.field] = text(cells[w.i]); });
+        if (!item.productName && !item.sku && !item.quantity && !item.price) continue;
+        const line = { ...row, ...item };
+        // The sheet gives one weight for the whole parcel: carry it on the first product line (per-unit grams).
+        if (row.weightKg && !row.weight) line.weight = first ? String((Number(row.weightKg) * 1000) / (Number(item.quantity) || 1)) : '0';
+        out.push(line); first = false;
+      }
+      if (first) out.push(row.weightKg && !row.weight ? { ...row, weight: String(Number(row.weightKg) * 1000) } : row);
+    });
+    return out;
   }
   return null;
 }
@@ -79,7 +100,7 @@ function groupOrders(rows, products) {
       productId: product?.id, sku: row.sku || product?.sku || 'CUSTOM', name: row.productName || product?.name || '',
       hsn: row.hsn || product?.hsn_code || '', quantity: Number(row.quantity || 0),
       pricePaise: row.price !== '' && row.price !== undefined ? toPaise(row.price) : Number(product?.unit_price_paise || 0),
-      weight: Number(row.weight || product?.weight_g || 0), line: row.line,
+      weight: Number(row.weight || product?.weight_g || 0), line: row.line, totalPrice: row.totalPrice,
     });
   }
   return [...orders.values()].map((order) => validate(order));
@@ -87,10 +108,12 @@ function groupOrders(rows, products) {
 
 function validate(order) {
   const errors = [];
-  const paymentMode = order.paymentMode?.toLowerCase() === 'cod' ? 'cod' : 'prepaid';
+  const rawPayment = (order.paymentMode || '').toLowerCase().trim();
+  const paymentMode = rawPayment === 'cod' ? 'cod' : 'prepaid';
   const phone = (order.phone || '').replace(/\D/g, '').slice(-10);
   const alternatePhone = (order.alternatePhone || '').replace(/\D/g, '').slice(-10);
   if (!order.orderNumber) errors.push('Order number is required');
+  if (rawPayment && !['cod', 'prepaid', 'pp', 'pre-paid', 'pre paid'].includes(rawPayment)) errors.push('Payment type must be COD or Prepaid');
   if (!order.customerName || order.customerName.length < 2) errors.push('Customer name is required');
   if (!/^[6-9]\d{9}$/.test(phone)) errors.push('Enter a valid 10-digit phone');
   if (alternatePhone && !/^[6-9]\d{9}$/.test(alternatePhone)) errors.push('Alternate phone must be a 10-digit number');
@@ -102,6 +125,7 @@ function validate(order) {
     if (!item.name || item.name.length < 2) errors.push(`Product name or a saved SKU is required${at}`);
     if (!(item.quantity > 0 && Number.isInteger(item.quantity))) errors.push(`Quantity must be a whole number${at}`);
     if (item.hsn && !/^\d{4,8}$/.test(item.hsn)) errors.push(`HSN must be 4–8 digits${at}`);
+    if (item.totalPrice !== undefined && item.totalPrice !== '' && Math.abs(item.quantity * (item.pricePaise / 100) - Number(item.totalPrice)) > 0.01) errors.push(`Total price does not match quantity × unit price${at}`);
   });
   const weightG = order.items.reduce((sum, item) => sum + item.quantity * item.weight, 0);
   if (!(weightG > 0)) errors.push('Weight (g) is required');
@@ -120,14 +144,14 @@ function validate(order) {
 // Fix the cells, delete the Error column (or leave it, it is ignored) and upload the file again.
 const TEMPLATE_HEADERS = ['Order number', 'Customer name', 'Company name', 'Phone', 'Alternate phone', 'Email', 'Address line 1', 'Address line 2', 'Landmark', 'Pincode', 'City', 'State', 'SKU', 'Product name', 'HSN code', 'Quantity', 'Unit price', 'Weight (g)', 'Length (cm)', 'Breadth (cm)', 'Height (cm)', 'Payment mode', 'COD amount'];
 const isFailed = (o) => !o.created && (o.errors.length || o.failure || !o.quote);
-const failureReason = (o) => o.failure || (o.errors.length ? o.errors.join('; ') : 'No courier could be assigned: no serviceable courier for this pincode, weight or payment mode');
+const failureReason = (o) => o.failure || (o.errors.length ? o.errors.join(' | ') : 'No courier could be assigned: no serviceable courier for this pincode, weight or payment mode');
 function failedRows(orders) {
   const rows = [];
   for (const o of orders.filter(isFailed)) {
     o.items.forEach((item, i) => rows.push([
       o.orderNumber || '', o.customerName || '', o.companyName || '', o.phone || '', o.alternatePhone || '', o.email || '', o.address || '', o.address2 || '', o.landmark || '', o.pincode || '', o.city || '', o.state || '',
       item.sku && item.sku !== 'CUSTOM' ? item.sku : '', item.name || '', item.hsn || '', item.quantity || '', item.pricePaise ? item.pricePaise / 100 : '', item.weight || '',
-      o.length || '', o.width || '', o.height || '', o.paymentMode || '', o.codAmount || '', i === 0 ? failureReason(o) : '',
+      o.length || '', o.width || '', o.height || '', o.paymentMode || '', o.codAmount || '', i === 0 ? failureReason(o) : '', i === 0 ? o.lines.join(', ') : '',
     ]));
   }
   return rows;
@@ -136,8 +160,8 @@ function failedRows(orders) {
 function downloadFailedOrders(orders, fileName, format = 'xlsx') {
   const rows = failedRows(orders);
   const base = `${fileName.replace(/\.[^.]+$/, '') || 'bulk-orders'}-failed-orders`;
-  const sheet = XLSX.utils.aoa_to_sheet([[...TEMPLATE_HEADERS, 'Error (fix and re-upload)'], ...rows]);
-  sheet['!cols'] = [...TEMPLATE_HEADERS, 'Error'].map((h, i) => ({ wch: i === 23 ? 60 : Math.max(12, h.length + 2) }));
+  const sheet = XLSX.utils.aoa_to_sheet([[...TEMPLATE_HEADERS, 'Error (fix and re-upload)', 'Row in uploaded file'], ...rows]);
+  sheet['!cols'] = [...TEMPLATE_HEADERS, 'Error', 'Row'].map((h, i) => ({ wch: i === 23 ? 60 : Math.max(12, h.length + 2) }));
   if (format === 'csv') {
     const blob = new Blob(['\ufeff', XLSX.utils.sheet_to_csv(sheet)], { type: 'text/csv;charset=utf-8' });
     const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${base}.csv`; link.click(); URL.revokeObjectURL(link.href);
