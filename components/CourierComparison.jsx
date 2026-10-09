@@ -46,7 +46,7 @@ export default function CourierComparison({ quotes = [], unavailable = [], loadi
         {!loading && !message && rows.map((q) => {
           const key = keyOf(q); const selected = selectedKey === key; const brand = BRAND[q.provider.name] || T.NAVY;
           return (
-            <article key={key} style={{ padding: 14, borderRadius: 11, border: `${selected ? 2 : 1}px solid ${selected ? T.ACCENT : T.BORDER}`, background: selected ? 'rgba(0,215,195,.06)' : T.SURFACE }}>
+            <article key={key} style={{ padding: 14, borderRadius: 11, border: `${selected ? 2 : 1}px solid ${selected ? T.ACCENT : T.BORDER}`, background: selected ? 'rgba(6,182,212,.06)' : T.SURFACE }}>
               <div style={{ display: 'grid', gridTemplateColumns: compact ? '1fr' : '104px minmax(0,1fr) auto', gap: 12, alignItems: 'center' }}>
                 <div style={{ fontWeight: 900, fontSize: 15, letterSpacing: '-.02em', color: brand, lineHeight: 1.1 }}>{q.provider.name}<span style={{ display: 'block', marginTop: 3, fontSize: 10.5, fontWeight: 600, color: T.TEXT_MUTED, letterSpacing: 0 }}>{q.service.tagline || q.service.name}</span></div>
                 <div style={{ minWidth: 0 }}>
@@ -82,7 +82,7 @@ export default function CourierComparison({ quotes = [], unavailable = [], loadi
           </div>
         )}
       </div>
-      <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.DIVIDER}`, background: '#2454D60d', color: T.TEXT_SECONDARY, fontSize: 11.5 }}>ⓘ Rates are indicative and may vary based on weight, zone and actual serviceability.</div>
+      <div style={{ padding: '10px 16px', borderTop: `1px solid ${T.DIVIDER}`, background: '#3877fc0d', color: T.TEXT_SECONDARY, fontSize: 11.5 }}>ⓘ Rates are indicative and may vary based on weight, zone and actual serviceability.</div>
     </section>
   );
 }

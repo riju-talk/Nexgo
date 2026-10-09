@@ -208,7 +208,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
   const money = (value, onChange) => input(value, onChange, { type: 'number', min: 0, step: '0.01', inputMode: 'decimal', placeholder: '0.00' });
 
   return (
-    <form onSubmit={submit} style={{ padding: embedded ? 0 : mobile ? '14px 12px 42px' : '18px 28px 48px', display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'minmax(0,1fr) 330px', gap: 16, alignItems: 'start' }}>
+    <form onSubmit={submit} style={{ padding: embedded ? 0 : mobile ? '14px 12px 42px' : '18px 28px 48px', display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'minmax(0,1fr) 440px', gap: 16, alignItems: 'start' }}>
       <div style={{ display: 'grid', gap: 14, minWidth: 0 }}>
         <Section title={isReverse ? 'Return details' : 'Order information'} hint={isReverse ? 'Return pickups are prepaid — no COD is collected.' : 'Identify the order and how the customer pays.'}>
           <Grid cols={two}>
@@ -297,8 +297,11 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
             <span>Chargeable: <b style={{ color: T.ACCENT }}>{(chargeableG / 1000).toFixed(3)} kg</b></span>
           </div>
         </Section>
+      </div>
+
+      <aside style={{ display: 'grid', gap: 14, alignContent: 'start', ...(mobile ? {} : { position: 'sticky', top: 76, maxHeight: 'calc(100vh - 96px)', overflowY: 'auto', paddingRight: 2 }) }}>
         {!isReverse && (
-          <CourierComparison
+          <CourierComparison compact
             quotes={quotes} unavailable={unavailable} loading={canQuote && !quotesLoaded}
             message={!canQuote ? 'Enter the delivery pincode and package weight to compare couriers.' : undefined}
             paymentMode={quoteMode} selectedKey={selected.key} actionLabel="Select"
@@ -306,9 +309,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
             onSelect={(q, key) => setSelected(selected.key === key ? { key: '', name: '', providerCode: '', serviceCode: '' } : { key, name: q.provider.name, providerCode: q.provider.code, serviceCode: q.service.code })}
           />
         )}
-      </div>
 
-      <aside style={{ display: 'grid', gap: 14, position: mobile ? 'static' : 'sticky', top: 76 }}>
         <Section title={isReverse ? 'Return to warehouse' : 'Pickup warehouse'}>
           {setup === null ? <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>Loading warehouses…</span> : !warehouses.length ? (
             <button type="button" onClick={() => nav('warehouse')} style={{ ...FIELD, cursor: 'pointer', fontWeight: 700 }}>Add a warehouse first</button>

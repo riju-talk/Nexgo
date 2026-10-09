@@ -10,7 +10,7 @@ const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`,
 const FIELD = { width: '100%', height: 42, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 11px', fontSize: 14, outline: 'none' };
 const BRAND = { Delhivery: '#C8102E', 'Blue Dart': '#0057B8', XpressBees: '#F58220', 'Ecom Express': '#D2232A', DTDC: '#1B3A8A', 'Ekart Logistics': '#2874F0', 'India Post': '#D22030' };
 const days = (t) => (t.minDays === t.maxDays ? `${t.minDays} Day${t.minDays === 1 ? '' : 's'}` : `${t.minDays} – ${t.maxDays} Days`);
-const WINDOW_TONE = (t) => (t.maxDays <= 2 ? ['#7C3AED', '#7C3AED14'] : t.maxDays <= 4 ? ['#2454D6', '#2454D612'] : ['#C2410C', '#F5822014']);
+const WINDOW_TONE = (t) => (t.maxDays <= 2 ? ['#7C3AED', '#7C3AED14'] : t.maxDays <= 4 ? ['#3877fc', '#3877fc12'] : ['#C2410C', '#F5822014']);
 
 function Stat({ icon, label, value }) {
   return <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 0', borderTop: `1px solid ${T.DIVIDER}` }}><span style={{ fontSize: 18 }}>{icon}</span><span style={{ flex: 1, color: T.TEXT_SECONDARY, fontSize: 13 }}>{label}</span><b style={{ color: T.TEXT, fontSize: 14 }}>{value}</b></div>;
@@ -54,7 +54,7 @@ export default function LivePincodeServiceability({ mobile }) {
         <PincodeInput label="Pickup Pincode" value={form.pickup} onChange={(v) => setForm((f) => ({ ...f, pickup: v }))} />
         <PincodeInput label="Delivery Pincode" value={form.delivery} onChange={(v) => setForm((f) => ({ ...f, delivery: v }))} />
         <label style={{ display: 'block', fontSize: 12.5, fontWeight: 650, color: T.TEXT_LABEL }}>Shipment Weight (kg) <span style={{ color: T.RED }}>*</span><input style={{ ...FIELD, marginTop: 6 }} type="number" min="0.01" step="0.01" value={form.weightKg} onChange={(e) => setForm((f) => ({ ...f, weightKg: e.target.value }))} /></label>
-        <button type="submit" disabled={busy || !valid} style={{ marginTop: mobile ? 0 : 22, height: 44, padding: '0 22px', border: 0, borderRadius: 9, background: '#2454D6', color: '#fff', fontWeight: 800, fontSize: 14, cursor: busy ? 'wait' : 'pointer', opacity: busy || !valid ? 0.6 : 1 }}>{busy ? 'Checking…' : 'Check Serviceability →'}</button>
+        <button type="submit" disabled={busy || !valid} style={{ marginTop: mobile ? 0 : 22, height: 44, padding: '0 22px', border: 0, borderRadius: 9, background: '#3877fc', color: '#fff', fontWeight: 800, fontSize: 14, cursor: busy ? 'wait' : 'pointer', opacity: busy || !valid ? 0.6 : 1 }}>{busy ? 'Checking…' : 'Check Serviceability →'}</button>
       </form>
       {error && <div style={{ marginTop: 12, color: T.RED, fontSize: 13 }}>{error}</div>}
 
@@ -86,7 +86,7 @@ export default function LivePincodeServiceability({ mobile }) {
                         <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}` }}>{i.serviceable ? <span style={{ padding: '5px 10px', borderRadius: 8, background: bg, color: fg, fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap' }}>🗓 {days(i.tat)}</span> : <span style={{ color: T.TEXT_MUTED }}>—</span>}</td>
                         <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}>{i.codAvailable ? <><b style={{ color: T.GREEN }}>● Available</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>(₹{i.codFee})</small></> : <><b style={{ color: T.TEXT_MUTED }}>● Not Available</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>(Prepaid Only)</small></>}</td>
                         <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}` }}>{i.serviceable ? <span style={{ padding: '5px 11px', borderRadius: 99, background: `${T.GREEN}18`, color: T.GREEN, fontSize: 12.5, fontWeight: 700 }}>✓ Serviceable</span> : <span title={i.reason} style={{ padding: '5px 11px', borderRadius: 99, background: `${T.RED}14`, color: T.RED, fontSize: 12, fontWeight: 700 }}>✕ {i.reason}</span>}</td>
-                        <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}` }}><button type="button" disabled={!i.serviceable} onClick={() => select(i)} style={{ height: 36, padding: '0 16px', borderRadius: 8, border: '1px solid #2454D6', background: T.SURFACE, color: '#2454D6', fontWeight: 750, fontSize: 13, cursor: i.serviceable ? 'pointer' : 'not-allowed', opacity: i.serviceable ? 1 : 0.5 }}>Select →</button></td>
+                        <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}` }}><button type="button" disabled={!i.serviceable} onClick={() => select(i)} style={{ height: 36, padding: '0 16px', borderRadius: 8, border: '1px solid #3877fc', background: T.SURFACE, color: '#3877fc', fontWeight: 750, fontSize: 13, cursor: i.serviceable ? 'pointer' : 'not-allowed', opacity: i.serviceable ? 1 : 0.5 }}>Select →</button></td>
                       </tr>
                     );
                   })}</tbody>
@@ -103,7 +103,7 @@ export default function LivePincodeServiceability({ mobile }) {
               <Stat icon="⏱" label="Fastest Delivery" value={sum.fastest ? days(sum.fastest) : '—'} />
               <Stat icon="🛡" label="COD Available" value={`${sum.codCount} out of ${sum.serviceableCount}`} />
             </section>
-            <section style={{ ...CARD, padding: 18, background: '#2454D60a' }}>
+            <section style={{ ...CARD, padding: 18, background: '#3877fc0a' }}>
               <b style={{ color: T.TEXT, fontSize: 15 }}>ⓘ Quick Info</b>
               <ul style={{ margin: '10px 0 0', paddingLeft: 18, color: T.TEXT_SECONDARY, fontSize: 12.5, lineHeight: 1.7 }}>
                 <li>Serviceability depends on the weight and delivery area.</li>

@@ -25,7 +25,7 @@ function Button({ children, onClick, primary = false, disabled = false }) {
   return <button type="button" disabled={disabled} onClick={onClick} style={{ height: 34, padding: '0 12px', borderRadius: 8, border: `1px solid ${primary ? T.NAVY : T.BORDER}`, background: primary ? T.NAVY : T.SURFACE, color: primary ? '#fff' : T.TEXT, fontSize: 12.5, fontWeight: 750, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>{children}</button>;
 }
 
-const band = { padding: '12px 16px', background: '#2454D6', color: '#fff', fontWeight: 800, fontSize: 13 };
+const band = { padding: '12px 16px', background: '#3877fc', color: '#fff', fontWeight: 800, fontSize: 13 };
 
 export default function LiveReports({ mobile }) {
   const { showToast } = useAppState();

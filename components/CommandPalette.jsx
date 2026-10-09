@@ -38,7 +38,7 @@ export default function CommandPalette() {
             style={{ width: 'min(680px,92vw)', background: T.SURFACE, border: `1px solid ${T.MENU_BORDER}`, boxShadow: '0 30px 80px rgba(23,22,19,.34)', transformOrigin: 'top center' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${T.DIVIDER}` }}>
-              <div style={{ fontFamily: T.MONO, fontSize: 11, fontWeight: 600, color: '#0E5049' }}>&gt;</div>
+              <div style={{ fontFamily: T.MONO, fontSize: 11, fontWeight: 600, color: '#0b5566' }}>&gt;</div>
               <div style={{ flex: 1, fontSize: 15 }}>ship<span style={{ opacity: .35 }}>|</span></div>
               <div style={{ fontFamily: T.MONO, fontSize: 10, color: T.TEXT_MUTED, border: `1px solid ${T.INPUT_BORDER}`, padding: '2px 5px' }}>ESC</div>
             </div>

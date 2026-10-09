@@ -79,13 +79,13 @@ function WarehouseForm({ initial, editingId, mobile, onSaved, onCancel }) {
             <Field label="Warehouse Manager (Optional)"><input style={FIELD} value={f.manager} onChange={set('manager')} placeholder="Enter manager name" /></Field>
           </div>
           <label style={{ display: 'flex', gap: 11, alignItems: 'center', cursor: 'pointer' }}>
-            <input type="checkbox" checked={f.isDefault} onChange={(e) => setF((x) => ({ ...x, isDefault: e.target.checked }))} style={{ width: 20, height: 20, accentColor: '#2454D6' }} />
+            <input type="checkbox" checked={f.isDefault} onChange={(e) => setF((x) => ({ ...x, isDefault: e.target.checked }))} style={{ width: 20, height: 20, accentColor: '#3877fc' }} />
             <span><b style={{ color: T.TEXT, fontSize: 13.5 }}>Set as Default Warehouse</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>This warehouse will be selected by default for new shipments.</small></span>
           </label>
         </div>
         <div style={{ marginTop: 20, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-          <button type="button" onClick={onCancel} style={{ height: 42, padding: '0 22px', borderRadius: 9, border: '1px solid #2454D6', background: T.SURFACE, color: '#2454D6', fontWeight: 750, cursor: 'pointer' }}>Cancel</button>
-          <button type="submit" disabled={busy} style={{ height: 42, padding: '0 26px', borderRadius: 9, border: 0, background: '#2454D6', color: '#fff', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : editingId ? 'Save Changes' : 'Save Warehouse'}</button>
+          <button type="button" onClick={onCancel} style={{ height: 42, padding: '0 22px', borderRadius: 9, border: '1px solid #3877fc', background: T.SURFACE, color: '#3877fc', fontWeight: 750, cursor: 'pointer' }}>Cancel</button>
+          <button type="submit" disabled={busy} style={{ height: 42, padding: '0 26px', borderRadius: 9, border: 0, background: '#3877fc', color: '#fff', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : editingId ? 'Save Changes' : 'Save Warehouse'}</button>
         </div>
       </section>
 
@@ -95,9 +95,9 @@ function WarehouseForm({ initial, editingId, mobile, onSaved, onCancel }) {
           <div style={{ marginTop: 12, height: 220, borderRadius: 10, overflow: 'hidden', border: `1px solid ${T.BORDER}`, background: T.SURFACE_SOFT, display: 'grid', placeItems: 'center' }}>
             {hasPoint ? <iframe title="Warehouse location" src={mapSrc} style={{ width: '100%', height: '100%', border: 0 }} loading="lazy" /> : <span style={{ color: T.TEXT_MUTED, fontSize: 13, padding: 16, textAlign: 'center' }}>Enter a pincode or coordinates to preview the location.</span>}
           </div>
-          <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 9, background: '#2454D60d', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', fontSize: 12.5 }}>
+          <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 9, background: '#3877fc0d', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', fontSize: 12.5 }}>
             <span>📍 <b style={{ color: T.TEXT }}>Selected Location</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{hasPoint ? `${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}` : '—'}</small></span>
-            <button type="button" disabled={!info || info.latitude === null} onClick={() => setF((x) => ({ ...x, lat: null, lng: null }))} style={{ border: 0, background: 'transparent', color: '#2454D6', fontWeight: 700, cursor: info ? 'pointer' : 'not-allowed', fontSize: 12.5 }}>Reset to pincode</button>
+            <button type="button" disabled={!info || info.latitude === null} onClick={() => setF((x) => ({ ...x, lat: null, lng: null }))} style={{ border: 0, background: 'transparent', color: '#3877fc', fontWeight: 700, cursor: info ? 'pointer' : 'not-allowed', fontSize: 12.5 }}>Reset to pincode</button>
           </div>
         </section>
         <section style={{ ...CARD, padding: 18 }}>
@@ -133,7 +133,7 @@ export default function LiveWarehouse({ mobile }) {
   if (editing) {
     return (
       <div style={{ padding: pad, maxWidth: '100%' }}>
-        <button type="button" onClick={() => setEditing(null)} style={{ border: 0, background: 'transparent', color: '#2454D6', fontWeight: 700, cursor: 'pointer', padding: 0, marginBottom: 8 }}>← Back</button>
+        <button type="button" onClick={() => setEditing(null)} style={{ border: 0, background: 'transparent', color: '#3877fc', fontWeight: 700, cursor: 'pointer', padding: 0, marginBottom: 8 }}>← Back</button>
         <h2 style={{ margin: '0 0 4px', color: T.TEXT, fontSize: 24 }}>{editing.id ? 'Edit Warehouse' : 'Add Warehouse'}</h2>
         <p style={{ margin: '0 0 16px', color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Add your warehouse details to manage inventory, shipments and faster order processing.</p>
         <WarehouseForm initial={editing.initial} editingId={editing.id} mobile={mobile} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
@@ -146,17 +146,17 @@ export default function LiveWarehouse({ mobile }) {
     <div style={{ padding: pad, maxWidth: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
         <p style={{ margin: 0, color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Pickup locations used when creating orders and booking couriers. {active.length} active.</p>
-        <button type="button" onClick={() => setEditing({ initial: { ...blank, isDefault: active.length === 0 } })} style={{ height: 40, padding: '0 20px', border: 0, borderRadius: 9, background: '#2454D6', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>+ Add Warehouse</button>
+        <button type="button" onClick={() => setEditing({ initial: { ...blank, isDefault: active.length === 0 } })} style={{ height: 40, padding: '0 20px', border: 0, borderRadius: 9, background: '#3877fc', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>+ Add Warehouse</button>
       </div>
       {items === null && <div style={{ ...CARD, padding: 22, color: T.TEXT_MUTED }}>Loading warehouses…</div>}
       {error && <div style={{ ...CARD, padding: 22, color: T.RED }}>{error}</div>}
       {items && !error && !active.length && <div style={{ ...CARD, padding: 28, textAlign: 'center', color: T.TEXT_SECONDARY }}>No warehouses yet. Add your first pickup location to start creating orders.</div>}
       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(auto-fill,minmax(340px,1fr))', gap: 14 }}>
         {active.map((w) => (
-          <article key={w.id} style={{ ...CARD, padding: 18, borderColor: w.is_default ? '#2454D6' : T.BORDER }}>
+          <article key={w.id} style={{ ...CARD, padding: 18, borderColor: w.is_default ? '#3877fc' : T.BORDER }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
               <div><b style={{ color: T.TEXT, fontSize: 15.5 }}>{w.name}</b><span style={{ display: 'block', marginTop: 4, color: T.TEXT_MUTED, fontSize: 12 }}>{typeLabel(w.warehouse_type)}</span></div>
-              {w.is_default && <span style={{ padding: '4px 9px', borderRadius: 99, background: '#2454D61a', color: '#2454D6', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>★ Default</span>}
+              {w.is_default && <span style={{ padding: '4px 9px', borderRadius: 99, background: '#3877fc1a', color: '#3877fc', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>★ Default</span>}
             </div>
             <p style={{ margin: '10px 0 0', color: T.TEXT_SECONDARY, fontSize: 13, lineHeight: 1.5 }}>{w.address_line_1}{w.address_line_2 ? `, ${w.address_line_2}` : ''}<br />{w.city}, {w.state} · {w.pincode}</p>
             <div style={{ marginTop: 10, display: 'grid', gap: 4, color: T.TEXT_SECONDARY, fontSize: 12.5 }}>
@@ -167,7 +167,7 @@ export default function LiveWarehouse({ mobile }) {
             </div>
             <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button type="button" onClick={() => setEditing({ id: w.id, initial: fromRow(w) })} style={{ height: 34, padding: '0 14px', borderRadius: 8, border: `1px solid ${T.BORDER}`, background: T.SURFACE, color: T.TEXT, fontWeight: 700, cursor: 'pointer' }}>Edit</button>
-              {!w.is_default && <button type="button" onClick={() => makeDefault(w)} style={{ height: 34, padding: '0 14px', borderRadius: 8, border: '1px solid #2454D6', background: T.SURFACE, color: '#2454D6', fontWeight: 700, cursor: 'pointer' }}>Set as default</button>}
+              {!w.is_default && <button type="button" onClick={() => makeDefault(w)} style={{ height: 34, padding: '0 14px', borderRadius: 8, border: '1px solid #3877fc', background: T.SURFACE, color: '#3877fc', fontWeight: 700, cursor: 'pointer' }}>Set as default</button>}
               {confirmId === w.id
                 ? <><button type="button" onClick={() => remove(w)} style={{ height: 34, padding: '0 14px', borderRadius: 8, border: 0, background: T.RED, color: '#fff', fontWeight: 750, cursor: 'pointer' }}>Confirm remove</button><button type="button" onClick={() => setConfirmId('')} style={{ height: 34, padding: '0 10px', border: 0, background: 'transparent', color: T.TEXT_MUTED, cursor: 'pointer' }}>Keep</button></>
                 : <button type="button" onClick={() => setConfirmId(w.id)} style={{ height: 34, padding: '0 14px', borderRadius: 8, border: `1px solid ${T.BORDER}`, background: T.SURFACE, color: T.RED, fontWeight: 700, cursor: 'pointer' }}>Remove</button>}

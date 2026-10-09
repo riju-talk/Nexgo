@@ -42,6 +42,9 @@ import { partnerRoutes } from './routes/partners.js';
 import { reportRoutes } from './routes/reports.js';
 import { adminReportRoutes } from './routes/adminReports.js';
 import { registerDocs } from './lib/openapi.js';
+import { rtoRoutes } from './routes/rto.js';
+import { billingRoutes } from './routes/billing.js';
+import { adminDisputeRoutes } from './routes/adminDisputes.js';
 export async function buildApp() {
 const app = Fastify({ logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' }, requestIdHeader: 'x-request-id' });
 registerDocs(app);
@@ -56,6 +59,10 @@ app.addHook('onRequest', requireCsrfHeader);
 
 app.setErrorHandler((error, request, reply) => {
   if (error instanceof ZodError) return reply.code(400).send({ error: 'VALIDATION_ERROR', details: error.flatten() });
+  // Database constraint failures are caller mistakes, not server faults: report them plainly.
+  const dbCode = (error as { code?: string }).code;
+  if (dbCode === '23505') return reply.code(409).send({ error: 'This record already exists (a duplicate name or reference).' });
+  if (dbCode === '23514') return reply.code(400).send({ error: (error as Error).message || 'This value is not allowed.' });
   if ((error as { statusCode?: number }).statusCode && (error as { statusCode?: number }).statusCode! < 500) {
     return reply.code((error as { statusCode: number }).statusCode).send({ error: (error as Error).message });
   }
@@ -99,6 +106,9 @@ await app.register(bankAccountRoutes);
 await app.register(partnerRoutes);
 await app.register(reportRoutes);
 await app.register(adminReportRoutes);
+await app.register(rtoRoutes);
+await app.register(billingRoutes);
+await app.register(adminDisputeRoutes);
 return app;
 }
 

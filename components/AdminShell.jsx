@@ -14,9 +14,9 @@ const GROUPS = [
   ['Users', [['All sellers', 'a-sellers', '◎'], ['KYC verification', 'a-kyc', '◈'], ['Wallets', 'a-wallets', '₹'], ['Credit limits', 'a-credit', '⊞']]],
   ['Couriers', [['Partners', 'a-couriers', '◌'], ['Zone mapping', 'a-zones', '⌘'], ['SLA settings', 'a-sla', '◫'], ['Performance', 'a-performance', '▥']]],
   ['Shipments', [['All orders', 'a-orders', '▤'], ['All shipments', 'a-shipments', '□'], ['NDR centre', 'a-ndr', '!'], ['RTO centre', 'a-rto', '↩'], ['Pickups', 'a-pickups', '⌁']]],
-  ['Finance', [['COD settlements', 'a-cod', '₹'], ['Invoices', 'a-invoices', '▤'], ['GST reports', 'a-gst', '▧']]],
+  ['Finance', [['COD settlements', 'a-cod', '₹'], ['Invoices', 'a-invoices', '▤'], ['Credit notes & TDS', 'a-notes', '▥'], ['GST reports', 'a-gst', '▧']]],
   ['Reports', [['Revenue', 'a-revenue', '↗'], ['SLA', 'a-sla-report', '◷'], ['Courier analytics', 'a-analytics', '◉']]],
-  ['Support centre', [['Tickets', 'a-tickets', '◌'], ['Live chat', 'a-live-chat', '◍'], ['Escalations', 'a-escalations', '↑'], ['Courier disputes', 'a-disputes', '◇']]],
+  ['Support centre', [['Tickets', 'a-tickets', '◌'], ['Live chat', 'a-live-chat', '◍'], ['Escalations', 'a-escalations', '↑'], ['Weight disputes', 'a-disputes', '◇']]],
   ['Settings', [['System settings', 'a-system', '⚙'], ['API management', 'a-api', '⌁'], ['Audit logs', 'a-audit', '◫'], ['Role permissions', 'a-roles', '♙']]],
 ];
 
@@ -40,7 +40,7 @@ function AdminNav({ mobile }) {
           <div style={{ padding: '0 10px 7px', fontSize: 10.5, fontWeight: 800, letterSpacing: '.11em', textTransform: 'uppercase', color: 'var(--nx-side-label)' }}>{group}</div>
           {items.map(([label, id, icon]) => {
             const active = pathname === pathFor(id);
-            return <Link className="admin-nav-link" key={label} href={pathFor(id)} onClick={() => mobile && setNavOpen(false)} style={{ position: 'relative', height: 38, padding: '0 10px', margin: '2px 0', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: active ? 'var(--nx-side-active-text)' : 'var(--nx-side-text)', background: active ? 'var(--nx-side-active)' : 'transparent', border: active ? '1px solid rgba(0,215,195,.22)' : '1px solid transparent', fontSize: 13.5, fontWeight: active ? 700 : 600 }}>
+            return <Link className="admin-nav-link" key={label} href={pathFor(id)} onClick={() => mobile && setNavOpen(false)} style={{ position: 'relative', height: 38, padding: '0 10px', margin: '2px 0', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: active ? 'var(--nx-side-active-text)' : 'var(--nx-side-text)', background: active ? 'var(--nx-side-active)' : 'transparent', border: active ? '1px solid rgba(6,182,212,.22)' : '1px solid transparent', fontSize: 13.5, fontWeight: active ? 700 : 600 }}>
               {active && <motion.span layoutId="admin-active-rail" transition={{ type: 'spring', bounce: .12, duration: .34 }} style={{ position: 'absolute', left: -3, width: 3, height: 18, borderRadius: 99, background: T.ACCENT }} />}
               <span style={{ width: 15, textAlign: 'center', color: active ? T.ACCENT : 'var(--nx-side-sub)', fontSize: 13 }}>{icon}</span>{label}
             </Link>;
@@ -48,7 +48,7 @@ function AdminNav({ mobile }) {
         </div>)}
       </nav>
       <Link href={pathFor('a-system')} className="admin-system-health" style={{ margin: '0 8px 12px', padding: '11px 10px', display: 'flex', alignItems: 'center', gap: 9, border: '1px solid var(--nx-side-edge)', borderRadius: 10, textDecoration: 'none', background: 'var(--nx-side-soft)' }}>
-        <span style={{ position: 'relative', width: 8, height: 8, borderRadius: '50%', background: T.ACCENT, boxShadow: '0 0 0 4px rgba(0,215,195,.12)' }} />
+        <span style={{ position: 'relative', width: 8, height: 8, borderRadius: '50%', background: T.ACCENT, boxShadow: '0 0 0 4px rgba(6,182,212,.12)' }} />
         <span><b style={{ display: 'block', color: 'var(--nx-side-text)', fontSize: 11.5, lineHeight: 1.2 }}>Platform healthy</b><span style={{ display: 'block', marginTop: 3, color: 'var(--nx-side-sub)', fontSize: 10.5 }}>99.4% API availability</span></span>
       </Link>
       <div style={{ margin: '0 8px 16px', paddingTop: 12, borderTop: '1px solid var(--nx-side-edge)' }}>
@@ -60,7 +60,7 @@ function AdminNav({ mobile }) {
         .admin-nav-link { transition: background .16s ease, border-color .16s ease, transform .16s ease; }
         .admin-nav-link:hover { background: var(--nx-side-soft) !important; border-color: var(--nx-side-edge) !important; transform: translateX(1px); }
         .admin-system-health { transition: transform .16s ease, border-color .16s ease; }
-        .admin-system-health:hover { transform: translateY(-1px); border-color: rgba(0,215,195,.32) !important; }
+        .admin-system-health:hover { transform: translateY(-1px); border-color: rgba(6,182,212,.32) !important; }
       `}</style>
     </motion.aside>
   );
@@ -92,7 +92,7 @@ export default function AdminShell({ children }) {
     <div style={{ ...opsTheme, height: '100vh', minHeight: 0, overflow: 'hidden', display: 'flex', background: 'var(--ops-bg)', color: 'var(--ops-text)', fontFamily: T.SANS, transition: 'background-color .2s ease, color .2s ease' }}>
       {mobile && navOpen && <div onClick={() => setNavOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(4,14,30,.36)' }} />}
       <AdminNav mobile={mobile} />
-      <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+      <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'scroll', overflowX: 'hidden' }}>
         <header style={{ height: 58, padding: mobile ? '0 14px' : '0 20px', display: 'flex', alignItems: 'center', gap: 16, position: 'sticky', top: 0, zIndex: 40, background: 'var(--nx-chrome-bg)', borderBottom: '1px solid var(--nx-chrome-border)' }}>
           {mobile && <motion.button onClick={() => setNavOpen(!navOpen)} whileTap={{ scale: .93 }} style={{ width: 34, height: 34, border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 18, cursor: 'pointer' }}>☰</motion.button>}
           <motion.div onClick={() => setPaletteOpen(true)} whileTap={{ scale: .985 }} style={{ height: 32, width: mobile ? 'auto' : 520, flex: mobile ? 1 : '0 1 520px', margin: mobile ? 0 : '0 auto', padding: '0 11px', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--nx-chrome-search)', border: '1px solid var(--nx-chrome-border)', borderRadius: 8, color: 'var(--nx-chrome-muted)', fontSize: 13, cursor: 'pointer' }}><span style={{ color: T.ACCENT, fontSize: 17 }}>⌕</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search order, AWB, seller, courier…</span><span style={{ marginLeft: 'auto', color: 'var(--nx-chrome-muted)', fontFamily: T.MONO, fontSize: 11 }}>⌘K</span></motion.div>
@@ -101,7 +101,7 @@ export default function AdminShell({ children }) {
             <div style={{ display: 'flex', padding: 3, gap: 2, background: 'var(--ops-surface-soft)', border: '1px solid var(--ops-border)', borderRadius: 8 }}>
               {['light', 'dark'].map(mode => <motion.button key={mode} onClick={() => theme !== mode && toggleTheme()} whileTap={{ scale: .96 }} style={{ height: 26, padding: '0 8px', border: 0, borderRadius: 6, background: theme === mode ? 'var(--ops-surface)' : 'transparent', color: theme === mode ? T.ACCENT : 'var(--ops-muted)', boxShadow: theme === mode ? '0 1px 4px rgba(0,0,0,.10)' : 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 700 }}>{mode === 'light' ? '☀ Light' : '☾ Dark'}</motion.button>)}
             </div>
-            <div style={{ padding: '5px 10px', border: '1px solid var(--ops-border)', borderRadius: 8, background: 'var(--ops-surface)', fontSize: 12.5, color: 'var(--ops-muted)' }}>Tue, 09 Sep 2026</div>
+            <div style={{ padding: '5px 10px', border: '1px solid var(--ops-border)', borderRadius: 8, background: 'var(--ops-surface)', fontSize: 12.5, color: 'var(--ops-muted)' }}>{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</div>
             <motion.button whileTap={{ scale: .92 }} onClick={() => showToast('3 operational alerts are ready for review')} aria-label="Open notifications" style={{ position: 'relative', width: 31, height: 31, display: 'grid', placeItems: 'center', border: 0, borderRadius: 8, background: 'transparent', color: T.ACCENT, fontSize: 17, cursor: 'pointer' }}>♧<span className="nxc-live-ping" style={{ position: 'absolute', top: 5, right: 3, width: 7, height: 7, borderRadius: '50%', background: '#E83D57' }} /><span style={{ position: 'absolute', top: 5, right: 3, width: 7, height: 7, borderRadius: '50%', background: '#E83D57', border: '2px solid var(--ops-surface)' }} /></motion.button>
             <div style={{ position: 'relative' }}>
               <button onClick={() => setProfileOpen(!profileOpen)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 0, border: 0, background: 'transparent', cursor: 'pointer', textAlign: 'left' }}><div style={{ width: 33, height: 33, borderRadius: '50%', display: 'grid', placeItems: 'center', background: T.NAVY, color: '#fff', fontSize: 11, fontWeight: 800 }}>{(admin?.fullName || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</div><div><div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ops-text)' }}>{admin?.fullName || 'Loading…'}</div><div style={{ fontSize: 11, color: 'var(--ops-muted)', marginTop: 2 }}>{admin?.role?.replace(/_/g, ' ') || ''}</div></div></button>

@@ -8,14 +8,14 @@ import * as T from '@/lib/theme';
 
 const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`, borderRadius: 12 };
 const FIELD = { height: 38, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
-const STATUS = { open: ['Action needed', '#C2410C', '#F5822018'], disputed: ['Disputed', '#2454D6', '#2454D614'], accepted: ['Accepted', '#6B7280', '#6B728018'], won: ['Won', T.GREEN, `${T.GREEN}18`], lost: ['Lost', T.RED, `${T.RED}16`], withdrawn: ['Withdrawn', '#6B7280', '#6B728018'] };
+const STATUS = { open: ['Action needed', '#C2410C', '#F5822018'], disputed: ['Disputed', '#3877fc', '#3877fc14'], accepted: ['Accepted', '#6B7280', '#6B728018'], won: ['Won', T.GREEN, `${T.GREEN}18`], lost: ['Lost', T.RED, `${T.RED}16`], withdrawn: ['Withdrawn', '#6B7280', '#6B728018'] };
 const TABS = [['', 'All'], ['open', 'Action needed'], ['disputed', 'Disputed'], ['accepted', 'Accepted'], ['won', 'Won'], ['lost', 'Lost'], ['withdrawn', 'Withdrawn']];
 const kg = (g) => `${(Number(g) / 1000).toFixed(2)} kg`;
 const inr = (paise) => `₹${(Number(paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const day = (v) => (v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
 function Pill({ s }) { const [label, color, bg] = STATUS[s] || [s, T.TEXT, T.SURFACE_SOFT]; return <span style={{ display: 'inline-block', padding: '4px 9px', borderRadius: 6, background: bg, color, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}>{label}</span>; }
-function Btn({ children, onClick, primary, danger, disabled, small }) { return <button type="button" disabled={disabled} onClick={onClick} style={{ height: small ? 32 : 38, padding: `0 ${small ? 11 : 16}px`, borderRadius: 8, border: `1px solid ${primary ? '#2454D6' : danger ? T.RED : T.BORDER}`, background: primary ? '#2454D6' : danger ? T.RED : T.SURFACE, color: primary || danger ? '#fff' : T.TEXT, fontWeight: 700, fontSize: small ? 12.5 : 13.5, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>{children}</button>; }
+function Btn({ children, onClick, primary, danger, disabled, small }) { return <button type="button" disabled={disabled} onClick={onClick} style={{ height: small ? 32 : 38, padding: `0 ${small ? 11 : 16}px`, borderRadius: 8, border: `1px solid ${primary ? '#3877fc' : danger ? T.RED : T.BORDER}`, background: primary ? '#3877fc' : danger ? T.RED : T.SURFACE, color: primary || danger ? '#fff' : T.TEXT, fontWeight: 700, fontSize: small ? 12.5 : 13.5, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>{children}</button>; }
 
 function ActionDialog({ row, onClose, onDone }) {
   const { showToast } = useAppState();
@@ -44,7 +44,7 @@ function ActionDialog({ row, onClose, onDone }) {
           <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
             <div style={{ display: 'grid', gap: 8 }}>
               {[['dispute', 'Dispute the weight', 'Send your evidence to the courier. The held amount stays on hold until they decide.'], ['accept', 'Accept the charge', `${inr(extra)} is debited from your wallet and the case closes.`], ['withdraw', 'Withdraw', 'Close the case and pay the extra charge.']].map(([id, title, hint]) => (
-                <label key={id} style={{ display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 9, border: `1px solid ${action === id ? '#2454D6' : T.BORDER}`, background: action === id ? '#2454D608' : T.SURFACE, cursor: 'pointer' }}>
+                <label key={id} style={{ display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 9, border: `1px solid ${action === id ? '#3877fc' : T.BORDER}`, background: action === id ? '#3877fc08' : T.SURFACE, cursor: 'pointer' }}>
                   <input type="radio" name="wd-action" checked={action === id} onChange={() => setAction(id)} style={{ marginTop: 3 }} /><span><b style={{ color: T.TEXT, fontSize: 13.5 }}>{title}</b><small style={{ display: 'block', color: T.TEXT_MUTED, marginTop: 2 }}>{hint}</small></span>
                 </label>
               ))}
@@ -109,7 +109,7 @@ export default function LiveWeightDisputes({ mobile }) {
     } catch (e) { showToast(e.message || 'Export failed', 'error'); } finally { setBusy(false); }
   };
 
-  const kpis = [['Needs action', n(s.open_count), 'Respond before the deadline', '#F58220'], ['Disputed', n(s.disputed_count), 'Awaiting courier decision', '#2454D6'], ['Won', n(s.won_count), `${inr(s.total_saved_paise)} recovered`, '#14724F'], ['Accepted / lost', n(s.accepted_count) + n(s.lost_count), `${inr(s.total_cost_paise)} charged`, '#6B7280'], ['Amount on hold', inr(s.total_held_paise), n(s.urgent_count) ? `${n(s.urgent_count)} due within 3 days` : 'Held until resolved', '#B23A2B']];
+  const kpis = [['Needs action', n(s.open_count), 'Respond before the deadline', '#F58220'], ['Disputed', n(s.disputed_count), 'Awaiting courier decision', '#3877fc'], ['Won', n(s.won_count), `${inr(s.total_saved_paise)} recovered`, '#14724F'], ['Accepted / lost', n(s.accepted_count) + n(s.lost_count), `${inr(s.total_cost_paise)} charged`, '#6B7280'], ['Amount on hold', inr(s.total_held_paise), n(s.urgent_count) ? `${n(s.urgent_count)} due within 3 days` : 'Held until resolved', '#B23A2B']];
   const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
   return (
     <div style={{ padding: pad }}>
@@ -122,7 +122,7 @@ export default function LiveWeightDisputes({ mobile }) {
       </div>
       <section style={CARD}>
         <div role="tablist" style={{ display: 'flex', gap: 4, padding: '4px 14px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
-          {TABS.map(([id, label]) => { const on = status === id; const count = id ? n(s[`${id}_count`]) : null; return <button key={id || 'all'} role="tab" aria-selected={on} type="button" onClick={() => { setStatus(id); setPage(1); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#2454D6' : 'transparent'}`, background: 'transparent', color: on ? '#2454D6' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{count > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'open' ? T.RED : '#2454D6', color: '#fff', fontSize: 11 }}>{count}</span>}</button>; })}
+          {TABS.map(([id, label]) => { const on = status === id; const count = id ? n(s[`${id}_count`]) : null; return <button key={id || 'all'} role="tab" aria-selected={on} type="button" onClick={() => { setStatus(id); setPage(1); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#3877fc' : 'transparent'}`, background: 'transparent', color: on ? '#3877fc' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{count > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'open' ? T.RED : '#3877fc', color: '#fff', fontSize: 11 }}>{count}</span>}</button>; })}
         </div>
         <div style={{ padding: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <input aria-label="Search" style={{ ...FIELD, flex: '1 1 200px', minWidth: 160 }} placeholder="Search by AWB or Order ID…" value={qInput} onChange={(e) => setQInput(e.target.value)} />
@@ -130,7 +130,7 @@ export default function LiveWeightDisputes({ mobile }) {
           <input aria-label="From date" type="date" style={FIELD} value={from} max={to || undefined} onChange={filter(setFrom)} /><span style={{ color: T.TEXT_MUTED }}>–</span><input aria-label="To date" type="date" style={FIELD} value={to} min={from || undefined} onChange={filter(setTo)} />
           {anyFilter && <Btn small onClick={() => { setQInput(''); setQ(''); setCourier(''); setFrom(''); setTo(''); setPage(1); }}>Clear filters</Btn>}
         </div>
-        {openSelected.length > 0 && <div style={{ margin: '0 14px 10px', padding: '8px 12px', borderRadius: 8, background: '#2454D60d', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}><b style={{ color: T.TEXT }}>{openSelected.length} selected</b><Btn small disabled={busy} onClick={() => bulk('dispute')}>Dispute all</Btn><Btn small danger disabled={busy} onClick={() => bulk('accept')}>Accept all charges</Btn><Btn small onClick={() => setSelected(new Set())}>Clear</Btn></div>}
+        {openSelected.length > 0 && <div style={{ margin: '0 14px 10px', padding: '8px 12px', borderRadius: 8, background: '#3877fc0d', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}><b style={{ color: T.TEXT }}>{openSelected.length} selected</b><Btn small disabled={busy} onClick={() => bulk('dispute')}>Dispute all</Btn><Btn small danger disabled={busy} onClick={() => bulk('accept')}>Accept all charges</Btn><Btn small onClick={() => setSelected(new Set())}>Clear</Btn></div>}
         {data.error ? <div style={{ padding: 24, color: T.RED, fontSize: 13 }}>{data.error}</div> : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse' }}>
@@ -143,7 +143,7 @@ export default function LiveWeightDisputes({ mobile }) {
                   return (
                     <tr key={r.id}>
                       <td style={{ padding: '12px 14px', borderTop: `1px solid ${T.DIVIDER}` }}>{open && <input type="checkbox" aria-label={`Select ${r.order_number}`} checked={selected.has(r.id)} onChange={() => toggle(r.id)} />}</td>
-                      <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}` }}><b style={{ color: '#2454D6', fontSize: 13 }}>{r.order_number}</b><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED, fontSize: 11.5 }}>{r.awb}</small></td>
+                      <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}` }}><b style={{ color: '#3877fc', fontSize: 13 }}>{r.order_number}</b><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED, fontSize: 11.5 }}>{r.awb}</small></td>
                       <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}><b style={{ color: T.TEXT }}>{r.courier_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.service_name}</small></td>
                       <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13, color: T.TEXT }}>{kg(r.declared_weight_g)} → <b>{kg(r.billed_weight_g)}</b><small style={{ display: 'block', color: T.AMBER, fontWeight: 700 }}>+{kg(r.difference_g)}</small></td>
                       <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13.5, fontWeight: 700, color: T.TEXT }}>{inr(r.additional_charge_paise)}</td>

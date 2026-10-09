@@ -210,7 +210,8 @@ export async function ndrRoutes(app: FastifyInstance) {
       // Update shipment state
       await client.query(`
         UPDATE shipments 
-        SET state = $1::shipment_state, updated_at = now() 
+        SET state = $1::shipment_state, updated_at = now(),
+            rto_initiated_at = CASE WHEN $1 = 'rto' THEN COALESCE(rto_initiated_at, now()) ELSE rto_initiated_at END
         WHERE id = $2
       `, [shipmentState, current.rows[0].shipment_id]);
 
@@ -297,7 +298,8 @@ export async function ndrRoutes(app: FastifyInstance) {
 
           await client.query(`
             UPDATE shipments 
-            SET state = $1::shipment_state, updated_at = now() 
+            SET state = $1::shipment_state, updated_at = now(),
+                rto_initiated_at = CASE WHEN $1 = 'rto' THEN COALESCE(rto_initiated_at, now()) ELSE rto_initiated_at END
             WHERE id = $2
           `, [shipmentState, current.rows[0].shipment_id]);
 

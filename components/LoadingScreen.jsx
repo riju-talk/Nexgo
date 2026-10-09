@@ -15,16 +15,16 @@ const hash = (n) => { const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; ret
 
 const WORD = 'NEXGO';
 const LIGHT_PALETTE = {
-  bright: ['#0B776F', '#00A99C', '#45BFB6', '#173B63'],
-  mid: ['#0E5049', '#3A7D84', '#4F7194'],
+  bright: ['#0B776F', '#0891b2', '#45BFB6', '#173B63'],
+  mid: ['#0b5566', '#3A7D84', '#4F7194'],
   dim: ['#7991A9', '#9CAFC0', '#B8C6D2'],
-  stars: 'rgba(27,59,99,', mesh: '#56BDB6', glow: 'rgba(0,169,156,', scan: '#F8FCFD', solidLeft: '#0F3158', solidMid: '#00A99C', solidRight: '#147A9D', shadow: 'rgba(0,169,156,.22)',
+  stars: 'rgba(27,59,99,', mesh: '#56BDB6', glow: 'rgba(0,169,156,', scan: '#F8FCFD', solidLeft: '#0F3158', solidMid: '#0891b2', solidRight: '#147A9D', shadow: 'rgba(0,169,156,.22)',
 };
 const DARK_PALETTE = {
-  bright: ['#00D7C3', '#3FD1C4', '#8BEFE4', '#FFFFFF'],
-  mid: ['#0E5049', '#5F9E97', '#8298B8'],
+  bright: ['#06b6d4', '#3FD1C4', '#8BEFE4', '#FFFFFF'],
+  mid: ['#0b5566', '#5F9E97', '#8298B8'],
   dim: ['#5F779C', '#7189AE', '#3A5178'],
-  stars: 'rgba(211,220,233,', mesh: '#5FEBD9', glow: 'rgba(0,215,195,', scan: '#FFFFFF', solidLeft: '#5FEBD9', solidMid: '#FFFFFF', solidRight: '#5FEBD9', shadow: 'rgba(95,235,217,.55)',
+  stars: 'rgba(211,220,233,', mesh: '#67e8f9', glow: 'rgba(6,182,212,', scan: '#FFFFFF', solidLeft: '#67e8f9', solidMid: '#FFFFFF', solidRight: '#67e8f9', shadow: 'rgba(95,235,217,.55)',
 };
 
 const TARGET_COUNT = 1700;

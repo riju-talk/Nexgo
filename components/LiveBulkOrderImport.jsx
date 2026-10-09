@@ -116,6 +116,27 @@ function validate(order) {
   return { ...order, phone, alternatePhone, paymentMode, codAmountPaise, subtotal, weightG, dims: dimCount === 3 ? dims : null, errors, quote: null };
 }
 
+// A re-upload-ready file: the failed orders laid out in the same columns as the NEXGO template, plus an Error column.
+// Fix the cells, delete the Error column (or leave it, it is ignored) and upload the file again.
+const TEMPLATE_HEADERS = ['Order number', 'Customer name', 'Company name', 'Phone', 'Alternate phone', 'Email', 'Address line 1', 'Address line 2', 'Landmark', 'Pincode', 'City', 'State', 'SKU', 'Product name', 'HSN code', 'Quantity', 'Unit price', 'Weight (g)', 'Length (cm)', 'Breadth (cm)', 'Height (cm)', 'Payment mode', 'COD amount'];
+function downloadFailedOrders(orders, fileName) {
+  const failed = orders.filter((o) => o.errors.length || o.failure);
+  const rows = [];
+  for (const o of failed) {
+    o.items.forEach((item, i) => rows.push([
+      o.orderNumber || '', o.customerName || '', o.companyName || '', o.phone || '', o.alternatePhone || '', o.email || '', o.address || '', o.address2 || '', o.landmark || '', o.pincode || '', o.city || '', o.state || '',
+      item.sku && item.sku !== 'CUSTOM' ? item.sku : '', item.name || '', item.hsn || '', item.quantity || '', item.pricePaise ? item.pricePaise / 100 : '', item.weight || '',
+      o.length || '', o.width || '', o.height || '', o.paymentMode || '', o.codAmount || '', i === 0 ? (o.failure || o.errors.join('; ')) : '',
+    ]));
+  }
+  const sheet = XLSX.utils.aoa_to_sheet([[...TEMPLATE_HEADERS, 'Error (fix and re-upload)'], ...rows]);
+  sheet['!cols'] = [...TEMPLATE_HEADERS, 'Error'].map((h, i) => ({ wch: i === 23 ? 60 : Math.max(12, h.length + 2) }));
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, 'Orders');
+  XLSX.writeFile(book, `${fileName.replace(/\.[^.]+$/, '') || 'bulk-orders'}-failed-orders.xlsx`);
+  return failed.length;
+}
+
 function downloadErrorReport(orders, fileName) {
   const rows = orders.filter((o) => o.errors.length || o.failure).map((o) => ({ 'Order number': o.orderNumber || '', 'Sheet rows': o.lines.join(', '), Problem: o.failure || o.errors.join('; ') }));
   const sheet = XLSX.utils.json_to_sheet(rows);
@@ -232,7 +253,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
-          style={{ marginTop: 18, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(0,215,195,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
+          style={{ marginTop: 18, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(6,182,212,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
         >
           <b style={{ display: 'block', color: T.TEXT, fontSize: 14 }}>{loading ? 'Reading and validating…' : 'Drop your order file here, or click to browse'}</b>
           <span style={{ display: 'block', marginTop: 5, color: T.TEXT_MUTED, fontSize: 12.5 }}>{fileName && !loading ? fileName : '.xlsx, .xls or .csv · up to 5 MB · NEXGO bulk upload format'}</span>
@@ -250,6 +271,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
               <span>Failed <b style={{ color: failedCount ? T.RED : T.TEXT }}>{failedCount}</b></span>
             </div>
             <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+              {failedCount > 0 && <Action onClick={() => { const n = downloadFailedOrders(orders, fileName); showToast(`${n} failed order${n === 1 ? '' : 's'} saved. Fix the highlighted rows and upload the file again.`); }}>⬇ Download failed orders (re-upload file)</Action>}
               {failedCount > 0 && <Action onClick={() => downloadErrorReport(orders, fileName)}>Download error report</Action>}
               {result?.created > 0 && <Action onClick={() => nav('orders')}>Go to All orders</Action>}
               <Action primary disabled={!validOrders.length || creating} onClick={createOrders}>{creating ? 'Creating orders…' : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>

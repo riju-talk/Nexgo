@@ -75,7 +75,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
               <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.SECTION_HEAD }}>Order pipeline</div>
               <div style={{ fontFamily: T.MONO, fontSize: 13, color: T.TEXT_MUTED }}>12,480 orders · click a stage to filter the queue</div>
             </div>
-            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#0E5049', cursor: 'pointer' }}>Export →</div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#0b5566', cursor: 'pointer' }}>Export →</div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: pipeCols, gap: phone ? 8 : 10, padding: phone ? 10 : 14 }}>
             {dashboardPipeline.map(([label, count, color]) => {
@@ -171,7 +171,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
                     <div style={{ fontFamily: T.MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color, border: `1px solid ${chipBd}`, borderRadius: 20, padding: '3px 8px' }}>{sla}</div>
                     <div
                       onClick={(e) => { e.stopPropagation(); setDrawerOpen(true); }}
-                      style={{ fontSize: 12.5, fontWeight: 600, color: '#0E5049' }}
+                      style={{ fontSize: 12.5, fontWeight: 600, color: '#0b5566' }}
                     >
                       {cta} →
                     </div>

@@ -15,7 +15,7 @@ const inr = (v) => `₹${Number(v).toLocaleString('en-IN', { minimumFractionDigi
 const days = (t) => (t.minDays === t.maxDays ? `${t.minDays} Day${t.minDays === 1 ? '' : 's'}` : `${t.minDays} – ${t.maxDays} Days`);
 const SORTS = [['lowest', 'Lowest price'], ['fastest', 'Fastest delivery'], ['cod', 'COD available'], ['recommended', 'Recommended']];
 
-export default function LiveRateCalculator({ mobile }) {
+export default function LiveRateCalculator({ mobile, embedded = false }) {
   const { nav, showToast } = useAppState();
   const [form, setForm] = useState({ pickup: '', delivery: '', mode: 'prepaid', weightKg: '1.2', length: '20', width: '15', height: '10', value: '2500', productType: 'Electronics' });
   const [busy, setBusy] = useState(false);
@@ -64,7 +64,7 @@ export default function LiveRateCalculator({ mobile }) {
   };
 
   return (
-    <div style={{ padding: mobile ? '14px 12px 42px' : '18px 28px 48px', maxWidth: '100%' }}>
+    <div style={{ padding: embedded ? 0 : mobile ? '14px 12px 42px' : '18px 28px 48px', maxWidth: '100%' }}>
       <p style={{ margin: '0 0 14px', color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Enter your shipment details to compare the best courier rates across multiple partners.</p>
       <form onSubmit={calculate} style={{ ...CARD, padding: 18 }}>
         <b style={{ color: T.TEXT, fontSize: 15 }}>Shipment Details</b>
@@ -73,7 +73,7 @@ export default function LiveRateCalculator({ mobile }) {
           <PincodeInput label="Delivery Pincode" value={form.delivery} onChange={set('delivery')} />
           <div style={LABEL}>Payment Mode <span style={{ color: T.RED }}>*</span>
             <div style={{ marginTop: 6, display: 'flex', borderRadius: 8, overflow: 'hidden', border: `1px solid ${T.INPUT_BORDER}`, height: 42 }}>
-              {[['prepaid', 'Prepaid'], ['cod', 'COD']].map(([id, label]) => <button key={id} type="button" aria-pressed={form.mode === id} onClick={() => set('mode')(id)} style={{ flex: 1, border: 0, background: form.mode === id ? '#2454D6' : T.SURFACE, color: form.mode === id ? '#fff' : T.TEXT_SECONDARY, fontWeight: 750, fontSize: 13.5, cursor: 'pointer' }}>{label}</button>)}
+              {[['prepaid', 'Prepaid'], ['cod', 'COD']].map(([id, label]) => <button key={id} type="button" aria-pressed={form.mode === id} onClick={() => set('mode')(id)} style={{ flex: 1, border: 0, background: form.mode === id ? '#3877fc' : T.SURFACE, color: form.mode === id ? '#fff' : T.TEXT_SECONDARY, fontWeight: 750, fontSize: 13.5, cursor: 'pointer' }}>{label}</button>)}
             </div>
           </div>
           <label style={LABEL}>Shipment Weight (kg) <span style={{ color: T.RED }}>*</span><input style={{ ...FIELD, marginTop: 6 }} type="number" min="0.01" step="0.01" value={form.weightKg} onChange={set('weightKg')} /></label>
@@ -86,7 +86,7 @@ export default function LiveRateCalculator({ mobile }) {
           </div>
           <label style={LABEL}>Shipment Value (₹)<input style={{ ...FIELD, marginTop: 6 }} type="number" min="0" value={form.value} onChange={set('value')} /></label>
           <label style={LABEL}>Product Type<select style={{ ...FIELD, marginTop: 6 }} value={form.productType} onChange={set('productType')}>{PRODUCT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></label>
-          <button type="submit" disabled={busy || !valid} style={{ height: 44, padding: '0 22px', border: 0, borderRadius: 9, background: '#2454D6', color: '#fff', fontWeight: 800, fontSize: 14, cursor: busy ? 'wait' : 'pointer', opacity: busy || !valid ? 0.6 : 1 }}>{busy ? 'Calculating…' : 'Calculate Rates →'}</button>
+          <button type="submit" disabled={busy || !valid} style={{ height: 44, padding: '0 22px', border: 0, borderRadius: 9, background: '#3877fc', color: '#fff', fontWeight: 800, fontSize: 14, cursor: busy ? 'wait' : 'pointer', opacity: busy || !valid ? 0.6 : 1 }}>{busy ? 'Calculating…' : 'Calculate Rates →'}</button>
         </div>
         {error && <div style={{ marginTop: 12, color: T.RED, fontSize: 13 }}>{error}</div>}
       </form>
@@ -94,7 +94,7 @@ export default function LiveRateCalculator({ mobile }) {
       <section style={{ ...CARD, marginTop: 16, overflow: 'hidden' }}>
         <div style={{ padding: '16px 18px', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <div><b style={{ color: T.TEXT, fontSize: 16 }}>Available Courier Options</b><span style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 12.5 }}>{!result ? 'Calculate rates to see couriers.' : `We found ${result.quotes.length} courier partner${result.quotes.length === 1 ? '' : 's'} matching your shipment details.`}</span></div>
-          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{SORTS.map(([id, label]) => <button key={id} type="button" onClick={() => setSort(id)} aria-pressed={sort === id} style={{ height: 32, padding: '0 12px', borderRadius: 8, border: `1px solid ${sort === id ? '#2454D6' : T.BORDER}`, background: sort === id ? '#2454D614' : T.SURFACE, color: sort === id ? '#2454D6' : T.TEXT_SECONDARY, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{label}</button>)}</div>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{SORTS.map(([id, label]) => <button key={id} type="button" onClick={() => setSort(id)} aria-pressed={sort === id} style={{ height: 32, padding: '0 12px', borderRadius: 8, border: `1px solid ${sort === id ? '#3877fc' : T.BORDER}`, background: sort === id ? '#3877fc14' : T.SURFACE, color: sort === id ? '#3877fc' : T.TEXT_SECONDARY, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{label}</button>)}</div>
         </div>
         {result && <div style={{ padding: '0 18px 12px', display: 'flex', gap: 18, flexWrap: 'wrap', color: T.TEXT_SECONDARY, fontSize: 12.5 }}>
           <span>Dead weight: <b style={{ color: T.TEXT }}>{(result.deadWeightG / 1000).toFixed(2)} kg</b></span>
@@ -113,12 +113,12 @@ export default function LiveRateCalculator({ mobile }) {
                   <tr key={`${q.provider.code}:${q.service.code}`} style={{ background: top ? 'rgba(20,114,79,.07)' : 'transparent' }}>
                     <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}` }}><b style={{ color: BRAND[q.provider.name] || T.TEXT, fontSize: 15 }}>{q.provider.name}</b>{top && <span style={{ marginLeft: 8, padding: '3px 8px', borderRadius: 6, background: `${T.GREEN}1f`, color: T.GREEN, fontSize: 11, fontWeight: 800 }}>Best Price</span>}</td>
                     <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT, fontSize: 13 }}><b style={{ textTransform: 'capitalize' }}>{q.service.type}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{q.service.name}</small></td>
-                    <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}` }}><span style={{ padding: '5px 10px', borderRadius: 8, background: '#2454D612', color: '#2454D6', fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap' }}>🗓 {days(q.tat)}</span></td>
+                    <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}` }}><span style={{ padding: '5px 10px', borderRadius: 8, background: '#3877fc12', color: '#3877fc', fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap' }}>🗓 {days(q.tat)}</span></td>
                     <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 14, color: T.TEXT }}>{inr(q.price.freight)}</td>
                     <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 14, color: T.TEXT }}>{form.mode === 'cod' ? inr(q.price.codFee) : q.codAvailable ? <span style={{ color: T.TEXT_MUTED }}>— ({inr(q.codFee)} if COD)</span> : <span style={{ color: T.TEXT_MUTED }}>Prepaid only</span>}</td>
                     <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 18, fontWeight: 800, color: top ? T.GREEN : T.TEXT }}>{inr(q.price.total)}</td>
                     <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.GREEN, fontSize: 13, fontWeight: 650 }}>● Available</td>
-                    <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}` }}><button type="button" onClick={() => select(q)} style={{ height: 36, padding: '0 16px', borderRadius: 8, border: top ? 0 : `1px solid #2454D6`, background: top ? T.GREEN : T.SURFACE, color: top ? '#fff' : '#2454D6', fontWeight: 750, fontSize: 13, cursor: 'pointer' }}>Select →</button></td>
+                    <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}` }}><button type="button" onClick={() => select(q)} style={{ height: 36, padding: '0 16px', borderRadius: 8, border: top ? 0 : `1px solid #3877fc`, background: top ? T.GREEN : T.SURFACE, color: top ? '#fff' : '#3877fc', fontWeight: 750, fontSize: 13, cursor: 'pointer' }}>Select →</button></td>
                   </tr>
                 );
               })}</tbody>

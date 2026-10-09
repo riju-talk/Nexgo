@@ -11,17 +11,17 @@ const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`,
 const FIELD = { height: 38, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
 const REASONS = { customer_unavailable: 'Customer Not Available', address_incomplete: 'Incomplete Address', address_incorrect: 'Wrong Address', refused_delivery: 'Customer Refused', payment_not_ready: 'Payment Not Ready', customer_requested_reschedule: 'Reschedule Requested', premises_closed: 'Premises Closed', customer_not_contactable: 'Not Contactable', incorrect_product: 'Incorrect Product', damaged_product: 'Damaged Product', other: 'Other' };
 const STATUS = {
-  new: ['New NDR', '#C2410C', '#F5822018'], action_pending: ['Action Pending', '#B45309', '#F5B30018'], redelivery_scheduled: ['Redelivery Scheduled', '#2454D6', '#2454D614'], resolved: ['Resolved', T.GREEN, `${T.GREEN}18`], rto: ['RTO', T.RED, `${T.RED}16`],
+  new: ['New NDR', '#C2410C', '#F5822018'], action_pending: ['Action Pending', '#B45309', '#F5B30018'], redelivery_scheduled: ['Redelivery Scheduled', '#3877fc', '#3877fc14'], resolved: ['Resolved', T.GREEN, `${T.GREEN}18`], rto: ['RTO', T.RED, `${T.RED}16`],
 };
 const TABS = [['all', 'All NDR'], ['new', 'New NDR'], ['action_pending', 'Action Pending'], ['redelivery_scheduled', 'Redelivery Scheduled'], ['resolved', 'Resolved'], ['rto', 'RTO']];
-const DONUT = [['new', '#F58220'], ['action_pending', '#F5B301'], ['redelivery_scheduled', '#2454D6'], ['resolved', '#14724F'], ['rto', '#B23A2B']];
+const DONUT = [['new', '#F58220'], ['action_pending', '#F5B301'], ['redelivery_scheduled', '#3877fc'], ['resolved', '#14724F'], ['rto', '#B23A2B']];
 const when = (v) => (v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 const dayInput = (offset) => { const d = new Date(Date.now() + offset * 864e5); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const inr = (paise) => `₹${(Number(paise || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
 function Pill({ color, bg, children }) { return <span style={{ display: 'inline-block', padding: '4px 9px', borderRadius: 6, background: bg, color, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}>{children}</span>; }
 function Btn({ children, onClick, primary, danger, disabled, small }) {
-  return <button type="button" disabled={disabled} onClick={onClick} style={{ height: small ? 32 : 38, padding: `0 ${small ? 12 : 16}px`, borderRadius: 8, border: `1px solid ${primary ? '#2454D6' : danger ? T.RED : T.BORDER}`, background: primary ? '#2454D6' : danger ? T.RED : T.SURFACE, color: primary || danger ? '#fff' : T.TEXT, fontWeight: 700, fontSize: small ? 12.5 : 13.5, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>{children}</button>;
+  return <button type="button" disabled={disabled} onClick={onClick} style={{ height: small ? 32 : 38, padding: `0 ${small ? 12 : 16}px`, borderRadius: 8, border: `1px solid ${primary ? '#3877fc' : danger ? T.RED : T.BORDER}`, background: primary ? '#3877fc' : danger ? T.RED : T.SURFACE, color: primary || danger ? '#fff' : T.TEXT, fontWeight: 700, fontSize: small ? 12.5 : 13.5, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>{children}</button>;
 }
 
 // Take action / view details dialog for one NDR case.
@@ -168,7 +168,7 @@ export default function LiveNdr({ mobile }) {
     } catch (e) { showToast(e.message || 'Report could not be generated', 'error'); } finally { setBusy(false); }
   };
 
-  const kpis = [['Total NDR', stats?.total ?? '—', stats ? `${stats.shareOfShipmentsPct}% of total shipments` : '', '#6D28D9'], ['New NDR', counts.new ?? '—', 'Requires attention', '#F58220'], ['Action Pending', counts.action_pending ?? '—', 'Awaiting your action', '#F5B301'], ['Redelivery Scheduled', counts.redelivery_scheduled ?? '—', 'Scheduled for redelivery', '#2454D6'], ['Resolved', counts.resolved ?? '—', 'Successfully resolved', '#14724F'], ['Auto RTO', counts.rto ?? '—', 'Marked as RTO', '#B23A2B']];
+  const kpis = [['Total NDR', stats?.total ?? '—', stats ? `${stats.shareOfShipmentsPct}% of total shipments` : '', '#6D28D9'], ['New NDR', counts.new ?? '—', 'Requires attention', '#F58220'], ['Action Pending', counts.action_pending ?? '—', 'Awaiting your action', '#F5B301'], ['Redelivery Scheduled', counts.redelivery_scheduled ?? '—', 'Scheduled for redelivery', '#3877fc'], ['Resolved', counts.resolved ?? '—', 'Successfully resolved', '#14724F'], ['Auto RTO', counts.rto ?? '—', 'Marked as RTO', '#B23A2B']];
   const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
 
   return (
@@ -186,7 +186,7 @@ export default function LiveNdr({ mobile }) {
       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'minmax(0,1fr) 300px', gap: 16, alignItems: 'start' }}>
         <section style={{ ...CARD, minWidth: 0 }}>
           <div role="tablist" style={{ display: 'flex', gap: 4, padding: '4px 14px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
-            {TABS.map(([id, label]) => { const n = id === 'all' ? stats?.total : counts[id]; const on = tab === id; return <button key={id} role="tab" aria-selected={on} type="button" onClick={() => { setTab(id); setPage(1); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#2454D6' : 'transparent'}`, background: 'transparent', color: on ? '#2454D6' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{id !== 'all' && n > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'new' || id === 'action_pending' ? T.RED : '#2454D6', color: '#fff', fontSize: 11 }}>{n}</span>}</button>; })}
+            {TABS.map(([id, label]) => { const n = id === 'all' ? stats?.total : counts[id]; const on = tab === id; return <button key={id} role="tab" aria-selected={on} type="button" onClick={() => { setTab(id); setPage(1); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#3877fc' : 'transparent'}`, background: 'transparent', color: on ? '#3877fc' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{id !== 'all' && n > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'new' || id === 'action_pending' ? T.RED : '#3877fc', color: '#fff', fontSize: 11 }}>{n}</span>}</button>; })}
           </div>
           <div style={{ padding: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <input aria-label="Search" style={{ ...FIELD, flex: '1 1 200px', minWidth: 160 }} placeholder="Search by Order ID, AWB, Customer, phone…" value={qInput} onChange={(e) => setQInput(e.target.value)} />
@@ -198,7 +198,7 @@ export default function LiveNdr({ mobile }) {
             {anyFilter && <Btn small onClick={clearFilters}>Clear filters</Btn>}
           </div>
 
-          {selectedRows.length > 0 && <div style={{ margin: '0 14px 10px', padding: '8px 12px', borderRadius: 8, background: '#2454D60d', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}><b style={{ color: T.TEXT }}>{selectedRows.length} selected</b><Btn small disabled={busy} onClick={() => bulk('reattempt', 'Redelivery requested')}>Request reattempt</Btn><Btn small danger disabled={busy} onClick={() => bulk('rto', 'Marked as RTO')}>Mark as RTO</Btn><Btn small onClick={() => setSelected(new Set())}>Clear</Btn></div>}
+          {selectedRows.length > 0 && <div style={{ margin: '0 14px 10px', padding: '8px 12px', borderRadius: 8, background: '#3877fc0d', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}><b style={{ color: T.TEXT }}>{selectedRows.length} selected</b><Btn small disabled={busy} onClick={() => bulk('reattempt', 'Redelivery requested')}>Request reattempt</Btn><Btn small danger disabled={busy} onClick={() => bulk('rto', 'Marked as RTO')}>Mark as RTO</Btn><Btn small onClick={() => setSelected(new Set())}>Clear</Btn></div>}
 
           {data.error ? <div style={{ padding: 24, color: T.RED, fontSize: 13 }}>{data.error}</div> : (
             <div style={{ overflowX: 'auto' }}>
@@ -213,9 +213,9 @@ export default function LiveNdr({ mobile }) {
                   {!loading && data.items.map((r) => {
                     const [label, color, bg] = STATUS[r.ndr_status]; const open = r.ndr_status === 'new' || r.ndr_status === 'action_pending';
                     return (
-                      <tr key={r.id} style={{ background: selected.has(r.id) ? '#2454D608' : 'transparent' }}>
+                      <tr key={r.id} style={{ background: selected.has(r.id) ? '#3877fc08' : 'transparent' }}>
                         <td style={{ padding: '12px 14px', borderTop: `1px solid ${T.DIVIDER}` }}><input type="checkbox" aria-label={`Select ${r.order_number}`} checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></td>
-                        <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><b style={{ color: '#2454D6', fontSize: 13 }}>{r.order_number}</b><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED, fontSize: 11.5 }}>{r.awb}</small></td>
+                        <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><b style={{ color: '#3877fc', fontSize: 13 }}>{r.order_number}</b><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED, fontSize: 11.5 }}>{r.awb}</small></td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}><b style={{ color: T.TEXT }}>{r.customer_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.customer_phone}</small><small style={{ color: T.TEXT_MUTED }}>{r.customer_city}, {r.customer_pincode}</small></td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}><b style={{ color: T.TEXT }}>{r.courier_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.service_name}</small></td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><Pill color="#9A3412" bg="#F5822018">{REASONS[r.ndr_reason] || r.ndr_reason}</Pill><small style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 11 }}>Attempt {r.attempt_number}/{r.max_attempts}</small></td>
@@ -233,7 +233,7 @@ export default function LiveNdr({ mobile }) {
             <span>{data.total ? `Showing ${(page - 1) * 8 + 1} to ${Math.min(page * 8, data.total)} of ${data.total} NDRs` : 'Showing 0 NDRs'}</span>
             <div style={{ display: 'flex', gap: 6 }}>
               <Btn small disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>‹ Prev</Btn>
-              {Array.from({ length: Math.min(data.pages, 5) }, (_, i) => i + 1).map((n) => <button key={n} type="button" onClick={() => setPage(n)} aria-current={n === page} style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${n === page ? '#2454D6' : T.BORDER}`, background: n === page ? '#2454D6' : T.SURFACE, color: n === page ? '#fff' : T.TEXT, fontWeight: 700, cursor: 'pointer' }}>{n}</button>)}
+              {Array.from({ length: Math.min(data.pages, 5) }, (_, i) => i + 1).map((n) => <button key={n} type="button" onClick={() => setPage(n)} aria-current={n === page} style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${n === page ? '#3877fc' : T.BORDER}`, background: n === page ? '#3877fc' : T.SURFACE, color: n === page ? '#fff' : T.TEXT, fontWeight: 700, cursor: 'pointer' }}>{n}</button>)}
               <Btn small disabled={page >= data.pages || loading} onClick={() => setPage((p) => p + 1)}>Next ›</Btn>
             </div>
           </div>
@@ -241,7 +241,7 @@ export default function LiveNdr({ mobile }) {
 
         <aside style={{ display: 'grid', gap: 14 }}>
           <section style={{ ...CARD, padding: 16 }}>
-            <b style={{ color: '#2454D6', fontSize: 14 }}>NDR Overview</b>
+            <b style={{ color: '#3877fc', fontSize: 14 }}>NDR Overview</b>
             <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', color: T.TEXT }}>
               <Donut counts={counts} total={stats?.total || 0} />
               <div style={{ display: 'grid', gap: 6, fontSize: 12 }}>{DONUT.map(([k, color]) => <span key={k} style={{ display: 'flex', gap: 7, alignItems: 'center', color: T.TEXT_SECONDARY }}><i style={{ width: 8, height: 8, borderRadius: 4, background: color }} />{STATUS[k][0]} <b style={{ color: T.TEXT, marginLeft: 'auto' }}>{counts[k] ?? 0}</b></span>)}</div>
@@ -250,7 +250,7 @@ export default function LiveNdr({ mobile }) {
           <section style={{ ...CARD, padding: 16 }}>
             <b style={{ color: T.TEXT, fontSize: 14 }}>Top NDR Reasons</b>
             <div style={{ marginTop: 10, display: 'grid', gap: 9 }}>
-              {(stats?.reasons || []).slice(0, 6).map((r) => <div key={r.reason}><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: T.TEXT_SECONDARY }}><span>{REASONS[r.reason] || r.reason}</span><b style={{ color: T.TEXT }}>{r.count} ({r.pct}%)</b></div><div style={{ height: 5, marginTop: 4, borderRadius: 3, background: T.DIVIDER }}><div style={{ height: 5, borderRadius: 3, width: `${r.pct}%`, background: '#2454D6' }} /></div></div>)}
+              {(stats?.reasons || []).slice(0, 6).map((r) => <div key={r.reason}><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: T.TEXT_SECONDARY }}><span>{REASONS[r.reason] || r.reason}</span><b style={{ color: T.TEXT }}>{r.count} ({r.pct}%)</b></div><div style={{ height: 5, marginTop: 4, borderRadius: 3, background: T.DIVIDER }}><div style={{ height: 5, borderRadius: 3, width: `${r.pct}%`, background: '#3877fc' }} /></div></div>)}
               {stats && !stats.reasons.length && <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>No NDR reasons recorded yet.</span>}
             </div>
           </section>

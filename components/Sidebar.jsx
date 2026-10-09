@@ -30,24 +30,22 @@ const MENU = [
   ['dashboard', 'Dashboard', 'dashboard', []],
   ['intake', 'Orders Management', 'b2c', [['Create B2C order', 'b2c', ['bulk-orders']]]],
   ['flight', 'Track', 'shipments', []],
-  ['reports', 'Reports', 'mis', [['MIS reports', 'mis'], ['NDR report', 'ndr'], ['Weight discrepancy', 'weight']]],
+  ['reports', 'Reports', 'ndr', [['NDR Management', 'ndr'], ['RTO Dashboard', 'rto'], ['MIS Report', 'mis'], ['Weight Management', 'weight']]],
   ['book', 'Tools', 'ratecard', [['Rate card', 'ratecard'], ['Rate calculator', 'ratecalc'], ['Pincode serviceability', 'pincode']]],
   ['addons', 'Marketplace', 'shopify', [['Shopify', 'shopify'], ['Magento', 'magento'], ['WooCommerce', 'woo'], ['Amazon.in', 'amazon']]],
-  ['money', 'Billing', 'cod', [['COD remittance', 'cod'], ['Wallet transactions', 'wallet', ['recharges']], ['Shipping charges', 'charges'], ['Invoice', 'invoice'], ['Credit note', 'credit-note'], ['TDS', 'tds']]],
-  ['tower', 'Control Tower', 'account-config', [
-    ['#', 'Account configuration', 'account-config'], ['Printer settings', 'printer'], ['Label settings', 'label'], ['Invoice settings', 'inv-settings'], ['Schedule email reports', 'email-reports'],
-    ['#', 'ABC configuration'], ['WhatsApp notifications', 'wa-api'], ['SMS notifications', 'sms-api'], ['Order confirmation', 'notifications'], ['Abandoned checkout notifications', 'abandoned'],
-  ]],
+  ['money', 'Billing', 'billing', [['COD remittance', 'cod'], ['Wallet transactions', 'wallet', ['recharges']], ['Shipping charges', 'charges'], ['Invoice', 'invoice'], ['Credit notes', 'credit-note'], ['TDS', 'tds']]],
+  // Printer / label / invoice / email-report / WhatsApp / SMS settings live inside Account configuration (cards on that page).
+  ['tower', 'Control Tower', 'account-config', [], ['printer', 'label', 'inv-settings', 'email-reports', 'wa-api', 'sms-api', 'notifications', 'abandoned', 'team']],
   ['settings', 'Settings', 'kyc', [['KYC', 'kyc'], ['Profile settings', 'profile', ['password']], ['Warehouse settings', 'warehouse'], ['Courier rules', 'courier-rules']]],
 ];
 
 const isHeading = (child) => child[0] === '#';
 const childOwns = ([, id, also = []], activeId) => id === activeId || also.includes(activeId);
-const isMenuActive = ([, , destination, children], activeId) => destination === activeId || children.some((child) => !isHeading(child) && childOwns(child, activeId));
+const isMenuActive = ([, , destination, children, owns = []], activeId) => destination === activeId || owns.includes(activeId) || children.some((child) => !isHeading(child) && childOwns(child, activeId));
 
 function NavIcon({ name, active }) {
   return (
-    <div style={{ width: 29, height: 29, flex: '0 0 29px', borderRadius: 8, display: 'grid', placeItems: 'center', color: active ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: active ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${active ? 'rgba(0,215,195,.26)' : 'var(--nx-side-edge)'}` }}>
+    <div style={{ width: 29, height: 29, flex: '0 0 29px', borderRadius: 8, display: 'grid', placeItems: 'center', color: active ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: active ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${active ? 'rgba(6,182,212,.26)' : 'var(--nx-side-edge)'}` }}>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICONS[name] || ICONS.dashboard} /></svg>
     </div>
   );
@@ -123,12 +121,12 @@ export default function Sidebar({ activeId, mobile }) {
           <CollapseControl collapsed onClick={toggleSidebar} />
         </div>
         <div style={{ flex: 1, padding: '14px 14px', display: 'grid', alignContent: 'start', gap: 8 }}>
-          <motion.div onClick={() => nav('dashboard')} title="Dashboard" whileTap={{ scale: 0.94 }} style={{ height: 46, display: 'grid', placeItems: 'center', borderRadius: 11, cursor: 'pointer', background: onDashboard ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${onDashboard ? 'rgba(0,215,195,.24)' : 'var(--nx-side-edge)'}` }}><NavIcon name="dashboard" active={onDashboard} /></motion.div>
+          <motion.div onClick={() => nav('dashboard')} title="Dashboard" whileTap={{ scale: 0.94 }} style={{ height: 46, display: 'grid', placeItems: 'center', borderRadius: 11, cursor: 'pointer', background: onDashboard ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${onDashboard ? 'rgba(6,182,212,.24)' : 'var(--nx-side-edge)'}` }}><NavIcon name="dashboard" active={onDashboard} /></motion.div>
           <div style={{ height: 1, margin: '4px 3px', background: 'var(--nx-side-edge)' }} />
           {MENU.filter(([id]) => id !== 'dashboard').map((item) => {
             const [id, label, destination] = item;
             const on = isMenuActive(item, activeId);
-            return <motion.div key={id} onClick={() => nav(destination)} title={label} whileTap={{ scale: 0.94 }} style={{ height: 46, display: 'grid', placeItems: 'center', borderRadius: 11, cursor: 'pointer', background: on ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${on ? 'rgba(0,215,195,.24)' : 'var(--nx-side-edge)'}` }}><NavIcon name={id} active={on} /></motion.div>;
+            return <motion.div key={id} onClick={() => nav(destination)} title={label} whileTap={{ scale: 0.94 }} style={{ height: 46, display: 'grid', placeItems: 'center', borderRadius: 11, cursor: 'pointer', background: on ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${on ? 'rgba(6,182,212,.24)' : 'var(--nx-side-edge)'}` }}><NavIcon name={id} active={on} /></motion.div>;
           })}
         </div>
         <div style={{ padding: '12px 14px', display: 'grid', justifyItems: 'center', gap: 11, borderTop: '1px solid var(--nx-side-edge)' }}>
@@ -151,7 +149,7 @@ export default function Sidebar({ activeId, mobile }) {
         {!mobile && <div style={{ marginLeft: 'auto' }}><CollapseControl collapsed={false} onClick={(event) => { event.stopPropagation(); toggleSidebar(); }} /></div>}
       </motion.div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 8px 18px' }}>
+      <div className="nx-side-scroll" style={{ flex: 1, overflowY: 'auto', padding: '14px 8px 18px' }}>
         <div style={{ padding: '0 10px 9px', fontSize: 12, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nx-side-label)' }}>Main menu</div>
         {MENU.map((item) => {
           const [id, label, destination, children] = item;
@@ -165,7 +163,7 @@ export default function Sidebar({ activeId, mobile }) {
                 transition={{ duration: 0.1 }}
                 onClick={() => hasChildren ? toggleGroup(label, open) : nav(destination)}
                 className="nxc-nav-row"
-                style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 9, cursor: 'pointer', background: on ? 'var(--nx-side-active)' : undefined, border: `1px solid ${on ? 'rgba(0,215,195,.24)' : 'transparent'}` }}
+                style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 9, cursor: 'pointer', background: on ? 'var(--nx-side-active)' : undefined, border: `1px solid ${on ? 'rgba(6,182,212,.24)' : 'transparent'}` }}
               >
                 {on && <div style={{ position: 'absolute', left: -1, top: 8, bottom: 8, width: 3, borderRadius: 3, background: T.ACCENT }} />}
                 <NavIcon name={id} active={on} />
@@ -191,7 +189,7 @@ export default function Sidebar({ activeId, mobile }) {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
                         {['light', 'dark'].map((mode) => {
                           const selected = theme === mode;
-                          return <motion.div key={mode} whileTap={{ scale: 0.96 }} onClick={() => { if (!selected) toggleTheme(); }} style={{ height: 31, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 7, cursor: 'pointer', fontSize: 12.5, fontWeight: selected ? 700 : 550, color: selected ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: selected ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${selected ? 'rgba(0,215,195,.28)' : 'var(--nx-side-edge)'}` }}>{mode === 'light' ? '☀' : '◐'} {mode === 'light' ? 'Light mode' : 'Dark mode'}</motion.div>;
+                          return <motion.div key={mode} whileTap={{ scale: 0.96 }} onClick={() => { if (!selected) toggleTheme(); }} style={{ height: 31, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 7, cursor: 'pointer', fontSize: 12.5, fontWeight: selected ? 700 : 550, color: selected ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: selected ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${selected ? 'rgba(6,182,212,.28)' : 'var(--nx-side-edge)'}` }}>{mode === 'light' ? '☀' : '◐'} {mode === 'light' ? 'Light mode' : 'Dark mode'}</motion.div>;
                         })}
                       </div>
                     </div>
