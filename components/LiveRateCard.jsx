@@ -69,7 +69,7 @@ export default function LiveRateCard({ mobile, embedded = false }) {
     <div style={{ padding: embedded ? 0 : mobile ? '14px 12px 42px' : '18px 22px 48px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
         <div>
-          <b style={{ color: T.TEXT, fontSize: 16 }}>{data?.card ? data.card.name : 'Rate card'}</b>
+          <b style={{ color: T.TEXT, fontSize: 16 }}>Rate Card</b>
           <span style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 12.5 }}>{data?.card ? `Effective from ${dayText(data.card.effectiveFrom)} · all prices are before 18% GST` : 'Your negotiated rates by courier and zone'}</span>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
