@@ -16,10 +16,10 @@ const FIELD = { height: 38, border: `1px solid ${T.INPUT_BORDER}`, borderRadius:
 const AUTH_TEXT = '#0F1F3D';
 const AUTH_SUB = '#334155';
 const AUTH_MUTED = '#64748B';
-const AUTH_LINK = '#0e7490';
+const AUTH_LINK = '#1a6aa3';
 const FIELD_LABEL = { fontSize: 12.5, fontWeight: 700, color: AUTH_SUB, marginBottom: 6, display: 'flex', gap: 3 };
 const REQUIRED = <span style={{ color: '#DC2626' }}>*</span>;
-const PRIMARY_BTN = { height: 40, borderRadius: 8, background: '#0e7490', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 4 };
+const PRIMARY_BTN = { height: 40, borderRadius: 8, background: '#1a6aa3', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 4 };
 
 function Field({ label, required, value, onChange, type = 'text', placeholder }) {
   return (
@@ -72,7 +72,7 @@ export default function AuthScreen({ mode }) {
         style={{
           position: 'absolute', inset: 0, zIndex: 0,
           backgroundImage: [
-            'radial-gradient(circle at 72% 36%, rgba(6,182,212,.24), transparent 28%)',
+            'radial-gradient(circle at 72% 36%, rgba(27,159,214,.24), transparent 28%)',
             'linear-gradient(90deg, rgba(3,10,20,.78), rgba(3,10,20,.32) 46%, rgba(116,57,7,.35))',
             'url(/login-port.jpg)',
           ].join(', '),
@@ -85,7 +85,7 @@ export default function AuthScreen({ mode }) {
       {!mobile && (
         <div style={{ position: 'relative', zIndex: 1, background: 'rgba(12,26,51,.62)', backdropFilter: 'blur(6px)', padding: '48px 52px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', color: '#fff' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 26, height: 26, background: '#06b6d4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#06212C', clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
+            <div style={{ width: 26, height: 26, background: 'var(--nx-brand-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#fff', clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
             <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '.13em' }}>NEXGO</div>
           </div>
           <div style={{ maxWidth: 420 }}>
@@ -95,7 +95,7 @@ export default function AuthScreen({ mode }) {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 26 }}>
               {['Delhivery', 'Blue Dart', 'Ekart', 'XpressBees', 'Ecom Express', 'Shadowfax'].map((c) => (
                 <div key={c} style={{ fontSize: 11.5, fontWeight: 600, color: '#C7D2E2', border: '1px solid rgba(255,255,255,.16)', borderRadius: 20, padding: '5px 11px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 5, height: 5, borderRadius: 3, background: '#06b6d4' }} />{c}
+                  <span style={{ width: 5, height: 5, borderRadius: 3, background: '#1b9fd6' }} />{c}
                 </div>
               ))}
             </div>
@@ -125,8 +125,8 @@ export default function AuthScreen({ mode }) {
               <div style={{ 
                 marginTop: 16, 
                 padding: '11px 13px', 
-                background: 'linear-gradient(135deg, rgba(6,182,212,.08) 0%, rgba(15,118,110,.08) 100%)', 
-                border: '1px solid rgba(6,182,212,.25)',
+                background: 'linear-gradient(135deg, rgba(27,159,214,.08) 0%, rgba(15,118,110,.08) 100%)', 
+                border: '1px solid rgba(27,159,214,.25)',
                 borderRadius: 9,
                 display: 'flex',
                 alignItems: 'flex-start',
@@ -147,9 +147,9 @@ export default function AuthScreen({ mode }) {
                     style={{ 
                       height: 26, 
                       padding: '0 10px', 
-                      border: '1px solid rgba(6,182,212,.4)', 
+                      border: '1px solid rgba(27,159,214,.4)', 
                       borderRadius: 6, 
-                      background: 'rgba(6,182,212,.12)', 
+                      background: 'rgba(27,159,214,.12)', 
                       color: AUTH_LINK, 
                       fontSize: 11, 
                       fontWeight: 700, 

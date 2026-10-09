@@ -29,7 +29,7 @@ function AdminNav({ mobile }) {
       initial={false}
       animate={mobile ? { x: visible ? 0 : -272 } : { x: 0 }}
       transition={{ type: 'spring', bounce: 0, duration: 0.32 }}
-      style={{ width: 272, flex: '0 0 272px', position: mobile ? 'fixed' : 'sticky', left: 0, top: 0, height: '100vh', zIndex: 70, overflowY: 'auto', background: 'var(--nx-side-bg)', color: 'var(--nx-side-text)', borderRight: mobile ? 'none' : '1px solid var(--nx-side-edge)', boxShadow: mobile && visible ? '0 20px 54px rgba(8,20,40,.35)' : 'none' }}
+      style={{ width: 272, flex: '0 0 272px', position: mobile ? 'fixed' : 'sticky', left: 0, top: 0, height: '100vh', zIndex: 70, overflowY: 'auto', background: 'var(--nx-side-grad)', color: 'var(--nx-side-text)', borderRight: mobile ? 'none' : '1px solid var(--nx-side-edge)', boxShadow: mobile && visible ? '0 20px 54px rgba(8,20,40,.35)' : 'none' }}
     >
       <Link href={pathFor('a-overview')} onClick={() => mobile && setNavOpen(false)} style={{ height: 68, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--nx-side-edge)', textDecoration: 'none', color: 'var(--nx-side-text)' }}>
         <div style={{ width: 31, height: 31, borderRadius: 9, display: 'grid', placeItems: 'center', background: T.ACCENT, color: '#06212C', fontWeight: 850, fontSize: 13, clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
@@ -40,7 +40,7 @@ function AdminNav({ mobile }) {
           <div style={{ padding: '0 10px 7px', fontSize: 10.5, fontWeight: 800, letterSpacing: '.11em', textTransform: 'uppercase', color: 'var(--nx-side-label)' }}>{group}</div>
           {items.map(([label, id, icon]) => {
             const active = pathname === pathFor(id);
-            return <Link className="admin-nav-link" key={label} href={pathFor(id)} onClick={() => mobile && setNavOpen(false)} style={{ position: 'relative', height: 38, padding: '0 10px', margin: '2px 0', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: active ? 'var(--nx-side-active-text)' : 'var(--nx-side-text)', background: active ? 'var(--nx-side-active)' : 'transparent', border: active ? '1px solid rgba(6,182,212,.22)' : '1px solid transparent', fontSize: 13.5, fontWeight: active ? 700 : 600 }}>
+            return <Link className="admin-nav-link" key={label} href={pathFor(id)} onClick={() => mobile && setNavOpen(false)} style={{ position: 'relative', height: 38, padding: '0 10px', margin: '2px 0', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: active ? 'var(--nx-side-active-text)' : 'var(--nx-side-text)', background: active ? 'var(--nx-side-active)' : 'transparent', border: active ? '1px solid rgba(27,159,214,.22)' : '1px solid transparent', fontSize: 13.5, fontWeight: active ? 700 : 600 }}>
               {active && <motion.span layoutId="admin-active-rail" transition={{ type: 'spring', bounce: .12, duration: .34 }} style={{ position: 'absolute', left: -3, width: 3, height: 18, borderRadius: 99, background: T.ACCENT }} />}
               <span style={{ width: 15, textAlign: 'center', color: active ? T.ACCENT : 'var(--nx-side-sub)', fontSize: 13 }}>{icon}</span>{label}
             </Link>;
@@ -48,7 +48,7 @@ function AdminNav({ mobile }) {
         </div>)}
       </nav>
       <Link href={pathFor('a-system')} className="admin-system-health" style={{ margin: '0 8px 12px', padding: '11px 10px', display: 'flex', alignItems: 'center', gap: 9, border: '1px solid var(--nx-side-edge)', borderRadius: 10, textDecoration: 'none', background: 'var(--nx-side-soft)' }}>
-        <span style={{ position: 'relative', width: 8, height: 8, borderRadius: '50%', background: T.ACCENT, boxShadow: '0 0 0 4px rgba(6,182,212,.12)' }} />
+        <span style={{ position: 'relative', width: 8, height: 8, borderRadius: '50%', background: T.ACCENT, boxShadow: '0 0 0 4px rgba(27,159,214,.12)' }} />
         <span><b style={{ display: 'block', color: 'var(--nx-side-text)', fontSize: 11.5, lineHeight: 1.2 }}>Platform healthy</b><span style={{ display: 'block', marginTop: 3, color: 'var(--nx-side-sub)', fontSize: 10.5 }}>99.4% API availability</span></span>
       </Link>
       <div style={{ margin: '0 8px 16px', paddingTop: 12, borderTop: '1px solid var(--nx-side-edge)' }}>
@@ -60,7 +60,7 @@ function AdminNav({ mobile }) {
         .admin-nav-link { transition: background .16s ease, border-color .16s ease, transform .16s ease; }
         .admin-nav-link:hover { background: var(--nx-side-soft) !important; border-color: var(--nx-side-edge) !important; transform: translateX(1px); }
         .admin-system-health { transition: transform .16s ease, border-color .16s ease; }
-        .admin-system-health:hover { transform: translateY(-1px); border-color: rgba(6,182,212,.32) !important; }
+        .admin-system-health:hover { transform: translateY(-1px); border-color: rgba(27,159,214,.32) !important; }
       `}</style>
     </motion.aside>
   );

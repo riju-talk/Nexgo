@@ -21,7 +21,7 @@ export default function AppShell({ children }) {
   if (pathname.startsWith('/admin') && pathname !== '/admin/login') return <AdminShell>{children}</AdminShell>;
 
   return (
-    <div style={{ '--ac': '#06b6d4', height: '100vh', minHeight: 0, minWidth: 0, overflow: 'hidden', background: PAPER, color: TEXT }}>
+    <div style={{ '--ac': '#1b9fd6', height: '100vh', minHeight: 0, minWidth: 0, overflow: 'hidden', background: PAPER, color: TEXT }}>
       <div style={{ height: '100%', display: 'flex', minHeight: 0 }}>
         <MobileOverlay mobile={mobile} />
         <Sidebar activeId={activeId} mobile={mobile} />

@@ -45,7 +45,7 @@ const isMenuActive = ([, , destination, children, owns = []], activeId) => desti
 
 function NavIcon({ name, active }) {
   return (
-    <div style={{ width: 29, height: 29, flex: '0 0 29px', borderRadius: 8, display: 'grid', placeItems: 'center', color: active ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: active ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${active ? 'rgba(6,182,212,.26)' : 'var(--nx-side-edge)'}` }}>
+    <div style={{ width: 29, height: 29, flex: '0 0 29px', borderRadius: 8, display: 'grid', placeItems: 'center', color: active ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: active ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${active ? 'rgba(27,159,214,.26)' : 'var(--nx-side-edge)'}` }}>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICONS[name] || ICONS.dashboard} /></svg>
     </div>
   );
@@ -99,13 +99,13 @@ export default function Sidebar({ activeId, mobile }) {
 
   const sbStyle = mobile
     ? {
-        width: 272, flex: '0 0 0px', background: 'var(--nx-side-bg)', position: 'fixed', left: 0, top: 0,
+        width: 272, flex: '0 0 0px', background: 'var(--nx-side-grad)', position: 'fixed', left: 0, top: 0,
         height: '100vh', zIndex: 90, boxShadow: navOpen ? '0 0 60px rgba(8,20,40,.45)' : 'none',
         display: 'flex', flexDirection: 'column', touchAction: 'pan-y',
         pointerEvents: navOpen ? 'auto' : 'none',
       }
     : {
-        width: 272, flex: '0 0 272px', background: 'var(--nx-side-bg)', position: 'sticky', left: 'auto', top: 0,
+        width: 272, flex: '0 0 272px', background: 'var(--nx-side-grad)', position: 'sticky', left: 'auto', top: 0,
         height: '100vh', minHeight: 0, zIndex: 30,
         display: 'flex', flexDirection: 'column',
       };
@@ -121,12 +121,12 @@ export default function Sidebar({ activeId, mobile }) {
           <CollapseControl collapsed onClick={toggleSidebar} />
         </div>
         <div style={{ flex: 1, padding: '14px 14px', display: 'grid', alignContent: 'start', gap: 8 }}>
-          <motion.div onClick={() => nav('dashboard')} title="Dashboard" whileTap={{ scale: 0.94 }} style={{ height: 46, display: 'grid', placeItems: 'center', borderRadius: 11, cursor: 'pointer', background: onDashboard ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${onDashboard ? 'rgba(6,182,212,.24)' : 'var(--nx-side-edge)'}` }}><NavIcon name="dashboard" active={onDashboard} /></motion.div>
+          <motion.div onClick={() => nav('dashboard')} title="Dashboard" whileTap={{ scale: 0.94 }} style={{ height: 46, display: 'grid', placeItems: 'center', borderRadius: 11, cursor: 'pointer', background: onDashboard ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${onDashboard ? 'rgba(27,159,214,.24)' : 'var(--nx-side-edge)'}` }}><NavIcon name="dashboard" active={onDashboard} /></motion.div>
           <div style={{ height: 1, margin: '4px 3px', background: 'var(--nx-side-edge)' }} />
           {MENU.filter(([id]) => id !== 'dashboard').map((item) => {
             const [id, label, destination] = item;
             const on = isMenuActive(item, activeId);
-            return <motion.div key={id} onClick={() => nav(destination)} title={label} whileTap={{ scale: 0.94 }} style={{ height: 46, display: 'grid', placeItems: 'center', borderRadius: 11, cursor: 'pointer', background: on ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${on ? 'rgba(6,182,212,.24)' : 'var(--nx-side-edge)'}` }}><NavIcon name={id} active={on} /></motion.div>;
+            return <motion.div key={id} onClick={() => nav(destination)} title={label} whileTap={{ scale: 0.94 }} style={{ height: 46, display: 'grid', placeItems: 'center', borderRadius: 11, cursor: 'pointer', background: on ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${on ? 'rgba(27,159,214,.24)' : 'var(--nx-side-edge)'}` }}><NavIcon name={id} active={on} /></motion.div>;
           })}
         </div>
         <div style={{ padding: '12px 14px', display: 'grid', justifyItems: 'center', gap: 11, borderTop: '1px solid var(--nx-side-edge)' }}>
@@ -163,7 +163,7 @@ export default function Sidebar({ activeId, mobile }) {
                 transition={{ duration: 0.1 }}
                 onClick={() => hasChildren ? toggleGroup(label, open) : nav(destination)}
                 className="nxc-nav-row"
-                style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 9, cursor: 'pointer', background: on ? 'var(--nx-side-active)' : undefined, border: `1px solid ${on ? 'rgba(6,182,212,.24)' : 'transparent'}` }}
+                style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 9, cursor: 'pointer', background: on ? 'var(--nx-side-active)' : undefined, border: `1px solid ${on ? 'rgba(27,159,214,.24)' : 'transparent'}` }}
               >
                 {on && <div style={{ position: 'absolute', left: -1, top: 8, bottom: 8, width: 3, borderRadius: 3, background: T.ACCENT }} />}
                 <NavIcon name={id} active={on} />
@@ -189,7 +189,7 @@ export default function Sidebar({ activeId, mobile }) {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
                         {['light', 'dark'].map((mode) => {
                           const selected = theme === mode;
-                          return <motion.div key={mode} whileTap={{ scale: 0.96 }} onClick={() => { if (!selected) toggleTheme(); }} style={{ height: 31, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 7, cursor: 'pointer', fontSize: 12.5, fontWeight: selected ? 700 : 550, color: selected ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: selected ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${selected ? 'rgba(6,182,212,.28)' : 'var(--nx-side-edge)'}` }}>{mode === 'light' ? '☀' : '◐'} {mode === 'light' ? 'Light mode' : 'Dark mode'}</motion.div>;
+                          return <motion.div key={mode} whileTap={{ scale: 0.96 }} onClick={() => { if (!selected) toggleTheme(); }} style={{ height: 31, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 7, cursor: 'pointer', fontSize: 12.5, fontWeight: selected ? 700 : 550, color: selected ? 'var(--nx-side-active-text)' : 'var(--nx-side-sub)', background: selected ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${selected ? 'rgba(27,159,214,.28)' : 'var(--nx-side-edge)'}` }}>{mode === 'light' ? '☀' : '◐'} {mode === 'light' ? 'Light mode' : 'Dark mode'}</motion.div>;
                         })}
                       </div>
                     </div>

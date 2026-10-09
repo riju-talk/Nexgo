@@ -42,7 +42,7 @@ export default function AccountConfiguration({ phone, mobile }) {
                 style={{ minHeight: 178, cursor: 'pointer', position: 'relative', overflow: 'hidden', padding: '17px 17px 54px', borderRadius: 12, background: 'var(--nx-surface)', border: '1px solid var(--nx-glass-border)', boxShadow: '0 2px 8px rgba(15,31,61,.05)' }}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(6,182,212,.10)', border: '1px solid rgba(6,182,212,.16)', color: T.ACCENT, fontSize: 17, fontWeight: 700 }}>{icon}</div>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(27,159,214,.10)', border: '1px solid rgba(27,159,214,.16)', color: T.ACCENT, fontSize: 17, fontWeight: 700 }}>{icon}</div>
                 </div>
                 <div style={{ marginTop: 16, fontSize: 15, fontWeight: 700, color: T.TEXT }}>{title}</div>
                 <div style={{ marginTop: 5, maxWidth: 260, fontSize: 12.5, lineHeight: 1.5, color: T.TEXT_SECONDARY }}>{description}</div>

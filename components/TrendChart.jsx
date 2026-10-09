@@ -44,7 +44,7 @@ export default function TrendChart({ seriesA, seriesB, labelA = 'ORDERS', labelB
         <line x1="0" y1="67" x2={W} y2="67" stroke={T.DIVIDER} strokeWidth="1" />
         <line x1="0" y1="132" x2={W} y2="132" stroke={T.DIVIDER} strokeWidth="1" />
         <line x1="0" y1={H - 2} x2={W} y2={H - 2} stroke={T.INPUT_BORDER} strokeWidth="1" />
-        <path d={line(seriesB, true)} fill="rgba(6,182,212,.10)" />
+        <path d={line(seriesB, true)} fill="rgba(27,159,214,.10)" />
         <motion.path
           d={line(seriesA, false)} fill="none" stroke={T.NAVY} strokeWidth="1.75"
           initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.9, ease: 'easeOut' }}

@@ -40,15 +40,15 @@ export default function TopBar({ activeId, mobile }) {
             <div style={{ fontFamily: T.MONO, fontSize: 11, fontWeight: 600, color: light ? '#52657A' : '#B9C8DE', border: '1px solid var(--nx-chrome-border)', padding: '1px 4px' }}>⌘K</div>
             Search or run a command
           </motion.div>
-          <motion.div onClick={() => nav('wallet')} whileTap={TAP} transition={TAP_TRANSITION} title={`Wallet ${balance}`} style={{ width: 36, height: 36, flex: '0 0 36px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: 'var(--nx-side-wallet-text)', background: 'var(--nx-side-wallet)', border: '1px solid rgba(6,182,212,.26)', borderRadius: 9, fontSize: 15, fontWeight: 750 }}>₹</motion.div>
+          <motion.div onClick={() => nav('wallet')} whileTap={TAP} transition={TAP_TRANSITION} title={`Wallet ${balance}`} style={{ width: 36, height: 36, flex: '0 0 36px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: 'var(--nx-side-wallet-text)', background: 'var(--nx-side-wallet)', border: '1px solid rgba(27,159,214,.26)', borderRadius: 9, fontSize: 15, fontWeight: 750 }}>₹</motion.div>
         </>
       ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, flex: '0 0 250px', minWidth: 0 }}>
-            <div style={{ width: 34, height: 34, display: 'grid', placeItems: 'center', borderRadius: 9, background: light ? '#E9F7F5' : 'rgba(6,182,212,.16)', border: '1px solid rgba(6,182,212,.26)', color: T.ACCENT, fontSize: 15, fontWeight: 800 }}>⌁</div>
+            <div style={{ width: 34, height: 34, display: 'grid', placeItems: 'center', borderRadius: 9, background: light ? '#E9F7F5' : 'rgba(27,159,214,.16)', border: '1px solid rgba(27,159,214,.26)', color: T.ACCENT, fontSize: 15, fontWeight: 800 }}>⌁</div>
             <div style={{ minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, lineHeight: 1.15 }}>
-                <span style={{ width: 6, height: 6, borderRadius: 99, background: T.ACCENT, boxShadow: `0 0 0 3px ${light ? 'rgba(6,182,212,.14)' : 'rgba(6,182,212,.20)'}` }} />
+                <span style={{ width: 6, height: 6, borderRadius: 99, background: T.ACCENT, boxShadow: `0 0 0 3px ${light ? 'rgba(27,159,214,.14)' : 'rgba(27,159,214,.20)'}` }} />
                 <div style={{ fontSize: 10.5, fontWeight: 750, letterSpacing: '.11em', textTransform: 'uppercase', color: 'var(--nx-chrome-muted)' }}>{crumb}</div>
               </div>
               <div style={{ marginTop: 4, fontSize: 15, fontWeight: 700, color: 'var(--nx-chrome-text)', letterSpacing: '-.015em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pageTitle}</div>
@@ -68,7 +68,7 @@ export default function TopBar({ activeId, mobile }) {
           </motion.div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto' }}>
             <motion.div onClick={() => nav('wallet')} whileTap={TAP} transition={TAP_TRANSITION} title="Open wallet" style={{ height: 38, display: 'flex', alignItems: 'center', gap: 9, padding: '0 12px 0 6px', cursor: 'pointer', borderRadius: 10, background: 'var(--nx-chrome-search)', border: '1px solid var(--nx-chrome-border)' }}>
-              <div style={{ width: 27, height: 27, display: 'grid', placeItems: 'center', borderRadius: 8, color: T.ACCENT, background: 'rgba(6,182,212,.12)', fontSize: 14, fontWeight: 750 }}>₹</div>
+              <div style={{ width: 27, height: 27, display: 'grid', placeItems: 'center', borderRadius: 8, color: T.ACCENT, background: 'rgba(27,159,214,.12)', fontSize: 14, fontWeight: 750 }}>₹</div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, whiteSpace: 'nowrap' }}>
                 <span style={{ fontSize: 11.5, fontWeight: 650, color: 'var(--nx-chrome-muted)' }}>Balance</span>
                 <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 750, letterSpacing: '-.01em', color: 'var(--nx-chrome-text)' }}>{balance}</span>
@@ -80,7 +80,7 @@ export default function TopBar({ activeId, mobile }) {
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--nx-chrome-text)', lineHeight: 1.2 }}>{me?.full_name || 'Not signed in'}</div>
                 <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--nx-chrome-muted)' }}>{me ? `${me.legal_name} · ${me.role.replaceAll('_', ' ')}` : 'Sign in to continue'}</div>
               </div>
-              <div style={{ width: 34, height: 34, borderRadius: 10, background: T.ACCENT, color: '#06212C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, boxShadow: '0 0 0 3px rgba(6,182,212,.14)' }}>{initialsOf(me?.full_name)}</div>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: T.ACCENT, color: '#06212C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, boxShadow: '0 0 0 3px rgba(27,159,214,.14)' }}>{initialsOf(me?.full_name)}</div>
             </div>
           </div>
         </>

@@ -19,7 +19,7 @@ export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
 
   return (
     <div style={{ background: 'var(--nx-chrome-bg)', borderBottom: `1px solid ${T.BORDER}`, boxShadow: '0 4px 18px rgba(15,31,61,.045)', padding: phone ? '15px 12px 12px' : mobile ? '20px 16px 14px' : '22px 28px 16px', position: 'sticky', top: 68, zIndex: 30 }}>
-      <div style={{ height: 2, position: 'absolute', top: 0, left: 0, right: 0, background: 'linear-gradient(90deg, var(--nx-side-bg) 0%, var(--nx-side-bg) 34%, var(--nx-accent, #06b6d4) 100%)' }} />
+      <div style={{ height: 2, position: 'absolute', top: 0, left: 0, right: 0, background: 'linear-gradient(90deg, var(--nx-side-bg) 0%, var(--nx-side-bg) 30%, #2a8fd3 68%, #00d7c3 100%)' }} />
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 28, flexWrap: 'wrap', width: '100%', maxWidth: 1320, margin: '0 auto' }}>
         {isDashboard ? <div aria-hidden="true" /> : (
           <div style={{ maxWidth: 660 }}>

@@ -97,8 +97,8 @@ export default function AdminLogin() {
             <div style={{ 
               marginTop: 16, 
               padding: '11px 13px', 
-              background: 'linear-gradient(135deg, rgba(6,182,212,.08) 0%, rgba(15,118,110,.08) 100%)', 
-              border: '1px solid rgba(6,182,212,.25)',
+              background: 'linear-gradient(135deg, rgba(27,159,214,.08) 0%, rgba(15,118,110,.08) 100%)', 
+              border: '1px solid rgba(27,159,214,.25)',
               borderRadius: 9,
               display: 'flex',
               alignItems: 'flex-start',
@@ -106,7 +106,7 @@ export default function AdminLogin() {
             }}>
               <div style={{ fontSize: 16 }}>🔐</div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#0e7490', marginBottom: 3 }}>Platform Admin Demo</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#1a6aa3', marginBottom: 3 }}>Platform Admin Demo</div>
                 <div style={{ fontSize: 11.5, color: T.TEXT_SECONDARY, lineHeight: 1.5, marginBottom: 8 }}>
                   <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: T.TEXT, marginTop: 3 }}>
                     <div>Email: <strong>admin@nexgo.in</strong></div>
@@ -119,10 +119,10 @@ export default function AdminLogin() {
                   style={{ 
                     height: 26, 
                     padding: '0 10px', 
-                    border: '1px solid rgba(6,182,212,.4)', 
+                    border: '1px solid rgba(27,159,214,.4)', 
                     borderRadius: 6, 
-                    background: 'rgba(6,182,212,.12)', 
-                    color: '#0e7490', 
+                    background: 'rgba(27,159,214,.12)', 
+                    color: '#1a6aa3', 
                     fontSize: 11, 
                     fontWeight: 700, 
                     cursor: 'pointer' 
@@ -137,19 +137,19 @@ export default function AdminLogin() {
           {mfaToken ? (
             <form onSubmit={submitMfa} style={{ display: 'grid', gap: 15, marginTop: 20 }}>
               <label style={{ display: 'grid', gap: 6 }}><span style={{ color: T.TEXT_LABEL, fontSize: 12.5, fontWeight: 650 }}>6-digit code <span style={{ color: T.RED }}>*</span></span><input aria-label="Verification code" value={mfaCode} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="000000" autoFocus autoComplete="one-time-code" style={{ ...field, fontVariantNumeric: 'tabular-nums', letterSpacing: '.3em', textAlign: 'center' }} /></label>
-              <motion.button whileTap={{ scale: .98 }} type="submit" disabled={busy || mfaCode.length !== 6} style={{ height: 41, marginTop: 2, border: 0, borderRadius: 8, background: '#0e7490', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy || mfaCode.length !== 6 ? .6 : 1, fontSize: 14, fontWeight: 700, boxShadow: '0 9px 18px rgba(15,31,61,.2)' }}>{busy ? 'Verifying…' : 'Verify and sign in'}</motion.button>
+              <motion.button whileTap={{ scale: .98 }} type="submit" disabled={busy || mfaCode.length !== 6} style={{ height: 41, marginTop: 2, border: 0, borderRadius: 8, background: '#1a6aa3', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy || mfaCode.length !== 6 ? .6 : 1, fontSize: 14, fontWeight: 700, boxShadow: '0 9px 18px rgba(15,31,61,.2)' }}>{busy ? 'Verifying…' : 'Verify and sign in'}</motion.button>
               <div onClick={() => { setMfaToken(null); setMfaCode(''); setError(''); }} style={{ textAlign: 'center', color: T.TEXT_SECONDARY, fontSize: 12, cursor: 'pointer' }}>← Back to password</div>
             </form>
           ) : (
             <form onSubmit={submitPassword} style={{ display: 'grid', gap: 15, marginTop: 20 }}>
               <label style={{ display: 'grid', gap: 6 }}><span style={{ color: T.TEXT_LABEL, fontSize: 12.5, fontWeight: 650 }}>Work email <span style={{ color: T.RED }}>*</span></span><input aria-label="Work email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@nexgo.in" autoComplete="email" required style={field} /></label>
-              <label style={{ display: 'grid', gap: 6 }}><span style={{ color: T.TEXT_LABEL, fontSize: 12.5, fontWeight: 650 }}>Password <span style={{ color: T.RED }}>*</span></span><span style={{ position: 'relative' }}><input aria-label="Password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" required style={{ ...field, paddingRight: 68 }} /><button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', top: 7, right: 8, height: 28, border: 0, borderRadius: 6, background: 'transparent', color: '#0e7490', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>{showPassword ? 'Hide' : 'Show'}</button></span></label>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, color: T.TEXT_SECONDARY, fontSize: 12 }}><span>Restricted to platform staff</span><span style={{ color: '#0e7490', fontWeight: 700, cursor: 'pointer' }}>Forgot password?</span></div>
-              <motion.button whileTap={{ scale: .98 }} type="submit" disabled={busy} style={{ height: 41, marginTop: 2, border: 0, borderRadius: 8, background: '#0e7490', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy ? .7 : 1, fontSize: 14, fontWeight: 700, boxShadow: '0 9px 18px rgba(15,31,61,.2)' }}>{busy ? 'Signing in…' : 'Sign in to operations'}</motion.button>
+              <label style={{ display: 'grid', gap: 6 }}><span style={{ color: T.TEXT_LABEL, fontSize: 12.5, fontWeight: 650 }}>Password <span style={{ color: T.RED }}>*</span></span><span style={{ position: 'relative' }}><input aria-label="Password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" required style={{ ...field, paddingRight: 68 }} /><button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', top: 7, right: 8, height: 28, border: 0, borderRadius: 6, background: 'transparent', color: '#1a6aa3', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>{showPassword ? 'Hide' : 'Show'}</button></span></label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, color: T.TEXT_SECONDARY, fontSize: 12 }}><span>Restricted to platform staff</span><span style={{ color: '#1a6aa3', fontWeight: 700, cursor: 'pointer' }}>Forgot password?</span></div>
+              <motion.button whileTap={{ scale: .98 }} type="submit" disabled={busy} style={{ height: 41, marginTop: 2, border: 0, borderRadius: 8, background: '#1a6aa3', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy ? .7 : 1, fontSize: 14, fontWeight: 700, boxShadow: '0 9px 18px rgba(15,31,61,.2)' }}>{busy ? 'Signing in…' : 'Sign in to operations'}</motion.button>
             </form>
           )}
           <div style={{ marginTop: 21, paddingTop: 16, borderTop: '1px solid var(--nx-divider)', color: T.TEXT_MUTED, fontSize: 11.5, lineHeight: 1.55 }}>Protected workspace · Access is logged and governed by platform role permissions.</div>
-          <div style={{ marginTop: 13, textAlign: 'center', color: T.TEXT_SECONDARY, fontSize: 11.5 }}>Need the seller workspace? <a href="/login" style={{ color: '#0e7490', fontWeight: 700 }}>Sign in as a seller</a></div>
+          <div style={{ marginTop: 13, textAlign: 'center', color: T.TEXT_SECONDARY, fontSize: 11.5 }}>Need the seller workspace? <a href="/login" style={{ color: '#1a6aa3', fontWeight: 700 }}>Sign in as a seller</a></div>
         </div>
       </section>
     </main>

@@ -19,7 +19,7 @@
   --nx-table-head-bg: #f7f9fb;
   --nx-section-head: #425466;
 
-  --nx-bg-tint-1: rgba(6,148,184,.075);
+  --nx-bg-tint-1: rgba(27,130,190,.075);
   --nx-bg-tint-2: rgba(33,65,107,.07);
   --nx-workspace-bg: #f2f6fc;
   --nx-workspace-glow-1: transparent;
@@ -29,16 +29,18 @@
   --nx-chrome-text: #1a3048;
   --nx-chrome-muted: #708297;
   --nx-chrome-search: #fafbfd;
-  --nx-side-bg: #0b3350;
-  --nx-side-edge: #1b4f6e;
+  --nx-side-bg: #0c3459;
+  --nx-side-grad: linear-gradient(175deg, #0c3459 0%, #0d4a73 52%, #0f5f7e 100%);
+  --nx-brand-grad: linear-gradient(135deg, #00d7c3 0%, #2a8fd3 50%, #3877fc 78%, #1c3b7e 100%);
+  --nx-side-edge: #1d5a86;
   --nx-side-text: #e6eef5;
   --nx-side-sub: #9bb0c4;
   --nx-side-label: #8199b0;
   --nx-side-soft: rgba(255,255,255,.06);
-  --nx-side-active: rgba(6,182,212,.18);
+  --nx-side-active: rgba(27,159,214,.18);
   --nx-side-active-text: #ffffff;
-  --nx-side-wallet: rgba(6,182,212,.15);
-  --nx-side-wallet-text: #cffafe;
+  --nx-side-wallet: rgba(27,159,214,.15);
+  --nx-side-wallet-text: #d4f1fb;
   --nx-card-sheen-top: #FFFFFF;
   --nx-card-sheen-1: #FFFFFF;
   --nx-card-sheen-2: #FFFFFF;
@@ -46,7 +48,7 @@
   --nx-loader-bg: #E8EEF2;
   --nx-loader-label: #58718B;
   --nx-loader-track: rgba(31,73,108,.16);
-  --nx-loader-accent: #0b7a99;
+  --nx-loader-accent: #1a79b0;
   --nx-glass-1: rgba(255,255,255,.58);
   --nx-glass-2: rgba(255,255,255,.34);
   --nx-glass-border: rgba(255,255,255,.36);
@@ -90,12 +92,12 @@
   --nx-section-head: #CDD1D8;
 
   /* Background tints - Vibrant accent overlays */
-  --nx-bg-tint-1: rgba(6,182,212,.08);
+  --nx-bg-tint-1: rgba(27,159,214,.08);
   --nx-bg-tint-2: rgba(100,150,255,.06);
   
   /* Workspace - Rich dark foundation with subtle glow effects */
   --nx-workspace-bg: #0A0B0F;
-  --nx-workspace-glow-1: rgba(6,182,212,.14);
+  --nx-workspace-glow-1: rgba(27,159,214,.14);
   --nx-workspace-glow-2: rgba(56,119,252,.12);
   
   /* Chrome/TopBar - Elevated surface with refined borders */
@@ -107,14 +109,16 @@
   
   /* Sidebar - Deep navy with enhanced contrast */
   --nx-side-bg: #0A1628;
+  --nx-side-grad: linear-gradient(175deg, #0A1628 0%, #0b2f55 55%, #0c4560 100%);
+  --nx-brand-grad: linear-gradient(135deg, #00d7c3 0%, #2a8fd3 50%, #3877fc 78%, #1c3b7e 100%);
   --nx-side-edge: rgba(255,255,255,.14);
   --nx-side-text: #E5EBF4;
   --nx-side-sub: #8FA5C8;
   --nx-side-label: #7B91B8;
   --nx-side-soft: rgba(255,255,255,.055);
-  --nx-side-active: rgba(6,182,212,.22);
+  --nx-side-active: rgba(27,159,214,.22);
   --nx-side-active-text: #FFFFFF;
-  --nx-side-wallet: rgba(6,182,212,.18);
+  --nx-side-wallet: rgba(27,159,214,.18);
   --nx-side-wallet-text: #FFFFFF;
   
   /* Card effects - Subtle gradients and sheens */
@@ -134,7 +138,7 @@
   --nx-loader-bg: #0B1A2E;
   --nx-loader-label: #7B91B8;
   --nx-loader-track: rgba(229,235,244,.18);
-  --nx-loader-accent: #06b6d4;
+  --nx-loader-accent: #1b9fd6;
 
   /* Admin/Operations theme colors - Dark mode */
   --ops-bg: #0D0E12;
@@ -183,8 +187,7 @@ button {
 
 ::selection {
   color: #ffffff;
-  background: #06b6d4;
-  background: rgba(6,182,212,.85);
+  background: rgba(27,159,214,.85);
 }
 
 /* Shared primitives used by both seller and operations surfaces. */
@@ -218,19 +221,19 @@ table tbody tr:hover {
 /* A consistent, high-contrast focus ring keeps dense operational screens
    fast to use by keyboard without adding visual noise at rest. */
 :focus-visible {
-  outline: 3px solid rgba(6,182,212,.48);
+  outline: 3px solid rgba(27,159,214,.48);
   outline-offset: 2px;
 }
 
 a {
-  color: #0b5566;
+  color: #14527f;
   text-decoration: none;
 }
 a:hover {
-  color: #07374a;
+  color: #0f3356;
 }
 [data-theme="dark"] a { color: #5FE6D6; }
-[data-theme="dark"] a:hover { color: #a5f3fc; }
+[data-theme="dark"] a:hover { color: #a8e6f3; }
 
 /* Teal scrollbar everywhere (seller, admin, auth, nested panels). Chrome/Edge/Safari
    use the ::-webkit rules; Firefox uses scrollbar-color. Never set scrollbar-color
@@ -240,19 +243,19 @@ a:hover {
   height: 12px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #06b6d4;
+  background: linear-gradient(180deg, #00d7c3, #2a8fd3 55%, #3877fc);
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: padding-box;
   min-height: 40px;
 }
-::-webkit-scrollbar-thumb:hover { background: #0891b2; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #1581bd; background-clip: padding-box; }
 ::-webkit-scrollbar-track {
-  background: rgba(6,182,212, .10);
+  background: rgba(27,159,214, .10);
 }
 ::-webkit-scrollbar-corner { background: transparent; }
 @supports (-moz-appearance: none) {
-  * { scrollbar-width: auto; scrollbar-color: #06b6d4 rgba(6,182,212, .10); }
+  * { scrollbar-width: auto; scrollbar-color: #1b9fd6 rgba(27,159,214, .10); }
 }
 
 @keyframes nxc-dim {
@@ -279,5 +282,5 @@ a:hover {
 }
 
 /* Sidebar menu scrollbar: clearly visible on the navy background. */
-.nx-side-scroll { scrollbar-width: auto; scrollbar-color: #06b6d4 rgba(255, 255, 255, .14); scrollbar-gutter: stable; }
+.nx-side-scroll { scrollbar-width: auto; scrollbar-color: #1b9fd6 rgba(255, 255, 255, .14); scrollbar-gutter: stable; }
 

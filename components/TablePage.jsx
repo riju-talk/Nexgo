@@ -33,7 +33,7 @@ function cell(c, align) {
     return { ...o, isChip: true, fg: p[0], bg: p[1], bd: p[2] };
   }
   if (kind === 'l') {
-    if (sub) return { ...o, isText: true, font: T.MONO, size: '12.5px', fw: 500, color: '#0b5566' };
+    if (sub) return { ...o, isText: true, font: T.MONO, size: '12.5px', fw: 500, color: '#14527f' };
     return { ...o, isLink: true };
   }
   const out = { ...o, isText: true };
@@ -72,7 +72,7 @@ function MobileRecords({ table, onOpenRow, showToast }) {
           >
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: primary[0] === 'm' ? T.MONO : T.SANS, fontSize: 13, fontWeight: 700, color: primary[0] === 'l' ? '#0b5566' : T.TEXT }}>{primary[1]}</div>
+                <div style={{ fontFamily: primary[0] === 'm' ? T.MONO : T.SANS, fontSize: 13, fontWeight: 700, color: primary[0] === 'l' ? '#14527f' : T.TEXT }}>{primary[1]}</div>
                 {(primary[2] || identity?.[1]) && <div style={{ marginTop: 3, fontSize: 13, color: T.TEXT_MUTED }}>{primary[2] || identity?.[1]}</div>}
               </div>
               {statusStyle && <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flex: '0 0 auto', fontSize: 11.5, fontWeight: 700, padding: '4px 8px', borderRadius: 20, background: statusStyle[1], color: statusStyle[0], border: `1px solid ${statusStyle[2]}` }}><span style={{ width: 5, height: 5, borderRadius: 5, background: statusStyle[0] }} />{status[1]}</div>}
@@ -80,7 +80,7 @@ function MobileRecords({ table, onOpenRow, showToast }) {
             <div style={{ marginTop: 13, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 14px' }}>
               {details.map((item, i) => <div key={i}><div style={{ fontSize: 12, letterSpacing: '.06em', textTransform: 'uppercase', color: T.TEXT_FAINT }}>{table.cols[i + 2]?.[0]}</div><div style={{ marginTop: 3, fontSize: 13.5, color: T.TEXT_LABEL, fontWeight: 550 }}>{item[1]}</div>{item[2] && <div style={{ marginTop: 2, fontSize: 13, color: T.TEXT_MUTED }}>{item[2]}</div>}</div>)}
             </div>
-            {action?.[1] && <div onClick={(event) => { event.stopPropagation(); showToast(`${action[1]} is ready for ${primary[1]}`); }} style={{ marginTop: 13, paddingTop: 11, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 12.5, color: '#0b5566', fontWeight: 700 }}>{action[1]} <span aria-hidden="true">→</span></div>}
+            {action?.[1] && <div onClick={(event) => { event.stopPropagation(); showToast(`${action[1]} is ready for ${primary[1]}`); }} style={{ marginTop: 13, paddingTop: 11, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 12.5, color: '#14527f', fontWeight: 700 }}>{action[1]} <span aria-hidden="true">→</span></div>}
           </motion.div>
         );
       })}
@@ -149,7 +149,7 @@ export default function TablePage({ activeId, mobile, phone }) {
                   style={{ position: 'relative', padding: '13px 12px 11px', color: on ? (admin ? 'var(--ops-heading)' : T.TEXT) : (admin ? 'var(--ops-muted)' : T.TEXT_SECONDARY), fontSize: 13.5, fontWeight: on ? 600 : 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}
                 >
                   {label}
-                  <div style={{ fontSize: 11.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', background: on ? 'rgba(6,182,212,.18)' : (admin ? 'var(--ops-divider)' : T.DIVIDER), color: on ? '#0b5566' : (admin ? 'var(--ops-subtle)' : '#6B6659'), padding: '1px 6px', borderRadius: 10 }}>{count}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', background: on ? 'rgba(27,159,214,.18)' : (admin ? 'var(--ops-divider)' : T.DIVIDER), color: on ? '#14527f' : (admin ? 'var(--ops-subtle)' : '#6B6659'), padding: '1px 6px', borderRadius: 10 }}>{count}</div>
                   {on && (
                     <motion.div
                       layoutId={`tab-underline-${activeId}`}
@@ -212,7 +212,7 @@ export default function TablePage({ activeId, mobile, phone }) {
                             <div style={{ width: 5, height: 5, borderRadius: '50%', background: d.fg }} />{d.v}
                           </div>
                         )}
-                        {d.isLink && <div onClick={(event) => { event.stopPropagation(); showToast(`${d.v} is ready for ${r[0][1]}`); }} style={{ fontSize: 12.5, fontWeight: 600, color: '#0b5566' }}>{d.v}</div>}
+                        {d.isLink && <div onClick={(event) => { event.stopPropagation(); showToast(`${d.v} is ready for ${r[0][1]}`); }} style={{ fontSize: 12.5, fontWeight: 600, color: '#14527f' }}>{d.v}</div>}
                         {d.isText && (
                           <>
                             <div style={{ fontFamily: d.font, fontSize: d.size, fontWeight: d.fw, color: admin ? 'var(--ops-text)' : d.color, fontVariantNumeric: 'tabular-nums' }}>{d.v}</div>
@@ -242,10 +242,10 @@ export default function TablePage({ activeId, mobile, phone }) {
       </div>
       <style jsx>{`
         .nxc-btn { transition: background 100ms ease-out, border-color 100ms ease-out; }
-        .nxc-btn:hover { background: ${admin ? 'var(--ops-surface)' : 'var(--nx-surface-soft)'}; border-color: ${admin ? 'rgba(6,182,212,.3)' : 'var(--nx-menu-border)'}; }
+        .nxc-btn:hover { background: ${admin ? 'var(--ops-surface)' : 'var(--nx-surface-soft)'}; border-color: ${admin ? 'rgba(27,159,214,.3)' : 'var(--nx-menu-border)'}; }
         .nxc-tab:hover { color: ${admin ? 'var(--ops-heading)' : 'var(--nx-text)'}; }
         .nxc-row { transition: background 100ms ease-out; }
-        .nxc-row:hover { background: rgba(6,182,212,.09); }
+        .nxc-row:hover { background: rgba(27,159,214,.09); }
       `}</style>
     </div>
   );

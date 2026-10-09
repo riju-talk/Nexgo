@@ -148,7 +148,7 @@ export default function LiveTrack({ mobile }) {
       </div>
 
       {!rows.length ? (
-        <section style={{ ...CARD, minHeight: 220, padding: 42, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}><div style={{ width: 42, height: 42, display: 'grid', placeItems: 'center', borderRadius: 12, background: 'rgba(6,182,212,.12)', color: T.ACCENT, fontSize: 20, fontWeight: 800 }}>↗</div><b style={{ marginTop: 14, color: T.TEXT, fontSize: 17 }}>No shipments yet</b><p style={{ maxWidth: 500, margin: '8px 0 18px', color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Create an order, compare rates and book a courier. Every shipment and its scans appear here.</p><Btn primary onClick={() => nav('b2c')}>Create an order</Btn></section>
+        <section style={{ ...CARD, minHeight: 220, padding: 42, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}><div style={{ width: 42, height: 42, display: 'grid', placeItems: 'center', borderRadius: 12, background: 'rgba(27,159,214,.12)', color: T.ACCENT, fontSize: 20, fontWeight: 800 }}>↗</div><b style={{ marginTop: 14, color: T.TEXT, fontSize: 17 }}>No shipments yet</b><p style={{ maxWidth: 500, margin: '8px 0 18px', color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Create an order, compare rates and book a courier. Every shipment and its scans appear here.</p><Btn primary onClick={() => nav('b2c')}>Create an order</Btn></section>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: selected && !mobile ? 'minmax(0,1fr) 380px' : '1fr', gap: 14, alignItems: 'start' }}>
           <section style={{ ...CARD, overflow: 'hidden' }}>
@@ -158,7 +158,7 @@ export default function LiveTrack({ mobile }) {
                   <thead><tr>{['AWB', 'Order', 'Deliver to', 'Courier', 'Charge', 'Status', 'Booked'].map((h) => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10.5, letterSpacing: '.07em', color: T.TEXT_MUTED, background: T.TABLE_HEAD_BG, textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
                   <tbody>
                     {visible.map((r) => (
-                      <tr key={r.id} onClick={() => setSelectedId(r.id)} style={{ cursor: 'pointer', background: r.id === selectedId ? 'rgba(6,182,212,.09)' : undefined }}>
+                      <tr key={r.id} onClick={() => setSelectedId(r.id)} style={{ cursor: 'pointer', background: r.id === selectedId ? 'rgba(27,159,214,.09)' : undefined }}>
                         {[<b key="a" style={{ fontFamily: T.MONO }}>{r.awb}</b>, r.order_number, <span key="c"><b>{r.customer_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED, marginTop: 2 }}>{r.customer_city} · {r.customer_pincode}</small></span>, <span key="o"><b>{r.courier_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED, marginTop: 2 }}>{r.service_name}</small></span>, inr(r.shipping_charge_paise), <Pill key="s" state={r.state} />, stamp(r.booked_at)].map((cell, i) => <td key={i} style={{ padding: '12px 14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{cell}</td>)}
                       </tr>
                     ))}

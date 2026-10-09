@@ -84,8 +84,8 @@ export default function KpiDropdown({ mobile }) {
             <style jsx>{`
               .nxc-kpi-row { background: var(--nx-surface); transition: background 100ms ease-out; }
               .nxc-kpi-row:hover { background: var(--nx-surface-soft); }
-              .nxc-kpi-row.is-on { background: rgba(6,182,212,.1); }
-              .nxc-kpi-row.is-on:hover { background: rgba(6,182,212,.16); }
+              .nxc-kpi-row.is-on { background: rgba(27,159,214,.1); }
+              .nxc-kpi-row.is-on:hover { background: rgba(27,159,214,.16); }
             `}</style>
           </motion.div>
         )}
