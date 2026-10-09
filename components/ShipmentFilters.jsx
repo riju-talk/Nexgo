@@ -5,7 +5,7 @@ import { apiFetch } from '@/lib/api';
 import * as T from '@/lib/theme';
 import { Btn, FIELD } from './Kit';
 
-export const EMPTY_FILTERS = { from: '', to: '', orderIds: '', q: '', awbs: '', product: '', channel: '', orderType: '', whatsapp: '', courier: '', warehouse: '' };
+export const EMPTY_FILTERS = { from: '', to: '', orderIds: '', q: '', awbs: '', product: '', channel: '', orderType: '', whatsapp: '', courier: '', warehouse: '', tags: '' };
 
 const CHANNELS = [['single', 'Single created'], ['bulk_upload', 'Bulk upload'], ['shopify', 'Shopify'], ['amazon', 'Amazon'], ['woocommerce', 'WooCommerce'], ['opencart', 'OpenCart'], ['magento', 'Magento']];
 const TYPES = [['forward', 'Forward'], ['reverse', 'Reverse'], ['dropship', 'Dropship'], ['ship_now', 'Ship now']];
@@ -44,6 +44,7 @@ export default function ShipmentFilters({ value, onApply, couriers = [], mobile 
         {select('whatsapp', 'WhatsApp status', WHATSAPP)}
         {select('courier', 'Courier', couriers.map((c) => [c.code, c.name]), 'All couriers')}
         {select('warehouse', 'Warehouse', warehouses.map((w) => [w.id, w.name]), 'All warehouses')}
+        {field('tags', 'Shipment tag(s)', { placeholder: 'Tag name, comma separated' })}
         <div style={{ display: 'flex', gap: 8 }}><Btn primary type="submit">Apply</Btn><Btn onClick={clear}>Clear</Btn></div>
       </div>
     </form>

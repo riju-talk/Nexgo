@@ -38,7 +38,7 @@ export async function rtoRoutes(app: FastifyInstance) {
       const base = `${FROM} WHERE ${where.join(' AND ')}`;
       const total = Number((await client.query<{ n: string }>(`SELECT count(*) AS n ${base}`, params)).rows[0].n);
       const rows = await client.query(
-        `SELECT s.id, s.awb, o.order_number, o.nexgo_order_id, o.channel, o.order_flow, o.payment_mode, o.cod_amount_paise, s.shipping_charge_paise, s.whatsapp_status, w.name AS warehouse_name,
+        `SELECT s.id, s.awb, s.tags, o.order_number, o.nexgo_order_id, o.channel, o.order_flow, o.payment_mode, o.cod_amount_paise, s.shipping_charge_paise, s.whatsapp_status, w.name AS warehouse_name,
                 c.full_name AS customer_name, c.phone AS customer_phone, c.city AS customer_city, c.pincode AS customer_pincode,
                 cp.code AS courier_code, cp.name AS courier_name, cs.display_name AS service_name, ${STARTED_SQL} AS rto_started_at, s.rto_delivered_at, (${STAGE_SQL}) AS stage,
                 n.ndr_reason, n.attempt_number

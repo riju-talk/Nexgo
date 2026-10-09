@@ -18,7 +18,7 @@ export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
 
   return (
     <div style={{ background: 'var(--nx-chrome-bg)', borderBottom: `1px solid ${T.BORDER}`, boxShadow: '0 4px 18px rgba(15,31,61,.045)', padding: isDashboard ? (phone ? '15px 12px 12px' : mobile ? '20px 16px 14px' : '22px 28px 16px') : (phone ? '9px 12px' : '10px 28px'), position: 'sticky', top: 68, zIndex: 30 }}>
-      <div style={{ height: 2, position: 'absolute', top: 0, left: 0, right: 0, background: 'linear-gradient(90deg, var(--nx-side-bg) 0%, var(--nx-side-bg) 30%, #2a8fd3 68%, #00d7c3 100%)' }} />
+      <div style={{ height: 2, position: 'absolute', top: 0, left: 0, right: 0, background: '#1b9fd6' }} />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 28, flexWrap: 'wrap', width: '100%', maxWidth: 1320, margin: '0 auto' }}>
         <div aria-hidden="true" />
         <div style={{ display: 'flex', alignItems: 'stretch', gap: 8, paddingBottom: phone ? 4 : 2, marginLeft: isDashboard ? 'auto' : undefined, maxWidth: '100%', overflowX: phone ? 'auto' : undefined }}>

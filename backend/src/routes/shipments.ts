@@ -43,6 +43,21 @@ export async function shipmentRoutes(app: FastifyInstance) {
        WHERE o.seller_id=$1 AND o.state IN ('new','ready_to_ship') AND o.order_flow <> 'reverse' AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id=o.id)
        ORDER BY o.created_at DESC LIMIT 500`, [p.sellerId])).rows }));
   });
+  // Tags: distinct list for filters, and bulk add/remove on selected shipments.
+  app.get('/v1/shipments/tags', { preHandler: requireSeller }, async (request) => {
+    const p = principal(request);
+    return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query<{ tag: string }>('SELECT DISTINCT unnest(tags) AS tag FROM shipments WHERE seller_id=$1 ORDER BY 1', [p.sellerId])).rows.map((r) => r.tag) }));
+  });
+  app.post('/v1/shipments/tags', { preHandler: requireSeller }, async (request) => {
+    const p = principal(request);
+    const tag = z.string().trim().min(1).max(30).regex(/^[a-zA-Z0-9 _-]+$/, 'Tags can use letters, numbers, spaces, - and _');
+    const input = z.object({ shipmentIds: z.array(uuid).min(1).max(500), add: z.array(tag).max(10).default([]), remove: z.array(tag).max(10).default([]) }).parse(request.body);
+    const add = input.add.map((t) => t.toLowerCase()); const remove = input.remove.map((t) => t.toLowerCase());
+    return withSellerTransaction(p.sellerId, async (client) => {
+      const r = await client.query(`UPDATE shipments SET tags = (SELECT COALESCE(array_agg(DISTINCT t ORDER BY t), '{}') FROM unnest(tags || $3::text[]) t WHERE t <> ALL($4::text[])), updated_at=now() WHERE seller_id=$1 AND id = ANY($2::uuid[]) RETURNING id, tags`, [p.sellerId, input.shipmentIds, add, remove]);
+      return { updated: r.rowCount, items: r.rows };
+    });
+  });
   app.get('/v1/shipments/:shipmentId', { preHandler: requireSeller }, async (request) => {
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
     return withSellerTransaction(p.sellerId, async (client) => { const shipment = await client.query('SELECT * FROM shipments WHERE id=$1 AND seller_id=$2', [shipmentId, p.sellerId]); if (!shipment.rows[0]) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 }); const events = await client.query('SELECT state,occurred_at,location,description,source FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at DESC', [shipmentId]); return { ...shipment.rows[0], events: events.rows }; });

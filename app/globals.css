@@ -31,7 +31,7 @@
   --nx-chrome-search: #fafbfd;
   --nx-side-bg: #0c3459;
   --nx-side-grad: #0c3459;
-  --nx-brand-grad: linear-gradient(135deg, #00d7c3 0%, #2a8fd3 50%, #3877fc 78%, #1c3b7e 100%);
+  --nx-brand-grad: #1b9fd6;
   --nx-side-edge: #1d5a86;
   --nx-side-text: #e6eef5;
   --nx-side-sub: #9bb0c4;
@@ -110,7 +110,7 @@
   /* Sidebar - Deep navy with enhanced contrast */
   --nx-side-bg: #0A1628;
   --nx-side-grad: #0A1628;
-  --nx-brand-grad: linear-gradient(135deg, #00d7c3 0%, #2a8fd3 50%, #3877fc 78%, #1c3b7e 100%);
+  --nx-brand-grad: #1b9fd6;
   --nx-side-edge: rgba(255,255,255,.14);
   --nx-side-text: #E5EBF4;
   --nx-side-sub: #8FA5C8;

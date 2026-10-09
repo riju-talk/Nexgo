@@ -10,11 +10,12 @@ export const shipmentFilterFields = {
   orderType: z.enum(['forward', 'reverse', 'dropship', 'ship_now']).optional(),
   whatsapp: z.enum(['not_sent', 'sent', 'delivered', 'read', 'failed']).optional(),
   warehouse: z.string().uuid().optional(),
+  tags: z.string().trim().max(500).optional(),
 };
 
 const list = (value: string) => [...new Set(value.split(/[\s,;]+/).map((v) => v.trim()).filter(Boolean))].slice(0, 200);
 
-export function applyShipmentFilters(add: (sql: string, value: unknown) => void, q: { orderIds?: string; awbs?: string; product?: string; channel?: string; orderType?: string; whatsapp?: string; warehouse?: string }) {
+export function applyShipmentFilters(add: (sql: string, value: unknown) => void, q: { orderIds?: string; awbs?: string; product?: string; channel?: string; orderType?: string; whatsapp?: string; warehouse?: string; tags?: string }) {
   if (q.orderIds && list(q.orderIds).length) add('(o.order_number = ANY(?::text[]) OR o.nexgo_order_id = ANY(?::text[]))', list(q.orderIds));
   if (q.awbs && list(q.awbs).length) add('s.awb = ANY(?::text[])', list(q.awbs));
   if (q.product) add('EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.name ILIKE ?)', `%${q.product}%`);
@@ -22,4 +23,5 @@ export function applyShipmentFilters(add: (sql: string, value: unknown) => void,
   if (q.orderType) add('o.order_flow = ?', q.orderType);
   if (q.whatsapp) add('s.whatsapp_status = ?', q.whatsapp);
   if (q.warehouse) add('o.warehouse_id = ?', q.warehouse);
+  if (q.tags && list(q.tags).length) add('s.tags && ?::text[]', list(q.tags).map((t) => t.toLowerCase()));
 }

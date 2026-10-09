@@ -97,7 +97,7 @@ export default function AdminLogin() {
             <div style={{ 
               marginTop: 16, 
               padding: '11px 13px', 
-              background: 'linear-gradient(135deg, rgba(27,159,214,.08) 0%, rgba(15,118,110,.08) 100%)', 
+              background: 'rgba(27,159,214,.08)', 
               border: '1px solid rgba(27,159,214,.25)',
               borderRadius: 9,
               display: 'flex',

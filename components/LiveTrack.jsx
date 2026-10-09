@@ -92,6 +92,7 @@ function Detail({ shipment, mobile, onClose }) {
     ['Order', shipment.order_number],
     ['NEXGO order ID', shipment.nexgo_order_id],
     ['Channel', channelName(shipment.channel)],
+    ['Tags', (shipment.tags || []).length ? shipment.tags.map((t) => `#${t}`).join(' ') : '—'],
     ['Courier', shipment.courier_name ? `${shipment.courier_name} · ${shipment.service_name} (${modeOf(shipment)})` : 'Not assigned'],
     ['Deliver to', `${shipment.customer_name}, ${shipment.customer_city} ${shipment.customer_pincode}`],
     ['Customer phone', shipment.customer_phone || '—'],
@@ -152,7 +153,9 @@ export default function LiveTrack({ mobile }) {
   const [failed, setFailed] = useState([]);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('all');
-  const [f, setF] = useState({ q: '', courier: '', pay: '', mode: '', channel: '', warehouse: '', from: '', to: '' });
+  const [f, setF] = useState({ q: '', courier: '', pay: '', mode: '', channel: '', warehouse: '', tag: '', from: '', to: '' });
+  const [tagInput, setTagInput] = useState('');
+  const [allTags, setAllTags] = useState([]);
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
   const [exportFormat, setExportFormat] = useState('csv');
@@ -162,6 +165,8 @@ export default function LiveTrack({ mobile }) {
 
   const load = useCallback(() => apiFetch('/v1/shipments').then((x) => { setRows(x.items || []); setFailed((x.failed || []).map((o) => ({ ...o, state: 'failed', awb: '', booked_at: o.created_at, shipping_charge_paise: 0, chargeable_weight_g: o.total_weight_g, whatsapp_status: 'not_sent' }))); setError(null); }).catch(setError), []);
   useEffect(() => { load(); }, [load]);
+  const loadTags = useCallback(() => apiFetch('/v1/shipments/tags').then((x) => setAllTags(x.items || [])).catch(() => {}), []);
+  useEffect(() => { loadTags(); }, [loadTags]);
 
   const all = useMemo(() => [...(rows || []), ...failed], [rows, failed]);
   const options = useMemo(() => {
@@ -181,6 +186,7 @@ export default function LiveTrack({ mobile }) {
       && (!f.mode || (r.service_type && modeOf(r) === f.mode))
       && (!f.channel || r.channel === f.channel)
       && (!f.warehouse || r.warehouse_name === f.warehouse)
+      && (!f.tag || (r.tags || []).includes(f.tag))
       && (!from || new Date(r.booked_at) >= from)
       && (!to || new Date(r.booked_at) <= to)
     ));
@@ -199,7 +205,7 @@ export default function LiveTrack({ mobile }) {
   const selected = all.find((r) => r.id === selectedId) || null;
   const pad = mobile ? '14px 12px 32px' : '22px 28px 40px';
   const activeFilters = Object.values(f).some(Boolean) || tab !== 'all';
-  const clearAll = () => { setF({ q: '', courier: '', pay: '', mode: '', channel: '', warehouse: '', from: '', to: '' }); setTab('all'); setPage(1); };
+  const clearAll = () => { setF({ q: '', courier: '', pay: '', mode: '', channel: '', warehouse: '', tag: '', from: '', to: '' }); setTab('all'); setPage(1); };
 
   if (error) {
     const unauth = error instanceof ApiError && error.status === 401;
@@ -209,12 +215,22 @@ export default function LiveTrack({ mobile }) {
 
   const exportRows = async () => {
     const source = picked.size ? visible.filter((r) => picked.has(r.id)) : visible;
-    const head = ['Channel', 'Order ID', 'NEXGO order ID', 'Date', 'Payment method', 'COD amount INR', 'Order value INR', 'Customer', 'Phone', 'City', 'Pincode', 'Carrier', 'Service', 'Mode', 'AWB', 'WhatsApp status', 'Status', 'Pickup warehouse', 'Products', 'Qty', 'Dead weight kg', 'Billed weight kg', 'Freight INR', 'Last scan', 'Last scan location', 'Last scan time', 'Expected delivery', 'Delivered', 'Delayed'];
-    const body = source.map((r) => [channelName(r.channel), r.order_number, r.nexgo_order_id, stamp(r.booked_at), r.payment_mode === 'cod' ? 'COD' : 'Prepaid', r.payment_mode === 'cod' ? r.cod_amount_paise / 100 : 0, r.subtotal_paise / 100, r.customer_name, r.customer_phone, r.customer_city, r.customer_pincode, r.courier_name || '', r.service_name || '', r.service_type ? modeOf(r) : '', r.awb || '', WHATSAPP[r.whatsapp_status] || 'Not sent', label(r.state), r.warehouse_name, r.product_names, r.quantity, r.total_weight_g / 1000, r.chargeable_weight_g / 1000, r.shipping_charge_paise / 100, r.last_description || '', r.last_location || '', r.last_event_at ? stamp(r.last_event_at) : '', day(r.promised_delivery_at), r.delivered_at ? stamp(r.delivered_at) : '', isDelayed(r) ? 'Yes' : 'No']);
+    const head = ['Channel', 'Order ID', 'NEXGO order ID', 'Date', 'Payment method', 'COD amount INR', 'Order value INR', 'Customer', 'Phone', 'City', 'Pincode', 'Carrier', 'Service', 'Mode', 'AWB', 'WhatsApp status', 'Status', 'Pickup warehouse', 'Products', 'Qty', 'Dead weight kg', 'Billed weight kg', 'Freight INR', 'Last scan', 'Last scan location', 'Last scan time', 'Expected delivery', 'Delivered', 'Delayed', 'Tags'];
+    const body = source.map((r) => [channelName(r.channel), r.order_number, r.nexgo_order_id, stamp(r.booked_at), r.payment_mode === 'cod' ? 'COD' : 'Prepaid', r.payment_mode === 'cod' ? r.cod_amount_paise / 100 : 0, r.subtotal_paise / 100, r.customer_name, r.customer_phone, r.customer_city, r.customer_pincode, r.courier_name || '', r.service_name || '', r.service_type ? modeOf(r) : '', r.awb || '', WHATSAPP[r.whatsapp_status] || 'Not sent', label(r.state), r.warehouse_name, r.product_names, r.quantity, r.total_weight_g / 1000, r.chargeable_weight_g / 1000, r.shipping_charge_paise / 100, r.last_description || '', r.last_location || '', r.last_event_at ? stamp(r.last_event_at) : '', day(r.promised_delivery_at), r.delivered_at ? stamp(r.delivered_at) : '', isDelayed(r) ? 'Yes' : 'No', (r.tags || []).join(', ')]);
     await saveRows([head, ...body], `shipments-${isoDay(Date.now())}`, exportFormat, 'Shipments');
     showToast(`${source.length} shipments exported (${exportFormat === 'xlsx' ? 'Excel' : 'CSV'})`);
   };
 
+  // Tags go onto the selected shipments (never onto not-yet-shipped "failed" orders).
+  const tagSelected = async (mode) => {
+    const ids = visible.filter((r) => picked.has(r.id) && r.state !== 'failed').map((r) => r.id);
+    if (!ids.length) return showToast('Select shipments that have an AWB to tag.', 'error');
+    try {
+      const r = await apiFetch('/v1/shipments/tags', { method: 'POST', body: { shipmentIds: ids, [mode]: [tagInput.trim()] } });
+      showToast(`${mode === 'add' ? 'Tag added to' : 'Tag removed from'} ${r.updated} shipment${r.updated === 1 ? '' : 's'}`);
+      setTagInput(''); await Promise.all([load(), loadTags()]);
+    } catch (e) { showToast(e instanceof ApiError ? e.message : 'Tags could not be saved', 'error'); }
+  };
   const allOnPage = pageRows.length > 0 && pageRows.every((r) => picked.has(r.id));
   const togglePage = () => setPicked((s) => { const n = new Set(s); pageRows.forEach((r) => (allOnPage ? n.delete(r.id) : n.add(r.id))); return n; });
   const toggleOne = (id) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -234,6 +250,7 @@ export default function LiveTrack({ mobile }) {
           <select aria-label="Mode" value={f.mode} onChange={set('mode')} style={FIELD}><option value="">Mode</option><option value="Air">Air</option><option value="Surface">Surface</option></select>
           <select aria-label="Channel" value={f.channel} onChange={set('channel')} style={FIELD}><option value="">Channel</option>{CHANNELS.slice(0, 3).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
           <select aria-label="Pickup warehouse" value={f.warehouse} onChange={set('warehouse')} style={FIELD}><option value="">All warehouses</option>{options.warehouses.map((c) => <option key={c}>{c}</option>)}</select>
+          <select aria-label="Shipment tag" value={f.tag} onChange={set('tag')} style={FIELD}><option value="">Shipment tag</option>{allTags.map((t) => <option key={t} value={t}>{t}</option>)}</select>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: T.TEXT_MUTED, fontSize: 12 }}>Booked<input aria-label="Booked from" type="date" value={f.from} onChange={set('from')} style={FIELD} />to<input aria-label="Booked to" type="date" value={f.to} onChange={set('to')} style={FIELD} /></label>
           {activeFilters && <Btn onClick={clearAll}>Clear filters</Btn>}
         </div>
@@ -252,6 +269,9 @@ export default function LiveTrack({ mobile }) {
           <Btn small onClick={() => copyText(visible.filter((r) => picked.has(r.id)).map((r) => r.awb).join('\n'), showToast, 'AWBs copied')}>Copy AWBs</Btn>
           <Btn small onClick={() => showToast('Bulk labels and manifests are coming soon. They need file storage, which is not connected yet.')}>Print labels</Btn>
           <Btn small onClick={exportRows}>Export selected</Btn>
+          <input aria-label="Tag name" value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="Tag name" maxLength={30} style={{ ...FIELD, height: 28, width: 130 }} />
+          <Btn small disabled={!tagInput.trim()} onClick={() => tagSelected('add')}>Add tag</Btn>
+          <Btn small disabled={!tagInput.trim()} onClick={() => tagSelected('remove')}>Remove tag</Btn>
           <Btn small onClick={() => setPicked(new Set())}>Clear selection</Btn>
         </div>
       )}
@@ -276,7 +296,7 @@ export default function LiveTrack({ mobile }) {
                           <tr key={r.id} onClick={() => setSelectedId(r.id === selectedId ? null : r.id)} style={{ cursor: 'pointer', background: r.id === selectedId ? 'rgba(27,159,214,.09)' : undefined }}>
                             <td style={CELL} onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Select ${r.order_number}`} checked={picked.has(r.id)} onChange={() => toggleOne(r.id)} /></td>
                             <td style={{ ...CELL, whiteSpace: 'nowrap' }}>{channelName(r.channel)}</td>
-                            <td style={CELL}><b>{r.order_number}</b></td>
+                            <td style={CELL}><b>{r.order_number}</b>{(r.tags || []).length > 0 && <small style={{ ...SUB, color: T.ACCENT }}>{r.tags.map((t) => `#${t}`).join(' ')}</small>}</td>
                             <td style={CELL}><span style={{ fontFamily: T.MONO, fontSize: 12 }}>{r.nexgo_order_id}</span></td>
                             <td style={{ ...CELL, whiteSpace: 'nowrap' }}>{day(r.booked_at)}<small style={SUB}>{new Date(r.booked_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</small></td>
                             <td style={{ ...CELL, whiteSpace: 'nowrap' }}>{r.payment_mode === 'cod' ? <><b style={{ color: '#6d28d9' }}>COD</b> {inr0(r.cod_amount_paise)}</> : <><b style={{ color: T.TEXT_SECONDARY }}>Prepaid</b> {inr0(r.subtotal_paise)}</>}</td>

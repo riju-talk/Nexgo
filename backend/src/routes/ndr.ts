@@ -69,7 +69,7 @@ export async function ndrRoutes(app: FastifyInstance) {
       const total = Number((await client.query<{ n: string }>(`SELECT count(*) AS n ${from}`, params)).rows[0].n);
       const rows = await client.query(
         `SELECT nc.id, nc.shipment_id, nc.state, nc.ndr_reason, nc.reason_detail, nc.attempt_number, nc.max_attempts, nc.opened_at, nc.sla_deadline_at, nc.resolution_action, nc.resolution_notes, nc.resolved_at,
-                (${STATUS_SQL}) AS ndr_status, s.awb, s.state AS shipment_state, o.id AS order_id, o.order_number, o.payment_mode, o.cod_amount_paise,
+                (${STATUS_SQL}) AS ndr_status, s.awb, s.tags, s.state AS shipment_state, o.id AS order_id, o.order_number, o.payment_mode, o.cod_amount_paise,
                 c.full_name AS customer_name, c.phone AS customer_phone, c.city AS customer_city, c.pincode AS customer_pincode,
                 cp.code AS courier_code, cp.name AS courier_name, cs.display_name AS service_name,
                 (SELECT h.next_attempt_scheduled_at FROM ndr_attempt_history h WHERE h.ndr_case_id = nc.id ORDER BY h.occurred_at DESC LIMIT 1) AS scheduled_delivery_at,

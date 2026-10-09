@@ -72,8 +72,7 @@ export default function AuthScreen({ mode }) {
         style={{
           position: 'absolute', inset: 0, zIndex: 0,
           backgroundImage: [
-            'radial-gradient(circle at 72% 36%, rgba(27,159,214,.24), transparent 28%)',
-            'linear-gradient(90deg, rgba(3,10,20,.78), rgba(3,10,20,.32) 46%, rgba(116,57,7,.35))',
+            'linear-gradient(rgba(3,10,20,.55), rgba(3,10,20,.55))',
             'url(/login-port.jpg)',
           ].join(', '),
           backgroundSize: 'cover',
@@ -125,7 +124,7 @@ export default function AuthScreen({ mode }) {
               <div style={{ 
                 marginTop: 16, 
                 padding: '11px 13px', 
-                background: 'linear-gradient(135deg, rgba(27,159,214,.08) 0%, rgba(15,118,110,.08) 100%)', 
+                background: 'rgba(27,159,214,.08)', 
                 border: '1px solid rgba(27,159,214,.25)',
                 borderRadius: 9,
                 display: 'flex',
