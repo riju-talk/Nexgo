@@ -98,7 +98,7 @@ export default function LiveWeightDisputes({ mobile }) {
     try { const r = await apiFetch('/v1/weight-disputes/bulk-action', { method: 'POST', body: { disputeIds: openSelected.map((x) => x.id), action, sellerNotes: action === 'dispute' ? 'Disputed in bulk from the weight discrepancy page' : undefined } }); showToast(`${action === 'dispute' ? 'Disputed' : 'Accepted'} ${r.summary?.succeeded ?? openSelected.length} case(s)`); refresh(); }
     catch (e) { showToast(e.message || 'Bulk action failed', 'error'); } finally { setBusy(false); }
   };
-  const exportAll = async () => {
+  const exportAll = async (format) => {
     setBusy(true);
     try {
       const p = new URLSearchParams(params); p.set('pageSize', '100'); const rows = [];
@@ -115,7 +115,7 @@ export default function LiveWeightDisputes({ mobile }) {
     <div style={{ padding: pad }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
         <p style={{ margin: 0, color: T.TEXT_SECONDARY, fontSize: 13.5 }}>Shipments where the courier billed a higher weight than you declared. Dispute with evidence, or accept the revised charge.</p>
-        <div style={{ display: 'flex', gap: 8 }}><select aria-label="Export format" value={format} onChange={(e) => setFormat(e.target.value)} style={FIELD}>{FORMATS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select><Btn onClick={exportAll} disabled={busy}>⤓ Export</Btn></div>
+        <div style={{ display: 'flex', gap: 8 }}><Btn onClick={() => exportAll('csv')} disabled={busy}>⤓ Download CSV</Btn><Btn onClick={() => exportAll('xlsx')} disabled={busy}>⤓ Download Excel</Btn></div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(2,1fr)' : 'repeat(5,1fr)', gap: 12, marginBottom: 14 }}>
         {kpis.map(([label, value, note, color]) => <div key={label} style={{ ...CARD, padding: 14, borderTop: `3px solid ${color}` }}><span style={{ fontSize: 11.5, color: T.TEXT_MUTED }}>{label}</span><b style={{ display: 'block', fontSize: 22, color: T.TEXT, marginTop: 3 }}>{value}</b><small style={{ color: T.TEXT_MUTED, fontSize: 11 }}>{note}</small></div>)}
