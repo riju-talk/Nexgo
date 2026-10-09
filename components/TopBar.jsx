@@ -1,6 +1,8 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
+import { apiFetch } from '@/lib/api';
 import { PAGES } from '@/lib/data';
 import { useSellerSession, initialsOf } from '@/lib/useSellerSession';
 import { useAppState } from '@/lib/AppStateContext';
@@ -15,6 +17,17 @@ export default function TopBar({ activeId, mobile }) {
   const meta = PAGES[activeId] || ['', ''];
   const crumb = meta[0], pageTitle = meta[1];
   const light = theme === 'light';
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const away = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
+    const esc = (e) => { if (e.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('mousedown', away); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [menuOpen]);
+  const signOut = async () => { setMenuOpen(false); try { await apiFetch('/v1/auth/logout', { method: 'POST' }); } catch { /* session already gone: still leave */ } nav('login'); };
+  const MENU_ITEM = { display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '10px 12px', border: 0, background: 'transparent', color: 'var(--nx-chrome-text)', fontSize: 13, fontWeight: 650, textAlign: 'left', cursor: 'pointer', borderRadius: 8 };
   const searchStyle = { background: 'var(--nx-chrome-search)', border: '1px solid var(--nx-chrome-border)', color: 'var(--nx-chrome-muted)', boxShadow: light ? '0 1px 2px rgba(15,31,61,.03)' : 'none' };
 
   return (
@@ -75,12 +88,20 @@ export default function TopBar({ activeId, mobile }) {
               </div>
             </motion.div>
             <div style={{ width: 1, height: 28, background: 'var(--nx-chrome-border)' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div ref={menuRef} style={{ position: 'relative' }}>
+              <button type="button" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 0, border: 0, background: 'transparent', cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--nx-chrome-text)', lineHeight: 1.2 }}>{me?.full_name || 'Not signed in'}</div>
                 <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--nx-chrome-muted)' }}>{me ? `${me.legal_name} · ${me.role.replaceAll('_', ' ')}` : 'Sign in to continue'}</div>
               </div>
               <div style={{ width: 34, height: 34, borderRadius: 10, background: T.ACCENT, color: '#06212C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, boxShadow: '0 0 0 3px rgba(27,159,214,.14)' }}>{initialsOf(me?.full_name)}</div>
+              </button>
+              {menuOpen && (
+                <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 10px)', minWidth: 200, padding: 6, background: 'var(--nx-surface)', border: '1px solid var(--nx-chrome-border)', borderRadius: 12, boxShadow: '0 14px 36px rgba(12,52,89,.18)', zIndex: 60 }}>
+                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); nav('profile'); }} style={MENU_ITEM}>Profile settings</button>
+                  <button type="button" role="menuitem" onClick={signOut} style={{ ...MENU_ITEM, color: T.RED }}>Log out</button>
+                </div>
+              )}
             </div>
           </div>
         </>
