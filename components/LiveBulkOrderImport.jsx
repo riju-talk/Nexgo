@@ -181,7 +181,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     if (!file) return;
     if (!/\.(xlsx|xls|csv)$/i.test(file.name)) return showToast('Upload an .xlsx, .xls or .csv file.', 'error');
     if (file.size > 5 * 1024 * 1024) return showToast('Use a file smaller than 5 MB.', 'error');
-    if (!warehouse) return showToast('Select the pickup warehouse first. Courier rates depend on where the parcel is picked up.', 'error');
+    if (!warehouse) return showToast('Add a pickup warehouse first (Settings → Warehouse). Orders are picked up from your default warehouse.', 'error');
     setLoading(true); setOrders([]); setResult(null); setFileName(file.name);
     try {
       const productData = await apiFetch('/v1/products');
@@ -268,16 +268,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           <SummaryCard label="Failed orders" value={failedCount} tone="#EF4444" icon="×" />
         </div>
 
-        <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 14px', borderRadius: 10, border: `1px solid ${T.BORDER}`, background: T.SURFACE_SOFT }}>
-          <b style={{ color: T.TEXT, fontSize: 13 }}>1. Pickup warehouse <span style={{ color: T.RED }}>*</span></b>
-          {warehouses === null ? <span style={{ color: T.TEXT_MUTED, fontSize: 12.5 }}>Loading…</span> : !warehouses.length ? <Action onClick={() => nav('warehouse')}>Add a warehouse first</Action> : (
-            <>
-              <select aria-label="Pickup warehouse" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} style={{ height: 36, minWidth: 220, border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13 }}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
-              {warehouse && <span style={{ color: T.TEXT_SECONDARY, fontSize: 12.5 }}>{warehouse.city} · {warehouse.pincode}</span>}
-            </>
-          )}
-          <span style={{ marginLeft: 'auto', color: T.TEXT_MUTED, fontSize: 12 }}>2. Upload the order file</span>
-        </div>
+        {warehouses && !warehouses.length && <div style={{ marginTop: 18 }}><Action onClick={() => nav('warehouse')}>Add a pickup warehouse first</Action></div>}
 
         <div
           role="button" tabIndex={0}
@@ -286,7 +277,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
-          style={{ marginTop: 12, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(27,159,214,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
+          style={{ marginTop: 18, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(27,159,214,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
         >
           <b style={{ display: 'block', color: T.TEXT, fontSize: 14 }}>{loading ? 'Reading and validating…' : 'Drop your order file here, or click to browse'}</b>
           <span style={{ display: 'block', marginTop: 5, color: T.TEXT_MUTED, fontSize: 12.5 }}>{fileName && !loading ? fileName : '.xlsx, .xls or .csv · up to 5 MB · NEXGO bulk upload format'}</span>
