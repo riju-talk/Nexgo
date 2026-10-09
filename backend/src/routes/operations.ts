@@ -41,7 +41,10 @@ const orderInput = z.object({
   if (value.paymentMode === 'cod' && value.codAmountPaise <= 0) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'COD orders require a positive COD amount', path: ['codAmountPaise'] });
   if (value.paymentMode === 'prepaid' && value.codAmountPaise !== 0) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Prepaid orders cannot have a COD amount', path: ['codAmountPaise'] });
   const dims = [value.package.lengthMm, value.package.widthMm, value.package.heightMm].filter((d) => d !== undefined).length;
-  if (dims !== 0 && dims !== 3) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Provide length, width and height together', path: ['package'] });
+  // Orders keyed in by the seller (single form or bulk sheet) must carry the full package size: courier rates depend on it.
+  const manual = value.channel === 'single' || value.channel === 'bulk_upload';
+  if (manual && dims !== 3) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Length, breadth and height are required', path: ['package'] });
+  else if (dims !== 0 && dims !== 3) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Provide length, width and height together', path: ['package'] });
 });
 
 // Server-side money for an order: clients send line inputs, never totals.

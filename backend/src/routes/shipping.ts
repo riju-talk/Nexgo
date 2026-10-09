@@ -77,7 +77,8 @@ function describe(row: OptionRow, dest: PincodeInfo | null, pickup: PincodeInfo 
     serviceable: reason === null,
     reason,
     codAvailable,
-    codFee: paiseToAmount(pricing?.codFeePaise ?? 0),
+    // The fee this courier would charge for COD: the priced amount on a COD parcel, otherwise its flat fee (shown as "COD available (₹x)").
+    codFee: paiseToAmount(cod ? (pricing?.codFeePaise ?? 0) : (row.cod_fee_paise ?? 0)),
     tat: { minDays: window.minDays, maxDays: window.maxDays, earliest: window.earliest, latest: window.latest },
     currency: 'INR' as const,
     price: pricing ? { transport: paiseToAmount(pricing.transportPaise), fuelSurcharge: paiseToAmount(pricing.fuelSurchargePaise), freight: paiseToAmount(pricing.transportPaise + pricing.fuelSurchargePaise), codFee: paiseToAmount(pricing.codFeePaise), additionalSlabs: pricing.extraSlabs, total: paiseToAmount(pricing.totalPaise), gst: paiseToAmount(pricing.gstPaise), totalWithGst: paiseToAmount(pricing.totalWithGstPaise), rto: paiseToAmount(pricing.rtoPaise), rtoGst: paiseToAmount(pricing.rtoGstPaise), rtoWithGst: paiseToAmount(pricing.rtoWithGstPaise) } : null,
