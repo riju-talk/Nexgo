@@ -16,8 +16,22 @@ function principal(request: FastifyRequest) { if (!request.principal) throw Obje
 type Rate = { provider_id: string; provider_code: string; provider_name: string; service_id: string; service_code: string; service_name: string; base_weight_g: number; base_price_paise: number; additional_weight_g: number; additional_price_paise: number; cod_fee_paise: number; fuel_surcharge_bps: number; cod_percent_bps: number; rto_base_price_paise: number | null; rto_additional_price_paise: number | null; payment_mode: 'prepaid' | 'cod'; cod_amount_paise: number; total_weight_g: number; destination_pincode: string };
 
 export async function shipmentRoutes(app: FastifyInstance) {
+  // Seller shipment register: everything the Track page filters, groups and exports on, in one round trip.
   app.get('/v1/shipments', { preHandler: requireSeller }, async (request) => {
-    const p = principal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query(`SELECT s.*,o.order_number,o.payment_mode,o.total_weight_g,c.full_name AS customer_name,c.city AS customer_city,c.pincode AS customer_pincode,cp.name AS courier_name,cs.display_name AS service_name FROM shipments s JOIN orders o ON o.id=s.order_id JOIN customers c ON c.id=o.customer_id JOIN courier_providers cp ON cp.id=s.provider_id JOIN courier_services cs ON cs.id=s.service_id WHERE s.seller_id=$1 ORDER BY s.created_at DESC LIMIT 200`, [p.sellerId])).rows }));
+    const p = principal(request);
+    return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query(
+      `SELECT s.*, o.order_number, o.payment_mode, o.cod_amount_paise, o.subtotal_paise, o.total_weight_g, o.order_flow, o.created_at AS order_created_at,
+              c.full_name AS customer_name, c.phone AS customer_phone, c.city AS customer_city, c.pincode AS customer_pincode,
+              cp.name AS courier_name, cs.display_name AS service_name, cs.service_type,
+              w.name AS warehouse_name, w.pincode AS warehouse_pincode, w.city AS warehouse_city,
+              it.products, it.quantity, it.product_names,
+              ev.description AS last_description, ev.location AS last_location, ev.occurred_at AS last_event_at
+       FROM shipments s
+       JOIN orders o ON o.id=s.order_id JOIN customers c ON c.id=o.customer_id JOIN warehouses w ON w.id=o.warehouse_id
+       JOIN courier_providers cp ON cp.id=s.provider_id JOIN courier_services cs ON cs.id=s.service_id
+       LEFT JOIN LATERAL (SELECT count(*)::int AS products, COALESCE(sum(quantity),0)::int AS quantity, string_agg(name, ', ' ORDER BY name) AS product_names FROM order_items WHERE order_id=o.id) it ON true
+       LEFT JOIN LATERAL (SELECT description, location, occurred_at FROM shipment_events WHERE shipment_id=s.id ORDER BY occurred_at DESC LIMIT 1) ev ON true
+       WHERE s.seller_id=$1 ORDER BY s.created_at DESC LIMIT 500`, [p.sellerId])).rows }));
   });
   app.get('/v1/shipments/:shipmentId', { preHandler: requireSeller }, async (request) => {
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
