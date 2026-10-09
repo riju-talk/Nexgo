@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
-// Filters shared by the NDR and RTO boards (Shiprocket-style filter panel). Queries must alias
+// "Type" is the payment type (COD or Prepaid). Filters shared by the NDR and RTO boards (Shiprocket-style filter panel). Queries must alias
 // shipments as s, orders as o, and filter through the `add` helper (a `?` in the SQL becomes the next $n).
 export const shipmentFilterFields = {
   orderIds: z.string().trim().max(2000).optional(),
   awbs: z.string().trim().max(2000).optional(),
   product: z.string().trim().max(80).optional(),
   channel: z.enum(['single', 'bulk_upload', 'shopify', 'amazon', 'woocommerce', 'opencart', 'magento']).optional(),
-  orderType: z.enum(['forward', 'reverse', 'dropship', 'ship_now']).optional(),
+  orderType: z.enum(['cod', 'prepaid']).optional(),
   whatsapp: z.enum(['not_sent', 'sent', 'delivered', 'read', 'failed']).optional(),
   warehouse: z.string().uuid().optional(),
   tags: z.string().trim().max(500).optional(),
@@ -20,7 +20,7 @@ export function applyShipmentFilters(add: (sql: string, value: unknown) => void,
   if (q.awbs && list(q.awbs).length) add('s.awb = ANY(?::text[])', list(q.awbs));
   if (q.product) add('EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.name ILIKE ?)', `%${q.product}%`);
   if (q.channel) add('o.channel = ?', q.channel);
-  if (q.orderType) add('o.order_flow = ?', q.orderType);
+  if (q.orderType) add('o.payment_mode = ?::payment_mode', q.orderType);
   if (q.whatsapp) add('s.whatsapp_status = ?', q.whatsapp);
   if (q.warehouse) add('o.warehouse_id = ?', q.warehouse);
   if (q.tags && list(q.tags).length) add('s.tags && ?::text[]', list(q.tags).map((t) => t.toLowerCase()));

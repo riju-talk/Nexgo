@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
-import CourierComparison from './CourierComparison';
 
 const FIELD = { width: '100%', height: 40, boxSizing: 'border-box', border: '1px solid var(--nx-input-border)', borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 11px', fontSize: 13.5 };
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, padding: 18, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
@@ -64,11 +63,9 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
   const [customer, setCustomer] = useState({ fullName: '', companyName: '', phone: '', alternatePhone: '', email: '', address: '', address2: '', landmark: '', pincode: '', city: '', state: '' });
   const [located, setLocated] = useState('');
   const [pinInfo, setPinInfo] = useState({ pin: '', info: null });
-  const [selected, setSelected] = useState({ key: '', name: '', providerCode: '', serviceCode: '' });
   const [items, setItems] = useState(() => [blankItem()]);
   const [charges, setCharges] = useState(EMPTY_CHARGES);
   const [pkg, setPkg] = useState({ weightKg: '', length: '', width: '', height: '' });
-  const [fetchedQuotes, setQuotes] = useState({ key: '', items: [], unavailable: [] });
 
   useEffect(() => {
     Promise.all([apiFetch('/v1/warehouses'), apiFetch('/v1/products')])
@@ -85,7 +82,6 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
             if (pre.pincode) setCustomer((c) => ({ ...c, pincode: pre.pincode }));
             if (pre.weightKg) setPkg((k) => ({ ...k, weightKg: String(pre.weightKg) }));
             if (pre.paymentMode) setPaymentMode(pre.paymentMode);
-            if (pre.courier) setSelected(pre.courier);
           }
         } catch { /* prefill is optional */ }
       })
@@ -123,23 +119,8 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
   const volumetricG = hasDims ? Math.ceil((dims[0] * dims[1] * dims[2]) / VOLUMETRIC_DIVISOR) : 0;
   const chargeableG = Math.max(deadWeightG, volumetricG);
 
-  // Live courier rates for the chargeable parcel.
-  const canQuote = !!warehouse && /^\d{6}$/.test(customer.pincode) && deadWeightG > 0 && hasDims;
   const quoteMode = isReverse ? 'prepaid' : paymentMode;
-  const quoteKey = `${customer.pincode}|${deadWeightG}|${dims.join('x')}|${quoteMode}|${warehouse?.pincode || ''}|${Math.round(Math.max(totals.total, 0) / 1000)}`;
-  const quotesLoaded = canQuote && fetchedQuotes.key === quoteKey;
-  const quotes = quotesLoaded ? fetchedQuotes.items : [];
-  const unavailable = quotesLoaded ? fetchedQuotes.unavailable : [];
   const pinStatus = !/^\d{6}$/.test(customer.pincode) ? 'idle' : pinInfo.pin === customer.pincode ? (pinInfo.info ? 'found' : 'missing') : 'loading';
-  const chosen = quotes.find((q) => `${q.provider.code}:${q.service.code}` === selected.key) || null;
-  useEffect(() => {
-    if (!canQuote) return;
-    const body = { destinationPincode: customer.pincode, pickupPincode: warehouse.pincode, orderValue: Math.max(totals.total, 0) / 100, weightG: deadWeightG, paymentMode: quoteMode, lengthMm: dims[0], widthMm: dims[1], heightMm: dims[2] };
-    const timer = window.setTimeout(() => apiFetch('/v1/shipping/quotes', { method: 'POST', body })
-      .then((x) => setQuotes({ key: quoteKey, items: x.quotes || [], unavailable: x.unavailable || [] }))
-      .catch(() => setQuotes({ key: quoteKey, items: [], unavailable: [] })), 300);
-    return () => window.clearTimeout(timer);
-  }, [quoteKey]); // eslint-disable-line react-hooks/exhaustive-deps -- quoteKey encodes every input the request reads
 
   const setCust = (k) => (e) => setCustomer({ ...customer, [k]: k === 'pincode' ? e.target.value.replace(/\D/g, '').slice(0, 6) : e.target.value });
   const setCharge = (k) => (e) => setCharges({ ...charges, [k]: e.target.value });
@@ -163,7 +144,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
   });
   const removeItem = (key) => setItems((list) => (list.length > 1 ? list.filter((i) => i.key !== key) : list));
 
-  const submit = async (e, book = false) => {
+  const submit = async (e) => {
     e?.preventDefault();
     if (!warehouse) return showToast('Select the pickup warehouse first.', 'error');
     if (totals.discount > totals.gross) return showToast('Discount cannot exceed the order value.', 'error');
@@ -182,19 +163,6 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
         package: { weightG: deadWeightG, lengthMm: dims[0], widthMm: dims[1], heightMm: dims[2] },
         charges: isReverse ? {} : { shippingPaise: totals.shipping, giftWrapPaise: totals.giftWrap, transactionPaise: totals.transaction, otherPaise: totals.other, discountPaise: totals.discount, taxRateBps: totals.taxRateBps },
       } });
-      if (book && chosen && !isReverse) {
-        try {
-          await apiFetch(`/v1/orders/${created.id}/state`, { method: 'PATCH', body: { state: 'ready_to_ship' } });
-          const booked = await apiFetch('/v1/shipments/book', { method: 'POST', headers: { 'Idempotency-Key': `web-book-${created.id}` }, body: { orderId: created.id, providerCode: chosen.provider.code, serviceCode: chosen.service.code } });
-          showToast(`Order ${orderNumber.trim()} booked with ${chosen.provider.name}. AWB ${booked.shipment?.awb || ''}`);
-          nav('shipments');
-          return;
-        } catch (bookingError) {
-          showToast(`Order created, but booking failed: ${bookingError instanceof ApiError ? bookingError.message : 'try again from All orders'}`, 'error');
-          nav('orders');
-          return;
-        }
-      }
       showToast(isReverse ? 'Return pickup created. Book a courier from All orders.' : 'Order created. Mark it ready and book a courier from All orders.');
       nav('orders');
     } catch (x) {
@@ -312,16 +280,6 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
             <span>Chargeable: <b style={{ color: T.ACCENT }}>{(chargeableG / 1000).toFixed(3)} kg</b></span>
           </div>
         </Section>
-        {!isReverse && (
-          <Section title="Choose courier" hint="Optional now: pick one to book right after the order is created, or book later from All orders.">
-            <CourierComparison
-              quotes={quotes} unavailable={unavailable} loading={canQuote && !quotesLoaded}
-              message={!warehouse ? 'Select the pickup warehouse first.' : !canQuote ? 'Enter the delivery pincode, weight and package size (length, breadth, height) to compare couriers.' : undefined}
-              paymentMode={quoteMode} selectedKey={selected.key}
-              onSelect={(q, key) => setSelected(selected.key === key ? { key: '', name: '', providerCode: '', serviceCode: '' } : { key, name: q.provider.name, providerCode: q.provider.code, serviceCode: q.service.code })}
-            />
-          </Section>
-        )}
       </div>
 
       <aside style={{ display: 'grid', gap: 14, alignContent: 'start', ...(mobile ? {} : { position: 'sticky', top: 76 }) }}>
@@ -336,10 +294,8 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
           <div style={{ borderTop: `1px solid ${T.DIVIDER}`, marginTop: 6, paddingTop: 6 }}><SummaryRow label="Order total" value={inr(Math.max(totals.total, 0))} strong /></div>
           {quoteMode === 'cod' && <SummaryRow label="Collect on delivery" value={inr(Math.max(totals.total, 0))} />}
           {totals.discount > totals.gross && <small style={{ display: 'block', color: T.RED, fontSize: 11.5 }}>Discount is larger than the order value.</small>}
-          {chosen && !isReverse && <SummaryRow label={`Shipping with ${chosen.provider.name}`} value={inr(Math.round(chosen.price.total * 100))} />}
-          {chosen && !isReverse && <button disabled={busy || !warehouse} type="button" onClick={() => submit(null, true)} style={{ marginTop: 12, width: '100%', height: 42, border: 0, borderRadius: 9, background: T.ACCENT, color: '#06212C', fontWeight: 800, fontSize: 13.5, cursor: busy ? 'wait' : 'pointer', opacity: busy || !warehouse ? 0.6 : 1 }}>{busy ? 'Working…' : `Create & book with ${chosen.provider.name}`}</button>}
-          <button disabled={busy || !warehouse} type="submit" style={{ marginTop: 10, width: '100%', height: 42, border: chosen && !isReverse ? `1px solid ${T.NAVY}` : 0, borderRadius: 9, background: chosen && !isReverse ? T.SURFACE : T.NAVY, color: chosen && !isReverse ? T.NAVY : '#fff', fontWeight: 750, fontSize: 13.5, cursor: busy ? 'wait' : 'pointer', opacity: busy || !warehouse ? 0.6 : 1 }}>
-            {busy ? 'Creating…' : isReverse ? 'Create return pickup' : chosen ? 'Create order only' : 'Create order'}
+          <button disabled={busy || !warehouse} type="submit" style={{ marginTop: 12, width: '100%', height: 42, border: 0, borderRadius: 9, background: T.NAVY, color: '#fff', fontWeight: 800, fontSize: 14, cursor: busy ? 'wait' : 'pointer' }}>
+            {busy ? 'Creating…' : isReverse ? 'Create return pickup' : 'Create order'}
           </button>
         </Section>
       </aside>

@@ -8,7 +8,7 @@ import { Btn, FIELD } from './Kit';
 export const EMPTY_FILTERS = { from: '', to: '', orderIds: '', q: '', awbs: '', product: '', channel: '', orderType: '', whatsapp: '', courier: '', warehouse: '', tags: '' };
 
 const CHANNELS = [['single', 'Single created'], ['bulk_upload', 'Bulk upload'], ['shopify', 'Shopify'], ['amazon', 'Amazon'], ['woocommerce', 'WooCommerce'], ['opencart', 'OpenCart'], ['magento', 'Magento']];
-const TYPES = [['forward', 'Forward'], ['reverse', 'Reverse'], ['dropship', 'Dropship'], ['ship_now', 'Ship now']];
+const TYPES = [['cod', 'COD'], ['prepaid', 'Prepaid']];
 const WHATSAPP = [['not_sent', 'Not sent'], ['sent', 'Sent'], ['delivered', 'Delivered'], ['read', 'Read'], ['failed', 'Failed']];
 const LABEL = { display: 'block', fontSize: 11.5, fontWeight: 700, color: T.TEXT_LABEL };
 

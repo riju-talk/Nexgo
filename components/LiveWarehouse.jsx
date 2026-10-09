@@ -155,7 +155,7 @@ export default function LiveWarehouse({ mobile }) {
         {active.map((w) => (
           <article key={w.id} style={{ ...CARD, padding: 18, borderColor: w.is_default ? '#3877fc' : T.BORDER }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
-              <div><b style={{ color: T.TEXT, fontSize: 15.5 }}>{w.name}</b><span style={{ display: 'block', marginTop: 4, color: T.TEXT_MUTED, fontSize: 12 }}>{typeLabel(w.warehouse_type)}</span></div>
+              <div><b style={{ color: T.TEXT, fontSize: 15.5 }}>{w.name}</b><span style={{ display: 'block', marginTop: 4, color: T.TEXT_MUTED, fontSize: 12 }}>{typeLabel(w.warehouse_type)}</span><span style={{ display: 'inline-block', marginTop: 6, padding: '3px 8px', borderRadius: 6, background: T.SURFACE_SOFT, border: `1px solid ${T.BORDER}`, color: T.TEXT_LABEL, fontFamily: T.MONO, fontSize: 11.5, fontWeight: 700 }}>ID: {w.warehouse_code}</span></div>
               {w.is_default && <span style={{ padding: '4px 9px', borderRadius: 99, background: '#3877fc1a', color: '#3877fc', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>★ Default</span>}
             </div>
             <p style={{ margin: '10px 0 0', color: T.TEXT_SECONDARY, fontSize: 13, lineHeight: 1.5 }}>{w.address_line_1}{w.address_line_2 ? `, ${w.address_line_2}` : ''}<br />{w.city}, {w.state} · {w.pincode}</p>
