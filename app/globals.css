@@ -241,8 +241,8 @@ a:hover {
    ignore the ::-webkit-scrollbar rules below, which are what force a permanent, always-visible bar.
    Firefox has no ::-webkit support, so it gets the standard properties via @supports. */
 ::-webkit-scrollbar { width: 14px; height: 14px; background: #dbeef2; }
-::-webkit-scrollbar-thumb { background: #17b3c7; border-radius: 999px; border: 3px solid #dbeef2; min-height: 40px; }
-::-webkit-scrollbar-thumb:hover { background: #1198ab; }
+::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #00d7c3, #1b9fd6 55%, #3877fc); border-radius: 999px; border: 3px solid #dbeef2; min-height: 40px; }
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #00c2b0, #1581bd 55%, #2a63d6); }
 ::-webkit-scrollbar-track { background: #dbeef2; }
 ::-webkit-scrollbar-corner { background: #dbeef2; }
 @supports (-moz-appearance: none) {
@@ -276,7 +276,7 @@ a:hover {
 .nx-side-scroll { scrollbar-gutter: stable; }
 .nx-side-scroll::-webkit-scrollbar { width: 12px; background: rgba(255, 255, 255, .14); }
 .nx-side-scroll::-webkit-scrollbar-track { background: rgba(255, 255, 255, .14); }
-.nx-side-scroll::-webkit-scrollbar-thumb { background: #17b3c7; border: 3px solid transparent; background-clip: padding-box; border-radius: 999px; }
+.nx-side-scroll::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #00d7c3, #1b9fd6 55%, #3877fc); border: 3px solid transparent; background-clip: padding-box; border-radius: 999px; }
 @supports (-moz-appearance: none) {
   .nx-side-scroll { scrollbar-width: auto; scrollbar-color: #17b3c7 rgba(255, 255, 255, .14); }
 }

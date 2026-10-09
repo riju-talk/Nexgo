@@ -10,7 +10,7 @@ const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`,
 const FIELD = { width: '100%', height: 42, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 11px', fontSize: 14, outline: 'none' };
 const BRAND = { Delhivery: '#C8102E', 'Blue Dart': '#0057B8', XpressBees: '#F58220', 'Ecom Express': '#D2232A', DTDC: '#1B3A8A', 'Ekart Logistics': '#2874F0', 'India Post': '#D22030' };
 const days = (t) => (t.minDays === t.maxDays ? `${t.minDays} Day${t.minDays === 1 ? '' : 's'}` : `${t.minDays} – ${t.maxDays} Days`);
-const WINDOW_TONE = (t) => (t.maxDays <= 2 ? ['#7C3AED', '#7C3AED14'] : t.maxDays <= 4 ? ['#3877fc', '#3877fc12'] : ['#C2410C', '#F5822014']);
+const WINDOW_TONE = (t) => (t.maxDays <= 2 ? ['#1b9fd6', '#1b9fd614'] : t.maxDays <= 4 ? ['#3877fc', '#3877fc12'] : ['#C2410C', '#F5822014']);
 
 function Stat({ icon, label, value }) {
   return <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 0', borderTop: `1px solid ${T.DIVIDER}` }}><span style={{ fontSize: 18 }}>{icon}</span><span style={{ flex: 1, color: T.TEXT_SECONDARY, fontSize: 13 }}>{label}</span><b style={{ color: T.TEXT, fontSize: 14 }}>{value}</b></div>;

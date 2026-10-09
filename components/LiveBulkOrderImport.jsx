@@ -262,7 +262,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4,minmax(0,1fr))', gap: 12, marginTop: 18 }}>
-          <SummaryCard label="Total uploads" value={fileName ? 1 : 0} tone="#6366F1" icon="⇧" />
+          <SummaryCard label="Total uploads" value={fileName ? 1 : 0} tone="#1b9fd6" icon="⇧" />
           <SummaryCard label="Total orders" value={orders.length} tone="#3B82F6" icon="□" />
           <SummaryCard label="Successful orders" value={result?.created || orders.filter((o) => o.created).length} tone="#22C55E" icon="✓" />
           <SummaryCard label="Failed orders" value={failedCount} tone="#EF4444" icon="×" />
