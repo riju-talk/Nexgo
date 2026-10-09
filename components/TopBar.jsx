@@ -57,8 +57,7 @@ export default function TopBar({ activeId, mobile }) {
         </>
       ) : (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11, flex: '0 0 250px', minWidth: 0 }}>
-            <div style={{ width: 34, height: 34, display: 'grid', placeItems: 'center', borderRadius: 9, background: light ? '#E9F7F5' : 'rgba(27,159,214,.16)', border: '1px solid rgba(27,159,214,.26)', color: T.ACCENT, fontSize: 15, fontWeight: 800 }}>⌁</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, flex: '0 0 250px', minWidth: 0 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, lineHeight: 1.15 }}>
                 <span style={{ width: 6, height: 6, borderRadius: 99, background: T.ACCENT, boxShadow: `0 0 0 3px ${light ? 'rgba(27,159,214,.14)' : 'rgba(27,159,214,.20)'}` }} />
