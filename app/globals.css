@@ -236,14 +236,18 @@ a:hover {
 [data-theme="dark"] a:hover { color: #a8e6f3; }
 
 /* Teal scrollbar on every scroll area (seller, admin, auth, nested panels).
-   Standard properties first (Chrome 121+, Edge, Firefox); the ::-webkit rules cover older Safari/Chromium. */
-html, body, * { scrollbar-width: auto; scrollbar-color: #17b3c7 #dbeef2; }
-[data-theme="dark"] html, [data-theme="dark"] body, [data-theme="dark"] * { scrollbar-color: #17b3c7 #14283d; }
-::-webkit-scrollbar { width: 14px; height: 14px; }
+   IMPORTANT: do not set scrollbar-color / scrollbar-width for Chromium. Doing so switches Windows
+   Chrome/Edge/Brave to thin auto-hiding overlay scrollbars (invisible until hovered) and makes them
+   ignore the ::-webkit-scrollbar rules below, which are what force a permanent, always-visible bar.
+   Firefox has no ::-webkit support, so it gets the standard properties via @supports. */
+::-webkit-scrollbar { width: 14px; height: 14px; background: #dbeef2; }
 ::-webkit-scrollbar-thumb { background: #17b3c7; border-radius: 999px; border: 3px solid #dbeef2; min-height: 40px; }
 ::-webkit-scrollbar-thumb:hover { background: #1198ab; }
 ::-webkit-scrollbar-track { background: #dbeef2; }
 ::-webkit-scrollbar-corner { background: #dbeef2; }
+@supports (-moz-appearance: none) {
+  * { scrollbar-width: auto; scrollbar-color: #17b3c7 #dbeef2; }
+}
 
 @keyframes nxc-dim {
   from { opacity: 0; }
@@ -268,6 +272,11 @@ html, body, * { scrollbar-width: auto; scrollbar-color: #17b3c7 #dbeef2; }
   .nxc-live-ping { animation: none; opacity: 0; }
 }
 
-/* Sidebar menu scrollbar: clearly visible on the navy background. */
-.nx-side-scroll { scrollbar-width: auto; scrollbar-color: #17b3c7 rgba(255, 255, 255, .14); scrollbar-gutter: stable; }
-
+/* Sidebar menu scrollbar: clearly visible on the navy background (same rule: no standard properties on Chromium). */
+.nx-side-scroll { scrollbar-gutter: stable; }
+.nx-side-scroll::-webkit-scrollbar { width: 12px; background: rgba(255, 255, 255, .14); }
+.nx-side-scroll::-webkit-scrollbar-track { background: rgba(255, 255, 255, .14); }
+.nx-side-scroll::-webkit-scrollbar-thumb { background: #17b3c7; border: 3px solid transparent; background-clip: padding-box; border-radius: 999px; }
+@supports (-moz-appearance: none) {
+  .nx-side-scroll { scrollbar-width: auto; scrollbar-color: #17b3c7 rgba(255, 255, 255, .14); }
+}
