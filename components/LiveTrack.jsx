@@ -264,7 +264,7 @@ export default function LiveTrack({ mobile }) {
             {!visible.length ? <div style={{ padding: 26, color: T.TEXT_MUTED, fontSize: 13 }}>No shipments match these filters.{activeFilters && <> <button onClick={clearAll} style={{ border: 0, background: 'transparent', color: T.ACCENT, fontWeight: 700, cursor: 'pointer' }}>Clear filters</button></>}</div> : (
               <>
                 <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', minWidth: 1180, borderCollapse: 'collapse' }}>
+                  <table style={{ width: '100%', minWidth: 1060, borderCollapse: 'collapse' }}>
                     <thead><tr>
                       <th style={{ ...HEAD, width: 34 }}><input type="checkbox" aria-label="Select all on this page" checked={allOnPage} onChange={togglePage} /></th>
                       {['Channel', 'Order ID', 'NEXGO order ID', 'Date', 'Payment / Method', 'Customer', 'Carrier', 'AWB', 'WhatsApp status', 'Status', ''].map((h) => <th key={h || 'act'} style={HEAD}>{h}</th>)}
@@ -275,17 +275,17 @@ export default function LiveTrack({ mobile }) {
                         return (
                           <tr key={r.id} onClick={() => setSelectedId(r.id === selectedId ? null : r.id)} style={{ cursor: 'pointer', background: r.id === selectedId ? 'rgba(27,159,214,.09)' : undefined }}>
                             <td style={CELL} onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Select ${r.order_number}`} checked={picked.has(r.id)} onChange={() => toggleOne(r.id)} /></td>
-                            <td style={CELL}>{channelName(r.channel)}</td>
+                            <td style={{ ...CELL, whiteSpace: 'nowrap' }}>{channelName(r.channel)}</td>
                             <td style={CELL}><b>{r.order_number}</b></td>
                             <td style={CELL}><span style={{ fontFamily: T.MONO, fontSize: 12 }}>{r.nexgo_order_id}</span></td>
-                            <td style={CELL}>{day(r.booked_at)}<small style={SUB}>{new Date(r.booked_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</small></td>
-                            <td style={CELL}>{r.payment_mode === 'cod' ? <><b style={{ color: '#6d28d9' }}>COD</b> {inr0(r.cod_amount_paise)}</> : <><b style={{ color: T.TEXT_SECONDARY }}>Prepaid</b> {inr0(r.subtotal_paise)}</>}</td>
+                            <td style={{ ...CELL, whiteSpace: 'nowrap' }}>{day(r.booked_at)}<small style={SUB}>{new Date(r.booked_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</small></td>
+                            <td style={{ ...CELL, whiteSpace: 'nowrap' }}>{r.payment_mode === 'cod' ? <><b style={{ color: '#6d28d9' }}>COD</b> {inr0(r.cod_amount_paise)}</> : <><b style={{ color: T.TEXT_SECONDARY }}>Prepaid</b> {inr0(r.subtotal_paise)}</>}</td>
                             <td style={CELL}><b>{r.customer_name}</b><small style={SUB}>{r.customer_city} · {r.customer_pincode}</small></td>
-                            <td style={CELL}>{r.courier_name ? <><b>{r.courier_name}</b><small style={SUB}>{r.service_name} · {modeOf(r)}</small></> : <span style={{ color: T.TEXT_MUTED }}>Not assigned</span>}</td>
+                            <td style={CELL}>{r.courier_name ? <><b>{r.courier_name}</b><small style={SUB}>{r.service_name}</small></> : <span style={{ color: T.TEXT_MUTED }}>Not assigned</span>}</td>
                             <td style={CELL}>{r.awb ? <b style={{ fontFamily: T.MONO }}>{r.awb}</b> : <span style={{ color: T.TEXT_MUTED }}>—</span>}</td>
                             <td style={CELL}><span style={{ color: waTone(r.whatsapp_status), fontWeight: 650 }}>{WHATSAPP[r.whatsapp_status] || 'Not sent'}</span></td>
                             <td style={CELL}><Pill state={r.state} />{late && <small style={{ ...SUB, color: T.RED }}>Delayed · due {day(r.promised_delivery_at)}</small>}</td>
-                            <td style={CELL} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}><Btn small onClick={() => setSelectedId(r.id)}>{r.state === 'failed' ? 'Details' : 'Track'}</Btn>{r.awb && <Btn small onClick={() => copyText(r.awb, showToast, 'AWB copied')}>Copy</Btn>}</div></td>
+                            <td style={CELL} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}><Btn small onClick={() => setSelectedId(r.id)}>{r.state === 'failed' ? 'Details' : 'Track'}</Btn></div></td>
                           </tr>
                         );
                       })}

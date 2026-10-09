@@ -76,7 +76,7 @@ export default function LiveRto({ mobile }) {
         <Stat label="Freight on RTO" value={ok ? inr0(stats.freightOnRtoPaise) : '—'} note="Forward freight paid" color={BLUE} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'minmax(0,1fr) 300px', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16, alignItems: 'start' }}>
         <section style={{ ...CARD, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '12px 14px 0' }}>
             <b style={{ color: T.TEXT, fontSize: 15 }}>Shipments</b>
@@ -94,7 +94,7 @@ export default function LiveRto({ mobile }) {
               return <button key={id} role="tab" aria-selected={on} type="button" onClick={() => { setStage(id); setPage(1); }} style={{ padding: '10px 12px', border: 0, borderBottom: `2px solid ${on ? BLUE : 'transparent'}`, background: 'transparent', color: on ? BLUE : T.TEXT_SECONDARY, fontWeight: on ? 750 : 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{n !== null && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: on ? `${BLUE}1c` : T.SURFACE_SOFT, fontSize: 11 }}>{n}</span>}</button>;
             })}
           </div>
-          <Table loading={loading} error={data.error} rows={data.items} minWidth={1000} empty={anyFilter || stage !== 'all' ? 'No RTO shipments match these filters.' : 'No RTO shipments — every parcel is on its way to the customer.'}
+          <Table loading={loading} error={data.error} rows={data.items} minWidth={980} empty={anyFilter || stage !== 'all' ? 'No RTO shipments match these filters.' : 'No RTO shipments — every parcel is on its way to the customer.'}
             columns={[
               { h: 'Order / AWB', cell: (r) => <span><b style={{ color: BLUE }}>{r.order_number}</b><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED }}>{r.awb}</small><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED }}>{r.nexgo_order_id}</small></span> },
               { h: 'Customer', cell: (r) => <span><b>{r.customer_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.customer_phone}</small><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.customer_city}, {r.customer_pincode}</small></span> },
@@ -108,7 +108,7 @@ export default function LiveRto({ mobile }) {
           <Pager page={page} pages={data.pages} total={data.total} pageSize={PAGE_SIZE} onPage={setPage} loading={loading} />
         </section>
 
-        <aside style={{ display: 'grid', gap: 14 }}>
+        <aside style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3,minmax(0,1fr))', gap: 14 }}>
           <section style={{ ...CARD, padding: 16 }}>
             <b style={{ color: T.TEXT, fontSize: 14 }}>RTO by courier</b>
             <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
