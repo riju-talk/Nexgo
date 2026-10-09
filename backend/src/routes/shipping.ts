@@ -2,7 +2,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
-import { calculateRate, paiseToAmount, volumetricWeightG } from '../lib/money.js';
+import { calculateRate, paiseToAmount, volumetricWeightG, type RateRow } from '../lib/money.js';
+import { laneZone, ZONE_LABEL } from '../lib/zone.js';
 import { deliveryWindow, serviceabilityReason, type PincodeInfo } from '../lib/serviceability.js';
 import { requireSeller } from './seller.js';
 
@@ -10,7 +11,9 @@ const pincode = z.string().regex(/^\d{6}$/);
 const quoteInput = z.object({
   destinationPincode: pincode,
   pickupPincode: pincode.optional(),
+  // Ignored when both pincodes are known: the zone is derived from the lane (see lib/zone.ts).
   zoneCode: z.string().min(2).max(40).default('national'),
+  orderValue: z.number().min(0).max(10_000_000).default(0),
   weightG: z.number().int().min(1).max(50_000),
   paymentMode: z.enum(['prepaid', 'cod']).default('prepaid'),
   // Optional parcel dimensions; when present the quote bills max(dead, volumetric).
@@ -18,13 +21,14 @@ const quoteInput = z.object({
   widthMm: z.number().int().min(10).max(5_000).optional(),
   heightMm: z.number().int().min(10).max(5_000).optional(),
 });
-const serviceabilityInput = z.object({ pickupPincode: pincode, deliveryPincode: pincode, weightG: z.number().int().min(1).max(50_000), paymentMode: z.enum(['prepaid', 'cod']).optional() });
+const serviceabilityInput = z.object({ pickupPincode: pincode, deliveryPincode: pincode, weightG: z.number().int().min(1).max(50_000), paymentMode: z.enum(['prepaid', 'cod']).optional(), orderValue: z.number().min(0).max(10_000_000).default(0) });
 
 type OptionRow = {
   provider_code: string; provider_name: string; supports_cod: boolean; service_code: string; service_name: string; service_type: string;
   typical_delivery_days: number | null; max_delivery_days: number | null; serves_oda: boolean; delivery_tagline: string | null;
   account_mode: 'platform' | 'seller_owned'; cod_enabled: boolean;
   base_weight_g: number | null; base_price_paise: number | null; additional_weight_g: number | null; additional_price_paise: number | null; cod_fee_paise: number | null; fuel_surcharge_bps: number | null;
+  cod_percent_bps: number | null; rto_base_price_paise: number | null; rto_additional_price_paise: number | null;
   blocked: boolean; has_allow: boolean; allow_match: boolean;
 };
 
@@ -38,7 +42,7 @@ async function loadOptions(client: PoolClient, sellerId: string, destination: st
   const result = await client.query<OptionRow>(
     `SELECT cp.code AS provider_code, cp.name AS provider_name, cp.supports_cod, cs.code AS service_code, cs.display_name AS service_name, cs.service_type,
             cs.typical_delivery_days, cs.max_delivery_days, cs.serves_oda, cs.delivery_tagline, sca.account_mode, sca.cod_enabled,
-            rcr.base_weight_g, rcr.base_price_paise, rcr.additional_weight_g, rcr.additional_price_paise, rcr.cod_fee_paise, rcr.fuel_surcharge_bps,
+            rcr.base_weight_g, rcr.base_price_paise, rcr.additional_weight_g, rcr.additional_price_paise, rcr.cod_fee_paise, rcr.fuel_surcharge_bps, rcr.cod_percent_bps, rcr.rto_base_price_paise, rcr.rto_additional_price_paise,
             EXISTS (SELECT 1 FROM courier_pincode_rules r WHERE r.service_id = cs.id AND r.rule_type = 'blocked' AND $4 LIKE r.destination_prefix || '%') AS blocked,
             EXISTS (SELECT 1 FROM courier_pincode_rules r WHERE r.service_id = cs.id AND r.rule_type = 'allowed') AS has_allow,
             EXISTS (SELECT 1 FROM courier_pincode_rules r WHERE r.service_id = cs.id AND r.rule_type = 'allowed' AND $4 LIKE r.destination_prefix || '%') AS allow_match
@@ -60,12 +64,11 @@ async function loadOptions(client: PoolClient, sellerId: string, destination: st
   return result.rows;
 }
 
-function describe(row: OptionRow, dest: PincodeInfo | null, pickup: PincodeInfo | null, chargeableG: number, cod: boolean) {
+function describe(row: OptionRow, dest: PincodeInfo | null, pickup: PincodeInfo | null, chargeableG: number, cod: boolean, orderValuePaise = 0) {
   const hasRate = row.base_price_paise !== null;
   const reason = serviceabilityReason({ blocked: row.blocked, hasAllow: row.has_allow, allowMatch: row.allow_match, servesOda: row.serves_oda, courierCod: row.cod_enabled && row.supports_cod, hasRate }, dest, cod);
   const codAvailable = row.cod_enabled && row.supports_cod && (dest?.cod_available ?? true);
-  const pricing = hasRate ? calculateRate(row as unknown as Parameters<typeof calculateRate>[0], chargeableG, cod) : null;
-  const codFeePaise = hasRate ? row.cod_fee_paise! : 0;
+  const pricing = hasRate ? calculateRate(row as unknown as RateRow, chargeableG, cod, orderValuePaise) : null;
   const window = deliveryWindow({ typical: row.typical_delivery_days, max: row.max_delivery_days }, dest, pickup);
   return {
     provider: { code: row.provider_code, name: row.provider_name },
@@ -74,10 +77,10 @@ function describe(row: OptionRow, dest: PincodeInfo | null, pickup: PincodeInfo 
     serviceable: reason === null,
     reason,
     codAvailable,
-    codFee: paiseToAmount(codFeePaise),
+    codFee: paiseToAmount(pricing?.codFeePaise ?? 0),
     tat: { minDays: window.minDays, maxDays: window.maxDays, earliest: window.earliest, latest: window.latest },
     currency: 'INR' as const,
-    price: pricing ? { transport: paiseToAmount(pricing.transportPaise), fuelSurcharge: paiseToAmount(pricing.fuelSurchargePaise), freight: paiseToAmount(pricing.transportPaise + pricing.fuelSurchargePaise), codFee: paiseToAmount(pricing.codFeePaise), total: paiseToAmount(pricing.totalPaise) } : null,
+    price: pricing ? { transport: paiseToAmount(pricing.transportPaise), fuelSurcharge: paiseToAmount(pricing.fuelSurchargePaise), freight: paiseToAmount(pricing.transportPaise + pricing.fuelSurchargePaise), codFee: paiseToAmount(pricing.codFeePaise), additionalSlabs: pricing.extraSlabs, total: paiseToAmount(pricing.totalPaise), gst: paiseToAmount(pricing.gstPaise), totalWithGst: paiseToAmount(pricing.totalWithGstPaise), rto: paiseToAmount(pricing.rtoPaise), rtoGst: paiseToAmount(pricing.rtoGstPaise), rtoWithGst: paiseToAmount(pricing.rtoWithGstPaise) } : null,
   };
 }
 
@@ -108,13 +111,15 @@ export async function shippingRoutes(app: FastifyInstance) {
     const chargeableG = Math.max(input.weightG, volumetricG);
     return withSellerTransaction(sellerId, async (client) => {
       const [dest, pickup] = await Promise.all([pincodeInfo(client, input.destinationPincode), pincodeInfo(client, input.pickupPincode)]);
-      const rows = await loadOptions(client, sellerId, input.destinationPincode, input.zoneCode, chargeableG);
-      const options = rows.map((row) => describe(row, dest, pickup, chargeableG, isCod));
+      const zone = pickup && dest ? laneZone(pickup, dest) : input.zoneCode;
+      const rows = await loadOptions(client, sellerId, input.destinationPincode, zone, chargeableG);
+      const options = rows.map((row) => describe(row, dest, pickup, chargeableG, isCod, Math.round(input.orderValue * 100)));
       const quotes = options.filter((o) => o.serviceable && o.price).sort((a, b) => a.price!.total - b.price!.total);
       const fastest = quotes.reduce<typeof quotes[number] | null>((best, q) => (!best || q.tat.minDays < best.tat.minDays || (q.tat.minDays === best.tat.minDays && q.price!.total < best.price!.total) ? q : best), null);
       const tagged = quotes.map((q, i) => ({ ...q, tags: [...(i === 0 ? ['cheapest'] : []), ...(q === fastest ? ['fastest'] : [])] }));
       return {
         destinationPincode: input.destinationPincode, destination: place(dest, input.destinationPincode), pickup: input.pickupPincode ? place(pickup, input.pickupPincode) : null,
+        zone, zoneLabel: ZONE_LABEL[zone as keyof typeof ZONE_LABEL] ?? zone, gstPercent: 18,
         deadWeightG: input.weightG, volumetricWeightG: volumetricG, chargeableWeightG: chargeableG, paymentMode: input.paymentMode,
         quotes: tagged, unavailable: options.filter((o) => !o.serviceable).map((o) => ({ provider: o.provider, service: o.service, reason: o.reason })),
       };
@@ -127,12 +132,13 @@ export async function shippingRoutes(app: FastifyInstance) {
     const { sellerId } = request.principal!;
     return withSellerTransaction(sellerId, async (client) => {
       const [dest, pickup] = await Promise.all([pincodeInfo(client, input.deliveryPincode), pincodeInfo(client, input.pickupPincode)]);
-      const rows = await loadOptions(client, sellerId, input.deliveryPincode, 'national', input.weightG);
-      const items = rows.map((row) => describe(row, dest, pickup, input.weightG, input.paymentMode === 'cod'));
+      const zone = laneZone(pickup, dest);
+      const rows = await loadOptions(client, sellerId, input.deliveryPincode, zone, input.weightG);
+      const items = rows.map((row) => describe(row, dest, pickup, input.weightG, input.paymentMode === 'cod', Math.round(input.orderValue * 100)));
       const ok = items.filter((i) => i.serviceable);
       const fastest = ok.length ? ok.reduce((a, b) => (b.tat.minDays < a.tat.minDays ? b : a)) : null;
       return {
-        pickup: place(pickup, input.pickupPincode), delivery: place(dest, input.deliveryPincode), weightG: input.weightG,
+        zone, zoneLabel: ZONE_LABEL[zone], pickup: place(pickup, input.pickupPincode), delivery: place(dest, input.deliveryPincode), weightG: input.weightG,
         serviceable: ok.length > 0, items,
         summary: { totalCouriers: items.length, serviceableCount: ok.length, codCount: ok.filter((i) => i.codAvailable).length, fastest: fastest ? { courier: fastest.provider.name, minDays: fastest.tat.minDays, maxDays: fastest.tat.maxDays } : null },
       };

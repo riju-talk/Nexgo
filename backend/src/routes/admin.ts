@@ -183,9 +183,9 @@ export async function adminRoutes(app: FastifyInstance) {
     // other seller options from the next quote.
     await db.query(
       `INSERT INTO rate_card_rates (rate_card_id, service_id, zone_code, min_weight_g, base_weight_g, base_price_paise,
-        additional_weight_g, additional_price_paise, cod_fee_paise, fuel_surcharge_bps)
+        additional_weight_g, additional_price_paise, cod_fee_paise, fuel_surcharge_bps, cod_percent_bps, rto_base_price_paise, rto_additional_price_paise)
        SELECT $1, r.service_id, r.zone_code, r.min_weight_g, r.base_weight_g, r.base_price_paise,
-         r.additional_weight_g, r.additional_price_paise, r.cod_fee_paise, r.fuel_surcharge_bps
+         r.additional_weight_g, r.additional_price_paise, r.cod_fee_paise, r.fuel_surcharge_bps, r.cod_percent_bps, r.rto_base_price_paise, r.rto_additional_price_paise
        FROM rate_card_rates r
        WHERE r.rate_card_id = (SELECT id FROM rate_cards WHERE seller_id=$2 AND state='active' AND id <> $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1)`,
       [rateCardId, sellerId],

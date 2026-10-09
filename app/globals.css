@@ -30,7 +30,7 @@
   --nx-chrome-muted: #708297;
   --nx-chrome-search: #fafbfd;
   --nx-side-bg: #0c3459;
-  --nx-side-grad: linear-gradient(175deg, #0c3459 0%, #0d4a73 52%, #0f5f7e 100%);
+  --nx-side-grad: #0c3459;
   --nx-brand-grad: linear-gradient(135deg, #00d7c3 0%, #2a8fd3 50%, #3877fc 78%, #1c3b7e 100%);
   --nx-side-edge: #1d5a86;
   --nx-side-text: #e6eef5;
@@ -109,7 +109,7 @@
   
   /* Sidebar - Deep navy with enhanced contrast */
   --nx-side-bg: #0A1628;
-  --nx-side-grad: linear-gradient(175deg, #0A1628 0%, #0b2f55 55%, #0c4560 100%);
+  --nx-side-grad: #0A1628;
   --nx-brand-grad: linear-gradient(135deg, #00d7c3 0%, #2a8fd3 50%, #3877fc 78%, #1c3b7e 100%);
   --nx-side-edge: rgba(255,255,255,.14);
   --nx-side-text: #E5EBF4;
@@ -235,28 +235,15 @@ a:hover {
 [data-theme="dark"] a { color: #5FE6D6; }
 [data-theme="dark"] a:hover { color: #a8e6f3; }
 
-/* Teal scrollbar everywhere (seller, admin, auth, nested panels). Chrome/Edge/Safari
-   use the ::-webkit rules; Firefox uses scrollbar-color. Never set scrollbar-color
-   globally for Chrome: it would disable the ::-webkit styling below. */
-::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
-}
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #00d7c3, #2a8fd3 55%, #3877fc);
-  border-radius: 999px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-  min-height: 40px;
-}
-::-webkit-scrollbar-thumb:hover { background: #1581bd; background-clip: padding-box; }
-::-webkit-scrollbar-track {
-  background: rgba(27,159,214, .10);
-}
-::-webkit-scrollbar-corner { background: transparent; }
-@supports (-moz-appearance: none) {
-  * { scrollbar-width: auto; scrollbar-color: #1b9fd6 rgba(27,159,214, .10); }
-}
+/* Teal scrollbar on every scroll area (seller, admin, auth, nested panels).
+   Standard properties first (Chrome 121+, Edge, Firefox); the ::-webkit rules cover older Safari/Chromium. */
+html, body, * { scrollbar-width: auto; scrollbar-color: #17b3c7 #dbeef2; }
+[data-theme="dark"] html, [data-theme="dark"] body, [data-theme="dark"] * { scrollbar-color: #17b3c7 #14283d; }
+::-webkit-scrollbar { width: 14px; height: 14px; }
+::-webkit-scrollbar-thumb { background: #17b3c7; border-radius: 999px; border: 3px solid #dbeef2; min-height: 40px; }
+::-webkit-scrollbar-thumb:hover { background: #1198ab; }
+::-webkit-scrollbar-track { background: #dbeef2; }
+::-webkit-scrollbar-corner { background: #dbeef2; }
 
 @keyframes nxc-dim {
   from { opacity: 0; }
@@ -282,5 +269,5 @@ a:hover {
 }
 
 /* Sidebar menu scrollbar: clearly visible on the navy background. */
-.nx-side-scroll { scrollbar-width: auto; scrollbar-color: #1b9fd6 rgba(255, 255, 255, .14); scrollbar-gutter: stable; }
+.nx-side-scroll { scrollbar-width: auto; scrollbar-color: #17b3c7 rgba(255, 255, 255, .14); scrollbar-gutter: stable; }
 

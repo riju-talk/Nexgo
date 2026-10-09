@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
-import { calculateRate } from '../lib/money.js';
 import { requireSeller } from './seller.js';
 
 function principal(request: FastifyRequest) { if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 }); return request.principal; }
@@ -98,7 +97,7 @@ export async function billingRoutes(app: FastifyInstance) {
     });
   });
 
-  // The seller's current rate chart: every enabled courier service with its slabs and a price ladder.
+  // The seller's current rate chart: every enabled courier service with its zone-wise slabs (information only; prices are worked out in the rate calculator).
   app.get('/v1/shipping/rate-card', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
     return withSellerTransaction(p.sellerId, async (client) => {
@@ -106,18 +105,16 @@ export async function billingRoutes(app: FastifyInstance) {
       if (!card) return { card: null, services: [] };
       const rows = await client.query(
         `SELECT cp.code AS provider_code, cp.name AS provider_name, cs.code AS service_code, cs.display_name AS service_name, cs.service_type, cs.typical_delivery_days, cs.max_delivery_days, cs.delivery_tagline, sca.cod_enabled,
-                r.zone_code, r.min_weight_g, r.base_weight_g, r.base_price_paise, r.additional_weight_g, r.additional_price_paise, r.cod_fee_paise, r.fuel_surcharge_bps
+                r.zone_code, r.min_weight_g, r.base_weight_g, r.base_price_paise, r.additional_weight_g, r.additional_price_paise, r.cod_fee_paise, r.fuel_surcharge_bps, r.cod_percent_bps, r.rto_base_price_paise, r.rto_additional_price_paise
          FROM seller_courier_access sca JOIN courier_services cs ON cs.id = sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id = cs.provider_id AND cp.integration_state = 'live'
          JOIN rate_card_rates r ON r.rate_card_id = $2 AND r.service_id = sca.service_id
-         WHERE sca.seller_id = $1 AND sca.state = 'enabled' ORDER BY cp.name, cs.display_name, r.zone_code, r.min_weight_g`, [p.sellerId, card.id]);
-      const LADDER = [500, 1000, 2000, 5000, 10000];
+         WHERE sca.seller_id = $1 AND sca.state = 'enabled' ORDER BY cp.name, cs.display_name, array_position(ARRAY['national','within_city','within_state','metro_to_metro','rest_of_india','ne_jk'], r.zone_code), r.min_weight_g`, [p.sellerId, card.id]);
       const services = new Map<string, Record<string, unknown>>();
       for (const r of rows.rows) {
         const key = `${r.provider_code}:${r.service_code}`;
         if (!services.has(key)) services.set(key, { providerCode: r.provider_code, providerName: r.provider_name, serviceName: r.service_name, serviceType: r.service_type, tagline: r.delivery_tagline, minDays: r.typical_delivery_days, maxDays: r.max_delivery_days, codEnabled: r.cod_enabled, slabs: [] });
         (services.get(key)!.slabs as unknown[]).push({
-          zone: r.zone_code, fromWeightG: r.min_weight_g, baseWeightG: r.base_weight_g, basePaise: r.base_price_paise, additionalWeightG: r.additional_weight_g, additionalPaise: r.additional_price_paise, codFeePaise: r.cod_fee_paise, fuelBps: r.fuel_surcharge_bps,
-          ladder: LADDER.map((w) => ({ weightG: w, totalPaise: calculateRate(r, w, false).totalPaise })),
+          zone: r.zone_code, fromWeightG: r.min_weight_g, baseWeightG: r.base_weight_g, basePaise: r.base_price_paise, additionalWeightG: r.additional_weight_g, additionalPaise: r.additional_price_paise, codFeePaise: r.cod_fee_paise, codPercentBps: r.cod_percent_bps, fuelBps: r.fuel_surcharge_bps, rtoBasePaise: r.rto_base_price_paise ?? r.base_price_paise, rtoAdditionalPaise: r.rto_additional_price_paise ?? r.additional_price_paise,
         });
       }
       return { card: { name: card.name, effectiveFrom: card.effective_from }, services: [...services.values()] };

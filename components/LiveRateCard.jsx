@@ -8,6 +8,7 @@ import * as T from '@/lib/theme';
 import { BLUE, Btn, CARD, FIELD, Pill, dayText, inr, isoDay, titleCase } from './Kit';
 
 const BRAND = { Delhivery: '#C8102E', 'Blue Dart': '#0057B8', XpressBees: '#F58220', 'Ecom Express': '#D2232A', DTDC: '#1B3A8A', 'Ekart Logistics': '#2874F0', 'India Post': '#D22030' };
+const ZONES = { national: 'National (default)', within_city: 'Within city', within_state: 'Within state', metro_to_metro: 'Metro to metro', rest_of_india: 'Rest of India', ne_jk: 'North-East & J&K' };
 const grams = (g) => (g >= 1000 ? `${g / 1000} kg` : `${g} g`);
 const window_ = (s) => (s.minDays ? (s.minDays === s.maxDays ? `${s.minDays} day${s.minDays === 1 ? '' : 's'}` : `${s.minDays} – ${s.maxDays} days`) : '—');
 
@@ -27,8 +28,8 @@ export default function LiveRateCard({ mobile, embedded = false }) {
   const couriers = useMemo(() => [...new Map((data?.services || []).map((s) => [s.providerCode, s.providerName])).entries()], [data]);
 
   const exportChart = async () => {
-    const rows = [['Courier', 'Service', 'Zone', 'From weight g', 'Base weight g', 'Base price INR', 'Additional slab g', 'Additional price INR', 'COD fee INR', 'Fuel surcharge %', '0.5 kg INR', '1 kg INR', '2 kg INR', '5 kg INR', '10 kg INR']];
-    for (const s of services) for (const l of s.slabs) rows.push([s.providerName, s.serviceName, l.zone, l.fromWeightG, l.baseWeightG, l.basePaise / 100, l.additionalWeightG, l.additionalPaise / 100, l.codFeePaise / 100, l.fuelBps / 100, ...l.ladder.map((x) => x.totalPaise / 100)]);
+    const rows = [['Courier', 'Service', 'Zone', 'From weight g', 'Base weight g', 'Base price INR', 'Additional slab g', 'Additional price INR', 'COD flat fee INR', 'COD % of order value', 'RTO base INR', 'RTO additional INR', 'Fuel surcharge %']];
+    for (const s of services) for (const l of s.slabs) rows.push([s.providerName, s.serviceName, ZONES[l.zone] || l.zone, l.fromWeightG, l.baseWeightG, l.basePaise / 100, l.additionalWeightG, l.additionalPaise / 100, l.codFeePaise / 100, l.codPercentBps / 100, l.rtoBasePaise / 100, l.rtoAdditionalPaise / 100, l.fuelBps / 100]);
     if (rows.length === 1) return showToast('Nothing to export.', 'error');
     await saveRows(rows, `rate-card-${isoDay()}`, format, 'Rate card'); showToast(`Rate card exported (${format === 'xlsx' ? 'Excel' : 'CSV'})`);
   };
@@ -38,7 +39,7 @@ export default function LiveRateCard({ mobile, embedded = false }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
         <div>
           <b style={{ color: T.TEXT, fontSize: 16 }}>{data?.card ? data.card.name : 'Rate card'}</b>
-          <span style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 12.5 }}>{data?.card ? `Effective from ${dayText(data.card.effectiveFrom)} · prices are per parcel, before GST` : 'Your negotiated rates by courier and weight slab.'}</span>
+          <span style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 12.5 }}>{data?.card ? `Effective from ${dayText(data.card.effectiveFrom)} · all prices are before 18% GST` : 'Your negotiated rates by courier and weight slab.'}</span>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <select aria-label="Courier" style={FIELD} value={courier} onChange={(e) => setCourier(e.target.value)}><option value="">All couriers</option>{couriers.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select>
@@ -60,18 +61,18 @@ export default function LiveRateCard({ mobile, embedded = false }) {
               <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}><Pill color={BLUE}>{titleCase(s.serviceType)}</Pill><Pill color={T.TEXT_SECONDARY}>🗓 {window_(s)}</Pill>{s.codEnabled ? <Pill>COD available</Pill> : <Pill color={T.AMBER}>Prepaid only</Pill>}</div>
             </div>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse' }}>
-                <thead><tr>{['Zone', 'Weight from', 'First slab', 'Each additional slab', 'COD fee', 'Fuel', '0.5 kg', '1 kg', '2 kg', '5 kg', '10 kg'].map((h) => <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: T.TEXT_MUTED, background: T.TABLE_HEAD_BG, fontWeight: 800, whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+              <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse' }}>
+                <thead><tr>{['Zone', 'Weight from', 'First slab', 'Each additional slab', 'COD (flat / % of value)', 'RTO (first / additional)', 'Fuel'].map((h) => <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: T.TEXT_MUTED, background: T.TABLE_HEAD_BG, fontWeight: 800, whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {s.slabs.map((l, i) => (
                     <tr key={i}>
-                      <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13, fontWeight: 700, color: T.TEXT }}>{titleCase(l.zone)}</td>
+                      <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13, fontWeight: 700, color: T.TEXT }}>{ZONES[l.zone] || titleCase(l.zone)}</td>
                       <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}>{grams(l.fromWeightG)}</td>
                       <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}>{inr(l.basePaise)} <small style={{ color: T.TEXT_MUTED }}>/ {grams(l.baseWeightG)}</small></td>
                       <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}>{inr(l.additionalPaise)} <small style={{ color: T.TEXT_MUTED }}>/ {grams(l.additionalWeightG)}</small></td>
-                      <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}>{s.codEnabled ? inr(l.codFeePaise) : '—'}</td>
+                      <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}>{s.codEnabled ? <>{inr(l.codFeePaise)} <small style={{ color: T.TEXT_MUTED }}>/ {(l.codPercentBps / 100).toFixed(2)}%</small></> : '—'}</td>
+                      <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}>{inr(l.rtoBasePaise)} <small style={{ color: T.TEXT_MUTED }}>/ {inr(l.rtoAdditionalPaise)}</small></td>
                       <td style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}>{(l.fuelBps / 100).toFixed(1)}%</td>
-                      {l.ladder.map((x) => <td key={x.weightG} style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13, fontWeight: 700, color: T.TEXT }}>{inr(x.totalPaise)}</td>)}
                     </tr>
                   ))}
                 </tbody>
@@ -80,7 +81,7 @@ export default function LiveRateCard({ mobile, embedded = false }) {
           </section>
         ))}
       </div>
-      {data?.card && <p style={{ marginTop: 12, color: T.TEXT_MUTED, fontSize: 12 }}>Ladder prices include the fuel surcharge and exclude COD fee and GST. Billed weight is the higher of dead weight and volumetric weight (L × B × H ÷ 5000).</p>}
+      {data?.card && <p style={{ marginTop: 12, color: T.TEXT_MUTED, fontSize: 12 }}>Reference only. A parcel is priced in the rate calculator: the zone comes from the pickup and delivery pincodes, the matching weight slab gives the first-slab price, every started additional slab adds the additional price, COD is the greater of the flat fee and the % of order value, then 18% GST is added. Billed weight is the higher of dead weight and volumetric weight (L × W × H ÷ 5000).</p>}
     </div>
   );
 }

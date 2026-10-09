@@ -41,7 +41,7 @@ export default function LiveRateCalculator({ mobile, embedded = false }) {
     if (!valid) return setError('Enter both pincodes, a weight, and either all three dimensions or none.');
     setBusy(true); setError('');
     try {
-      const body = { destinationPincode: form.delivery, pickupPincode: form.pickup, weightG: Math.round(Number(form.weightKg) * 1000), paymentMode: form.mode, ...(dimsFilled === 3 ? { lengthMm: Math.round(form.length * 10), widthMm: Math.round(form.width * 10), heightMm: Math.round(form.height * 10) } : {}) };
+      const body = { destinationPincode: form.delivery, pickupPincode: form.pickup, weightG: Math.round(Number(form.weightKg) * 1000), paymentMode: form.mode, orderValue: Number(form.value) || 0, ...(dimsFilled === 3 ? { lengthMm: Math.round(form.length * 10), widthMm: Math.round(form.width * 10), heightMm: Math.round(form.height * 10) } : {}) };
       setResult(await apiFetch('/v1/shipping/quotes', { method: 'POST', body }));
     } catch (x) { setResult(null); setError(x instanceof ApiError ? x.message : 'Rates could not be calculated.'); }
     finally { setBusy(false); }
@@ -100,13 +100,14 @@ export default function LiveRateCalculator({ mobile, embedded = false }) {
           <span>Dead weight: <b style={{ color: T.TEXT }}>{(result.deadWeightG / 1000).toFixed(2)} kg</b></span>
           <span>Volumetric: <b style={{ color: T.TEXT }}>{result.volumetricWeightG ? `${(result.volumetricWeightG / 1000).toFixed(2)} kg` : '—'}</b></span>
           <span>Billed: <b style={{ color: T.ACCENT }}>{(result.chargeableWeightG / 1000).toFixed(2)} kg</b></span>
+          {result.zoneLabel && <span>Zone: <b style={{ color: T.TEXT }}>{result.zoneLabel}</b></span>}
           {result.destination?.city && <span>To: <b style={{ color: T.TEXT }}>{result.destination.city}, {result.destination.state}</b></span>}
         </div>}
         {result && !rows.length && <div style={{ padding: '4px 18px 22px', color: T.TEXT_SECONDARY, fontSize: 13 }}>{sort === 'cod' ? 'No courier offers cash on delivery here.' : 'No courier can ship this parcel to this pincode.'}{result.unavailable?.length ? ` Not available: ${result.unavailable.map((u) => `${u.provider.name} (${u.reason})`).join(', ')}.` : ''}</div>}
         {rows.length > 0 && (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse' }}>
-              <thead><tr>{['Courier', 'Service', 'Delivery Estimate', 'Freight Charge (₹)', 'COD Fee (₹)', 'Total Cost (₹)', 'Serviceability', 'Action'].map((h) => <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 12, color: T.TEXT_MUTED, background: T.TABLE_HEAD_BG, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+            <table style={{ width: '100%', minWidth: 1040, borderCollapse: 'collapse' }}>
+              <thead><tr>{['Courier', 'Service', 'Delivery Estimate', 'Freight (₹)', 'COD Fee (₹)', 'GST 18% (₹)', 'Total incl. GST (₹)', 'RTO (₹)', 'Serviceability', 'Action'].map((h) => <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 12, color: T.TEXT_MUTED, background: T.TABLE_HEAD_BG, fontWeight: 700 }}>{h}</th>)}</tr></thead>
               <tbody>{rows.map((q) => {
                 const top = q === best;
                 return (
@@ -116,7 +117,9 @@ export default function LiveRateCalculator({ mobile, embedded = false }) {
                     <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}` }}><span style={{ padding: '5px 10px', borderRadius: 8, background: '#3877fc12', color: '#3877fc', fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap' }}>🗓 {days(q.tat)}</span></td>
                     <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 14, color: T.TEXT }}>{inr(q.price.freight)}</td>
                     <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 14, color: T.TEXT }}>{form.mode === 'cod' ? inr(q.price.codFee) : q.codAvailable ? <span style={{ color: T.TEXT_MUTED }}>— ({inr(q.codFee)} if COD)</span> : <span style={{ color: T.TEXT_MUTED }}>Prepaid only</span>}</td>
-                    <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 18, fontWeight: 800, color: top ? T.GREEN : T.TEXT }}>{inr(q.price.total)}</td>
+                    <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 14, color: T.TEXT }}>{inr(q.price.gst)}</td>
+                    <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 18, fontWeight: 800, color: top ? T.GREEN : T.TEXT }}>{inr(q.price.totalWithGst)}</td>
+                    <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 14, color: T.TEXT }}>{inr(q.price.rtoWithGst)}</td>
                     <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.GREEN, fontSize: 13, fontWeight: 650 }}>● Available</td>
                     <td style={{ padding: '14px', borderTop: `1px solid ${T.DIVIDER}` }}><button type="button" onClick={() => select(q)} style={{ height: 36, padding: '0 16px', borderRadius: 8, border: top ? 0 : `1px solid #3877fc`, background: top ? T.GREEN : T.SURFACE, color: top ? '#fff' : '#3877fc', fontWeight: 750, fontSize: 13, cursor: 'pointer' }}>Select →</button></td>
                   </tr>
