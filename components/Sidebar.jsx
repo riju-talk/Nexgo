@@ -149,7 +149,7 @@ export default function Sidebar({ activeId, mobile }) {
         {!mobile && <div style={{ marginLeft: 'auto' }}><CollapseControl collapsed={false} onClick={(event) => { event.stopPropagation(); toggleSidebar(); }} /></div>}
       </motion.div>
 
-      <div className="nx-side-scroll" style={{ flex: 1, overflowY: 'auto', padding: '14px 8px 18px' }}>
+      <div className="nx-side-scroll" style={{ flex: 1, overflowY: 'scroll', padding: '14px 8px 18px' }}>
         <div style={{ padding: '0 10px 9px', fontSize: 12, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nx-side-label)' }}>Main menu</div>
         {MENU.map((item) => {
           const [id, label, destination, children] = item;

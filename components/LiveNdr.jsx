@@ -229,18 +229,6 @@ export default function LiveNdr({ mobile }) {
               {stats && !stats.reasons.length && <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>No NDR reasons recorded yet.</span>}
             </div>
           </section>
-          <section style={{ ...CARD, padding: 16 }}>
-            <b style={{ color: T.TEXT, fontSize: 14 }}>Quick Actions</b>
-            <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
-              {[
-                ['Schedule Redelivery', 'Schedule redelivery for selected NDRs', () => (openSelected.length === 1 ? setDialog({ row: openSelected[0], action: 'delivery_rescheduled' }) : openSelected.length > 1 ? bulk('reattempt', 'Redelivery requested') : showToast('Select an NDR that needs action first.', 'error'))],
-                ['Update Address', 'Update correct address and retry delivery', () => (openSelected.length === 1 ? setDialog({ row: openSelected[0], action: 'address_update' }) : showToast('Select exactly one NDR to update its address.', 'error'))],
-                ['Mark as RTO', 'Mark selected NDRs as RTO', () => bulk('rto', 'Marked as RTO')],
-                ['Export NDR Report', 'Download NDR report', exportReport],
-              ].map(([title, sub, onClick]) => <button key={title} type="button" onClick={onClick} disabled={busy} style={{ textAlign: 'left', padding: 0, border: 0, background: 'transparent', cursor: 'pointer', color: T.TEXT }}><b style={{ display: 'block', fontSize: 13 }}>{title}</b><small style={{ color: T.TEXT_MUTED }}>{sub}</small></button>)}
-            </div>
-            {stats?.codAtRiskPaise > 0 && <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, background: `${T.AMBER}14`, color: T.AMBER, fontSize: 12 }}>COD at risk on open NDRs: <b>{inr(stats.codAtRiskPaise)}</b></div>}
-          </section>
         </aside>
       </div>
       {dialog && <CaseDialog row={dialog.row} initialAction={dialog.action} onClose={() => setDialog(null)} onDone={() => { setDialog(null); refresh(); }} />}
