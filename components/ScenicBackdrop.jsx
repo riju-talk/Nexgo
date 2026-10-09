@@ -1,15 +1,6 @@
-// A restrained workspace surface behind all in-app content. It deliberately
-// avoids imagery so operational data stays easy to scan at every viewport.
+// The workspace surface now lives on the AppShell scroll container (background: var(--nx-workspace-bg)).
+// This used to be a full-viewport position:fixed layer, which painted over the browser scrollbar and made
+// it invisible on every page that rendered it. Kept as a no-op so existing call sites stay valid.
 export default function ScenicBackdrop() {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 0,
-        background: 'var(--nx-workspace-bg)',
-        pointerEvents: 'none',
-      }}
-    />
-  );
+  return null;
 }
