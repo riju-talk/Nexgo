@@ -1,3 +1,4 @@
+import { applyShipmentFilters, shipmentFilterFields } from '../lib/shipmentFilters.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
@@ -47,6 +48,7 @@ export async function ndrRoutes(app: FastifyInstance) {
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       attemptNumber: z.coerce.number().int().min(1).max(3).optional(),
+      ...shipmentFilterFields,
       page: z.coerce.number().int().min(1).default(1),
       pageSize: z.coerce.number().int().min(1).max(50).default(8),
     }).parse(request.query);
@@ -58,9 +60,10 @@ export async function ndrRoutes(app: FastifyInstance) {
       if (query.reason) add('nc.ndr_reason::text = ?', query.reason);
       if (query.courier) add('cp.code = ?', query.courier);
       if (query.attemptNumber) add('nc.attempt_number = ?', query.attemptNumber);
+      applyShipmentFilters(add, query);
       if (query.from) add('nc.opened_at >= ?::date', query.from);
       if (query.to) add("nc.opened_at < ?::date + 1", query.to);
-      if (query.q) add("(o.order_number ILIKE ? OR s.awb ILIKE ? OR c.full_name ILIKE ? OR c.phone ILIKE ?)".replace(/\?/g, '$' + (params.length + 1)), `%${query.q}%`);
+      if (query.q) add("(o.order_number ILIKE ? OR o.nexgo_order_id ILIKE ? OR s.awb ILIKE ? OR c.full_name ILIKE ? OR c.phone ILIKE ?)".replace(/\?/g, '$' + (params.length + 1)), `%${query.q}%`);
       const from = `FROM ndr_cases nc JOIN shipments s ON s.id = nc.shipment_id JOIN orders o ON o.id = s.order_id JOIN customers c ON c.id = o.customer_id
         JOIN courier_providers cp ON cp.id = s.provider_id JOIN courier_services cs ON cs.id = s.service_id WHERE ${where.join(' AND ')}`;
       const total = Number((await client.query<{ n: string }>(`SELECT count(*) AS n ${from}`, params)).rows[0].n);

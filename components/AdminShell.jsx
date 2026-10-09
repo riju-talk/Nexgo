@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAppState } from '@/lib/AppStateContext';
-import { pathFor } from '@/lib/routes';
+import { pathFor, idForPath } from '@/lib/routes';
+import { PAGES } from '@/lib/data';
 import * as T from '@/lib/theme';
 import { adminApi } from '@/lib/api';
 
@@ -68,6 +69,8 @@ function AdminNav({ mobile }) {
 
 export default function AdminShell({ children }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const pageTitle = (PAGES[idForPath(pathname)] || [])[1] || '';
   const { vw, navOpen, setNavOpen, setPaletteOpen, theme, toggleTheme, showToast } = useAppState();
   const [sessionReady, setSessionReady] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -95,6 +98,7 @@ export default function AdminShell({ children }) {
       <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'scroll', overflowX: 'hidden' }}>
         <header style={{ height: 58, padding: mobile ? '0 14px' : '0 20px', display: 'flex', alignItems: 'center', gap: 16, position: 'sticky', top: 0, zIndex: 40, background: 'var(--nx-chrome-bg)', borderBottom: '1px solid var(--nx-chrome-border)' }}>
           {mobile && <motion.button onClick={() => setNavOpen(!navOpen)} whileTap={{ scale: .93 }} style={{ width: 34, height: 34, border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 18, cursor: 'pointer' }}>☰</motion.button>}
+          {!mobile && pageTitle && <b style={{ flex: '0 0 auto', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--nx-chrome-text)', fontSize: 15, letterSpacing: '-.015em' }}>{pageTitle}</b>}
           <motion.div onClick={() => setPaletteOpen(true)} whileTap={{ scale: .985 }} style={{ height: 32, width: mobile ? 'auto' : 520, flex: mobile ? 1 : '0 1 520px', margin: mobile ? 0 : '0 auto', padding: '0 11px', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--nx-chrome-search)', border: '1px solid var(--nx-chrome-border)', borderRadius: 8, color: 'var(--nx-chrome-muted)', fontSize: 13, cursor: 'pointer' }}><span style={{ color: T.ACCENT, fontSize: 17 }}>⌕</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search order, AWB, seller, courier…</span><span style={{ marginLeft: 'auto', color: 'var(--nx-chrome-muted)', fontFamily: T.MONO, fontSize: 11 }}>⌘K</span></motion.div>
           {mobile && <motion.button onClick={toggleTheme} whileTap={{ scale: .93 }} title="Toggle colour mode" style={{ width: 34, height: 34, border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: T.ACCENT, cursor: 'pointer', fontSize: 16 }}>{dark ? '☾' : '☀'}</motion.button>}
           {!mobile && <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

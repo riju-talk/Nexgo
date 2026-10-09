@@ -9,8 +9,15 @@ export function mapCourierStatus(value: string): CanonicalShipmentState | null {
     booked: 'booked', manifest: 'booked', picked_up: 'in_transit', in_transit: 'in_transit', transit: 'in_transit',
     out_for_delivery: 'out_for_delivery', delivered: 'delivered', ndr: 'ndr', rto: 'rto', rto_initiated: 'rto', cancelled: 'cancelled',
   };
+  if (rtoSubStatus(normalized)) return 'rto';
   return canonicalStates.has(normalized) ? normalized as CanonicalShipmentState : map[normalized] ?? null;
 }
+
+// Courier statuses that describe where a returning parcel is (stored in shipments.rto_status for the RTO dashboard).
+const RTO_SUB: Record<string, 'in_transit' | 'out_for_delivery' | 'delivered' | 'lost' | 'damaged' | 'undelivered'> = {
+  rto_in_transit: 'in_transit', rto_out_for_delivery: 'out_for_delivery', rto_ofd: 'out_for_delivery', rto_delivered: 'delivered', rto_lost: 'lost', rto_damaged: 'damaged', rto_undelivered: 'undelivered',
+};
+export function rtoSubStatus(value: string) { return RTO_SUB[value.trim().toLowerCase().replace(/[ -]+/g, '_')] ?? null; }
 
 export function isProgressionAllowed(from: CanonicalShipmentState, to: CanonicalShipmentState) {
   const allowed: Record<CanonicalShipmentState, CanonicalShipmentState[]> = {

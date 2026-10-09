@@ -6,6 +6,7 @@ import { useAppState } from '@/lib/AppStateContext';
 import { usePincode } from '@/lib/usePincode';
 import * as T from '@/lib/theme';
 import { FORMATS } from '@/lib/exportFile';
+import ShipmentFilters, { EMPTY_FILTERS, filterParams } from './ShipmentFilters';
 
 const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`, borderRadius: 12 };
 const FIELD = { height: 38, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
@@ -14,7 +15,6 @@ const STATUS = {
   new: ['New NDR', '#C2410C', '#F5822018'], action_pending: ['Action Pending', '#B45309', '#F5B30018'], redelivery_scheduled: ['Redelivery Scheduled', '#3877fc', '#3877fc14'], resolved: ['Resolved', T.GREEN, `${T.GREEN}18`], rto: ['RTO', T.RED, `${T.RED}16`],
 };
 const TABS = [['all', 'All NDR'], ['new', 'New NDR'], ['action_pending', 'Action Pending'], ['redelivery_scheduled', 'Redelivery Scheduled'], ['resolved', 'Resolved'], ['rto', 'RTO']];
-const DONUT = [['new', '#F58220'], ['action_pending', '#F5B301'], ['redelivery_scheduled', '#3877fc'], ['resolved', '#14724F'], ['rto', '#B23A2B']];
 const when = (v) => (v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 const dayInput = (offset) => { const d = new Date(Date.now() + offset * 864e5); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const inr = (paise) => `₹${(Number(paise || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -101,24 +101,11 @@ function CaseDialog({ row, initialAction, onClose, onDone }) {
   );
 }
 
-function Donut({ counts, total }) {
-  const r = 52; const c = 2 * Math.PI * r; let offset = 0;
-  return (
-    <svg viewBox="0 0 140 140" width="150" height="150" role="img" aria-label="NDR status mix">
-      <circle cx="70" cy="70" r={r} fill="none" stroke={T.DIVIDER} strokeWidth="16" />
-      {total > 0 && DONUT.map(([key, color]) => { const n = counts[key] || 0; if (!n) return null; const len = (n / total) * c; const el = <circle key={key} cx="70" cy="70" r={r} fill="none" stroke={color} strokeWidth="16" strokeDasharray={`${len} ${c - len}`} strokeDashoffset={-offset} transform="rotate(-90 70 70)" />; offset += len; return el; })}
-      <text x="70" y="68" textAnchor="middle" fontSize="24" fontWeight="800" fill="currentColor">{total}</text>
-      <text x="70" y="86" textAnchor="middle" fontSize="10" fill="#8391a0">Total NDR</text>
-    </svg>
-  );
-}
-
 export default function LiveNdr({ mobile }) {
   const { showToast } = useAppState();
   const [tab, setTab] = useState('all'); const [page, setPage] = useState(1);
-  const [qInput, setQInput] = useState(''); const [q, setQ] = useState('');
-  const [reason, setReason] = useState(''); const [courier, setCourier] = useState('');
-  const [from, setFrom] = useState(''); const [to, setTo] = useState('');
+  const [filters, setFilters] = useState(EMPTY_FILTERS); const [panel, setPanel] = useState(true);
+  const [reason, setReason] = useState('');
   const [tick, setTick] = useState(0);
   const [data, setData] = useState({ key: '', items: [], total: 0, pages: 1, error: '' });
   const [stats, setStats] = useState(null);
@@ -128,9 +115,8 @@ export default function LiveNdr({ mobile }) {
   const [busy, setBusy] = useState(false);
   const [format, setFormat] = useState('csv');
 
-  useEffect(() => { const t = window.setTimeout(() => { setQ(qInput.trim()); setPage(1); }, 300); return () => window.clearTimeout(t); }, [qInput]);
 
-  const params = useMemo(() => { const p = new URLSearchParams({ tab, page: String(page), pageSize: '8' }); if (q) p.set('q', q); if (reason) p.set('reason', reason); if (courier) p.set('courier', courier); if (from) p.set('from', from); if (to) p.set('to', to); return p.toString(); }, [tab, page, q, reason, courier, from, to]);
+  const params = useMemo(() => { const p = filterParams(filters, new URLSearchParams({ tab, page: String(page), pageSize: '8' })); if (reason) p.set('reason', reason); return p.toString(); }, [tab, page, filters, reason]);
   const key = `${params}#${tick}`;
   useEffect(() => {
     let live = true;
@@ -144,8 +130,8 @@ export default function LiveNdr({ mobile }) {
   const loading = data.key !== key;
   const refresh = () => { setSelected(new Set()); setTick((t) => t + 1); };
   const filter = (setter) => (e) => { setter(e.target.value); setPage(1); };
-  const clearFilters = () => { setQInput(''); setQ(''); setReason(''); setCourier(''); setFrom(''); setTo(''); setPage(1); };
-  const anyFilter = q || reason || courier || from || to;
+  const applyFilters = (next) => { setFilters(next); setPage(1); };
+  const anyFilter = reason || Object.values(filters).some(Boolean);
   const counts = stats?.counts || {};
   const toggle = (id) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const allOnPage = data.items.length > 0 && data.items.every((r) => selected.has(r.id));
@@ -163,7 +149,7 @@ export default function LiveNdr({ mobile }) {
   const exportReport = async () => {
     setBusy(true);
     try {
-      const run = await reportsApi.generate({ type: 'ndr', from: from || dayInput(-90), to: to || dayInput(0) });
+      const run = await reportsApi.generate({ type: 'ndr', from: filters.from || dayInput(-90), to: filters.to || dayInput(0) });
       if (!run.row_count) showToast('No NDR cases in this period.', 'error'); else { await reportsApi.download(run.id, run.file_name, format); showToast(`NDR report downloaded · ${run.row_count} rows (${format === 'xlsx' ? 'Excel' : 'CSV'})`); }
     } catch (e) { showToast(e.message || 'Report could not be generated', 'error'); } finally { setBusy(false); }
   };
@@ -188,15 +174,11 @@ export default function LiveNdr({ mobile }) {
           <div role="tablist" style={{ display: 'flex', gap: 4, padding: '4px 14px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
             {TABS.map(([id, label]) => { const n = id === 'all' ? stats?.total : counts[id]; const on = tab === id; return <button key={id} role="tab" aria-selected={on} type="button" onClick={() => { setTab(id); setPage(1); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#3877fc' : 'transparent'}`, background: 'transparent', color: on ? '#3877fc' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{id !== 'all' && n > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'new' || id === 'action_pending' ? T.RED : '#3877fc', color: '#fff', fontSize: 11 }}>{n}</span>}</button>; })}
           </div>
-          <div style={{ padding: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input aria-label="Search" style={{ ...FIELD, flex: '1 1 200px', minWidth: 160 }} placeholder="Search by Order ID, AWB, Customer, phone…" value={qInput} onChange={(e) => setQInput(e.target.value)} />
-            <select aria-label="Reason" style={FIELD} value={reason} onChange={filter(setReason)}><option value="">All Reasons</option>{Object.entries(REASONS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
-            <select aria-label="Courier" style={FIELD} value={courier} onChange={filter(setCourier)}><option value="">All Couriers</option>{(stats?.couriers || []).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select>
-            <input aria-label="From date" type="date" style={FIELD} value={from} max={to || undefined} onChange={filter(setFrom)} />
-            <span style={{ color: T.TEXT_MUTED }}>–</span>
-            <input aria-label="To date" type="date" style={FIELD} value={to} min={from || undefined} onChange={filter(setTo)} />
-            {anyFilter && <Btn small onClick={clearFilters}>Clear filters</Btn>}
+          <div style={{ padding: '12px 14px 4px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Btn small onClick={() => setPanel((o) => !o)}>{panel ? 'Hide filters' : `Filters${anyFilter ? ' •' : ''}`}</Btn>
+            <select aria-label="Reason" style={{ ...FIELD, height: 32 }} value={reason} onChange={(e) => { setReason(e.target.value); setPage(1); }}><option value="">All reasons</option>{Object.entries(REASONS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
           </div>
+          {panel && <ShipmentFilters key={JSON.stringify(filters)} value={filters} onApply={applyFilters} couriers={stats?.couriers || []} mobile={mobile} />}
 
           {selectedRows.length > 0 && <div style={{ margin: '0 14px 10px', padding: '8px 12px', borderRadius: 8, background: '#3877fc0d', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}><b style={{ color: T.TEXT }}>{selectedRows.length} selected</b><Btn small disabled={busy} onClick={() => bulk('reattempt', 'Redelivery requested')}>Request reattempt</Btn><Btn small danger disabled={busy} onClick={() => bulk('rto', 'Marked as RTO')}>Mark as RTO</Btn><Btn small onClick={() => setSelected(new Set())}>Clear</Btn></div>}
 
@@ -215,7 +197,7 @@ export default function LiveNdr({ mobile }) {
                     return (
                       <tr key={r.id} style={{ background: selected.has(r.id) ? '#3877fc08' : 'transparent' }}>
                         <td style={{ padding: '12px 14px', borderTop: `1px solid ${T.DIVIDER}` }}><input type="checkbox" aria-label={`Select ${r.order_number}`} checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></td>
-                        <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><b style={{ color: '#3877fc', fontSize: 13 }}>{r.order_number}</b><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED, fontSize: 11.5 }}>{r.awb}</small></td>
+                        <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><b style={{ color: '#3877fc', fontSize: 13 }}>{r.order_number}</b><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED, fontSize: 11 }}>{r.nexgo_order_id}</small><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED, fontSize: 11.5 }}>{r.awb}</small></td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}><b style={{ color: T.TEXT }}>{r.customer_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.customer_phone}</small><small style={{ color: T.TEXT_MUTED }}>{r.customer_city}, {r.customer_pincode}</small></td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}><b style={{ color: T.TEXT }}>{r.courier_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.service_name}</small></td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><Pill color="#9A3412" bg="#F5822018">{REASONS[r.ndr_reason] || r.ndr_reason}</Pill><small style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 11 }}>Attempt {r.attempt_number}/{r.max_attempts}</small></td>
@@ -240,13 +222,6 @@ export default function LiveNdr({ mobile }) {
         </section>
 
         <aside style={{ display: 'grid', gap: 14 }}>
-          <section style={{ ...CARD, padding: 16 }}>
-            <b style={{ color: '#3877fc', fontSize: 14 }}>NDR Overview</b>
-            <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', color: T.TEXT }}>
-              <Donut counts={counts} total={stats?.total || 0} />
-              <div style={{ display: 'grid', gap: 6, fontSize: 12 }}>{DONUT.map(([k, color]) => <span key={k} style={{ display: 'flex', gap: 7, alignItems: 'center', color: T.TEXT_SECONDARY }}><i style={{ width: 8, height: 8, borderRadius: 4, background: color }} />{STATUS[k][0]} <b style={{ color: T.TEXT, marginLeft: 'auto' }}>{counts[k] ?? 0}</b></span>)}</div>
-            </div>
-          </section>
           <section style={{ ...CARD, padding: 16 }}>
             <b style={{ color: T.TEXT, fontSize: 14 }}>Top NDR Reasons</b>
             <div style={{ marginTop: 10, display: 'grid', gap: 9 }}>

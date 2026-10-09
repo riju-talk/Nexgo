@@ -20,7 +20,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
   app.get('/v1/shipments', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
     return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query(
-      `SELECT s.*, o.order_number, o.payment_mode, o.cod_amount_paise, o.subtotal_paise, o.total_weight_g, o.order_flow, o.created_at AS order_created_at,
+      `SELECT s.*, o.order_number, o.nexgo_order_id, o.channel, o.payment_mode, o.cod_amount_paise, o.subtotal_paise, o.total_weight_g, o.order_flow, o.created_at AS order_created_at,
               c.full_name AS customer_name, c.phone AS customer_phone, c.city AS customer_city, c.pincode AS customer_pincode,
               cp.name AS courier_name, cs.display_name AS service_name, cs.service_type,
               w.name AS warehouse_name, w.pincode AS warehouse_pincode, w.city AS warehouse_city,
@@ -31,7 +31,17 @@ export async function shipmentRoutes(app: FastifyInstance) {
        JOIN courier_providers cp ON cp.id=s.provider_id JOIN courier_services cs ON cs.id=s.service_id
        LEFT JOIN LATERAL (SELECT count(*)::int AS products, COALESCE(sum(quantity),0)::int AS quantity, string_agg(name, ', ' ORDER BY name) AS product_names FROM order_items WHERE order_id=o.id) it ON true
        LEFT JOIN LATERAL (SELECT description, location, occurred_at FROM shipment_events WHERE shipment_id=s.id ORDER BY occurred_at DESC LIMIT 1) ev ON true
-       WHERE s.seller_id=$1 ORDER BY s.created_at DESC LIMIT 500`, [p.sellerId])).rows }));
+       WHERE s.seller_id=$1 ORDER BY s.created_at DESC LIMIT 500`, [p.sellerId])).rows,
+      // Orders that never got a courier (booking failed, or no courier could be assigned): the "Failed" tab, to fix and re-assign.
+      failed: (await client.query(
+      `SELECT o.id, o.order_number, o.nexgo_order_id, o.channel, o.state AS order_state, o.payment_mode, o.cod_amount_paise, o.subtotal_paise, o.total_weight_g, o.created_at,
+              c.full_name AS customer_name, c.phone AS customer_phone, c.city AS customer_city, c.pincode AS customer_pincode,
+              w.name AS warehouse_name, w.pincode AS warehouse_pincode, w.city AS warehouse_city,
+              it.quantity, it.product_names
+       FROM orders o JOIN customers c ON c.id=o.customer_id JOIN warehouses w ON w.id=o.warehouse_id
+       LEFT JOIN LATERAL (SELECT COALESCE(sum(quantity),0)::int AS quantity, string_agg(name, ', ' ORDER BY name) AS product_names FROM order_items WHERE order_id=o.id) it ON true
+       WHERE o.seller_id=$1 AND o.state IN ('new','ready_to_ship') AND o.order_flow <> 'reverse' AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id=o.id)
+       ORDER BY o.created_at DESC LIMIT 500`, [p.sellerId])).rows }));
   });
   app.get('/v1/shipments/:shipmentId', { preHandler: requireSeller }, async (request) => {
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);

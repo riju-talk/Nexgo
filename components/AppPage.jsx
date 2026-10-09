@@ -9,7 +9,6 @@ import TablePage from './TablePage';
 import FormPage from './FormPage';
 import AccountConfiguration from './AccountConfiguration';
 import AdminDashboard from './AdminDashboard';
-import AdminPageHeader from './AdminPageHeader';
 import AdminUtilityPage from './AdminUtilityPage';
 import LiveSellerOperations from './LiveSellerOperations';
 import LiveAdminQueues from './LiveAdminQueues';
@@ -80,7 +79,6 @@ export default function AppPage({ id, isDashboard = false }) {
   return (
     <>
       {!isAccountConfig && !isAdminOverview && !isAdminPage && <PageHeader activeId={id} isDashboard={isDashboard} mobile={mobile} phone={phone} />}
-      {isAdminPage && !isAdminOverview && <AdminPageHeader activeId={id} phone={phone} />}
       <PageContainer admin={isAdminPage}>
       {isAdminOverview && <AdminDashboard mobile={mobile} phone={phone} />}
       {isDashboard && !isAdminOverview && <DashboardContent mobile={mobile} narrow={narrow} phone={phone} />}

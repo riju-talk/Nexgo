@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { db, withSellerTransaction, withTransaction } from '../db/client.js';
-import { isProgressionAllowed, mapCourierStatus, validWebhookSignature } from '../lib/courier.js';
+import { isProgressionAllowed, mapCourierStatus, rtoSubStatus, validWebhookSignature } from '../lib/courier.js';
 import { requireSeller } from './seller.js';
 
 const eventInput = z.object({ eventId: z.string().min(1).max(200), awb: z.string().min(4).max(100), status: z.string().min(2).max(100), occurredAt: z.string().datetime(), location: z.string().max(160).optional(), description: z.string().min(2).max(1000).optional() });
@@ -49,6 +49,8 @@ export async function trackingRoutes(app: FastifyInstance) {
         delivered_at=CASE WHEN $1='delivered' THEN COALESCE(delivered_at,$3::timestamptz) ELSE delivered_at END,
         rto_initiated_at=CASE WHEN $1='rto' THEN COALESCE(rto_initiated_at,$3::timestamptz) ELSE rto_initiated_at END,
         cancelled_at=CASE WHEN $1='cancelled' THEN COALESCE(cancelled_at,$3::timestamptz) ELSE cancelled_at END WHERE id=$2`, [state, current.id, input.occurredAt]);
+      const rtoSub = rtoSubStatus(input.status);
+      if (rtoSub) await tx.query(`UPDATE shipments SET rto_status=$1, rto_delivered_at=CASE WHEN $1='delivered' THEN COALESCE(rto_delivered_at,$3::timestamptz) ELSE rto_delivered_at END WHERE id=$2`, [rtoSub, current.id, input.occurredAt]);
       if (state === 'ndr') await tx.query(`INSERT INTO ndr_cases (seller_id,shipment_id,reason_code,reason_detail,ndr_reason,courier_notes)
         VALUES ($1,$2,$3,$4,'other',$4) ON CONFLICT (shipment_id) DO NOTHING`, [current.seller_id, current.id, 'courier_ndr', input.description ?? input.status]);
       await tx.query('UPDATE webhook_deliveries SET processed_at=now() WHERE id=$1', [deliveryId]);

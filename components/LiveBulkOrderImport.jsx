@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
@@ -107,7 +107,7 @@ function validate(order) {
   if (!(weightG > 0)) errors.push('Weight (g) is required');
   const dims = [order.length, order.width, order.height].map((v) => Math.round((Number(v) || 0) * 10));
   const dimCount = dims.filter((d) => d > 0).length;
-  if (dimCount !== 0 && dimCount !== 3) errors.push('Give length, breadth and height together');
+  if (dimCount !== 3) errors.push('Length, breadth and height (cm) are required');
   const subtotal = order.items.reduce((sum, item) => sum + item.quantity * item.pricePaise, 0);
   // Blank COD amount on a COD order means "collect the order value".
   const codAmountPaise = paymentMode === 'cod' ? (order.codAmount ? toPaise(order.codAmount) : subtotal) : 0;
@@ -119,26 +119,38 @@ function validate(order) {
 // A re-upload-ready file: the failed orders laid out in the same columns as the NEXGO template, plus an Error column.
 // Fix the cells, delete the Error column (or leave it, it is ignored) and upload the file again.
 const TEMPLATE_HEADERS = ['Order number', 'Customer name', 'Company name', 'Phone', 'Alternate phone', 'Email', 'Address line 1', 'Address line 2', 'Landmark', 'Pincode', 'City', 'State', 'SKU', 'Product name', 'HSN code', 'Quantity', 'Unit price', 'Weight (g)', 'Length (cm)', 'Breadth (cm)', 'Height (cm)', 'Payment mode', 'COD amount'];
-function downloadFailedOrders(orders, fileName) {
-  const failed = orders.filter((o) => o.errors.length || o.failure);
+const isFailed = (o) => !o.created && (o.errors.length || o.failure || !o.quote);
+const failureReason = (o) => o.failure || (o.errors.length ? o.errors.join('; ') : 'No courier could be assigned: no serviceable courier for this pincode, weight or payment mode');
+function failedRows(orders) {
   const rows = [];
-  for (const o of failed) {
+  for (const o of orders.filter(isFailed)) {
     o.items.forEach((item, i) => rows.push([
       o.orderNumber || '', o.customerName || '', o.companyName || '', o.phone || '', o.alternatePhone || '', o.email || '', o.address || '', o.address2 || '', o.landmark || '', o.pincode || '', o.city || '', o.state || '',
       item.sku && item.sku !== 'CUSTOM' ? item.sku : '', item.name || '', item.hsn || '', item.quantity || '', item.pricePaise ? item.pricePaise / 100 : '', item.weight || '',
-      o.length || '', o.width || '', o.height || '', o.paymentMode || '', o.codAmount || '', i === 0 ? (o.failure || o.errors.join('; ')) : '',
+      o.length || '', o.width || '', o.height || '', o.paymentMode || '', o.codAmount || '', i === 0 ? failureReason(o) : '',
     ]));
   }
+  return rows;
+}
+// Excel or CSV, same columns as the NEXGO template plus an Error column, so the file can be corrected and uploaded again.
+function downloadFailedOrders(orders, fileName, format = 'xlsx') {
+  const rows = failedRows(orders);
+  const base = `${fileName.replace(/\.[^.]+$/, '') || 'bulk-orders'}-failed-orders`;
   const sheet = XLSX.utils.aoa_to_sheet([[...TEMPLATE_HEADERS, 'Error (fix and re-upload)'], ...rows]);
   sheet['!cols'] = [...TEMPLATE_HEADERS, 'Error'].map((h, i) => ({ wch: i === 23 ? 60 : Math.max(12, h.length + 2) }));
-  const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, 'Orders');
-  XLSX.writeFile(book, `${fileName.replace(/\.[^.]+$/, '') || 'bulk-orders'}-failed-orders.xlsx`);
-  return failed.length;
+  if (format === 'csv') {
+    const blob = new Blob(['\ufeff', XLSX.utils.sheet_to_csv(sheet)], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${base}.csv`; link.click(); URL.revokeObjectURL(link.href);
+  } else {
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, 'Orders');
+    XLSX.writeFile(book, `${base}.xlsx`);
+  }
+  return new Set(orders.filter(isFailed).map((o) => o.orderNumber)).size;
 }
 
 function downloadErrorReport(orders, fileName) {
-  const rows = orders.filter((o) => o.errors.length || o.failure).map((o) => ({ 'Order number': o.orderNumber || '', 'Sheet rows': o.lines.join(', '), Problem: o.failure || o.errors.join('; ') }));
+  const rows = orders.filter(isFailed).map((o) => ({ 'Order number': o.orderNumber || '', 'Sheet rows': o.lines.join(', '), Problem: failureReason(o) }));
   const sheet = XLSX.utils.json_to_sheet(rows);
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, 'Errors');
@@ -154,16 +166,25 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
   const [dragging, setDragging] = useState(false);
   const [fileName, setFileName] = useState('');
   const [result, setResult] = useState(null);
+  const [warehouses, setWarehouses] = useState(null);
+  const [warehouseId, setWarehouseId] = useState('');
+  useEffect(() => {
+    apiFetch('/v1/warehouses').then((x) => {
+      const list = (x.items || []).filter((w) => w.is_active !== false);
+      setWarehouses(list);
+      setWarehouseId((list.find((w) => w.is_default) || list[0])?.id || '');
+    }).catch(() => setWarehouses([]));
+  }, []);
+  const warehouse = (warehouses || []).find((w) => w.id === warehouseId);
 
   const importFile = async (file) => {
     if (!file) return;
     if (!/\.(xlsx|xls|csv)$/i.test(file.name)) return showToast('Upload an .xlsx, .xls or .csv file.', 'error');
     if (file.size > 5 * 1024 * 1024) return showToast('Use a file smaller than 5 MB.', 'error');
+    if (!warehouse) return showToast('Select the pickup warehouse first. Courier rates depend on where the parcel is picked up.', 'error');
     setLoading(true); setOrders([]); setResult(null); setFileName(file.name);
     try {
-      const [warehouseData, productData] = await Promise.all([apiFetch('/v1/warehouses'), apiFetch('/v1/products')]);
-      const warehouse = (warehouseData.items || []).find((w) => w.is_active !== false);
-      if (!warehouse) throw new Error('Add an active pickup warehouse before importing orders.');
+      const productData = await apiFetch('/v1/products');
       const rows = readRows(XLSX.read(await file.arrayBuffer(), { type: 'array' }));
       if (!rows) throw new Error('No "Order number" column found. Start from the NEXGO template.');
       if (!rows.length) throw new Error('The sheet has headers but no order rows.');
@@ -181,7 +202,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
       const quoted = await Promise.all(located.map(async (o) => {
         if (o.errors.length) return o;
         try {
-          const body = { destinationPincode: o.pincode, weightG: o.weightG, paymentMode: o.paymentMode, ...(o.dims ? { lengthMm: o.dims[0], widthMm: o.dims[1], heightMm: o.dims[2] } : {}) };
+          const body = { destinationPincode: o.pincode, pickupPincode: warehouse.pincode, orderValue: o.subtotal / 100, weightG: o.weightG, paymentMode: o.paymentMode, ...(o.dims ? { lengthMm: o.dims[0], widthMm: o.dims[1], heightMm: o.dims[2] } : {}) };
           const response = await apiFetch('/v1/shipping/quotes', { method: 'POST', body });
           return { ...o, quote: response.quotes?.[0] || null, quoteCount: response.quotes?.length || 0 };
         } catch { return o; }
@@ -204,7 +225,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     for (const o of validOrders) {
       try {
         await apiFetch('/v1/orders', { method: 'POST', body: {
-          warehouseId: o.warehouseId, orderNumber: o.orderNumber, orderFlow: 'forward', notes: 'Created from bulk order upload',
+          warehouseId: o.warehouseId, orderNumber: o.orderNumber, orderFlow: 'forward', channel: 'bulk_upload', notes: 'Created from bulk order upload',
           paymentMode: o.paymentMode, codAmountPaise: o.codAmountPaise,
           customer: { fullName: o.customerName, companyName: o.companyName || undefined, email: o.email || undefined, phone: o.phone, alternatePhone: o.alternatePhone || undefined, addressLine1: o.address, addressLine2: o.address2 || undefined, landmark: o.landmark || undefined, city: o.city, state: o.state, pincode: o.pincode },
           items: o.items.map((i) => ({ productId: i.productId, sku: i.sku, name: i.name, hsnCode: i.hsn || undefined, quantity: i.quantity, unitPricePaise: i.pricePaise, weightG: Math.round(i.weight) })),
@@ -227,6 +248,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
 
   const onDrop = (e) => { e.preventDefault(); setDragging(false); importFile(e.dataTransfer.files?.[0]); };
   const failedCount = orders.filter((o) => o.errors.length || o.failure).length;
+  const unassignedCount = orders.filter(isFailed).length;
 
   return (
     <div style={{ flex: 1, padding: embedded ? 0 : mobile ? '14px 12px 42px' : '18px 28px 48px' }}>
@@ -246,6 +268,17 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           <SummaryCard label="Failed orders" value={failedCount} tone="#EF4444" icon="×" />
         </div>
 
+        <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 14px', borderRadius: 10, border: `1px solid ${T.BORDER}`, background: T.SURFACE_SOFT }}>
+          <b style={{ color: T.TEXT, fontSize: 13 }}>1. Pickup warehouse <span style={{ color: T.RED }}>*</span></b>
+          {warehouses === null ? <span style={{ color: T.TEXT_MUTED, fontSize: 12.5 }}>Loading…</span> : !warehouses.length ? <Action onClick={() => nav('warehouse')}>Add a warehouse first</Action> : (
+            <>
+              <select aria-label="Pickup warehouse" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} style={{ height: 36, minWidth: 220, border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13 }}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
+              {warehouse && <span style={{ color: T.TEXT_SECONDARY, fontSize: 12.5 }}>{warehouse.city} · {warehouse.pincode}</span>}
+            </>
+          )}
+          <span style={{ marginLeft: 'auto', color: T.TEXT_MUTED, fontSize: 12 }}>2. Upload the order file</span>
+        </div>
+
         <div
           role="button" tabIndex={0}
           onClick={() => !loading && inputRef.current?.click()}
@@ -253,7 +286,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
-          style={{ marginTop: 18, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(27,159,214,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
+          style={{ marginTop: 12, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(27,159,214,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
         >
           <b style={{ display: 'block', color: T.TEXT, fontSize: 14 }}>{loading ? 'Reading and validating…' : 'Drop your order file here, or click to browse'}</b>
           <span style={{ display: 'block', marginTop: 5, color: T.TEXT_MUTED, fontSize: 12.5 }}>{fileName && !loading ? fileName : '.xlsx, .xls or .csv · up to 5 MB · NEXGO bulk upload format'}</span>
@@ -271,7 +304,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
               <span>Failed <b style={{ color: failedCount ? T.RED : T.TEXT }}>{failedCount}</b></span>
             </div>
             <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
-              {failedCount > 0 && <Action onClick={() => { const n = downloadFailedOrders(orders, fileName); showToast(`${n} failed order${n === 1 ? '' : 's'} saved. Fix the highlighted rows and upload the file again.`); }}>⬇ Download failed orders (re-upload file)</Action>}
+              {unassignedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => { const n = downloadFailedOrders(orders, fileName, fmt); showToast(`${n} failed order${n === 1 ? '' : 's'} saved as ${fmt === 'xlsx' ? 'Excel' : 'CSV'}. Correct the errors and upload the file again.`); }}>⬇ Failed orders ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
               {failedCount > 0 && <Action onClick={() => downloadErrorReport(orders, fileName)}>Download error report</Action>}
               {result?.created > 0 && <Action onClick={() => nav('orders')}>Go to All orders</Action>}
               <Action primary disabled={!validOrders.length || creating} onClick={createOrders}>{creating ? 'Creating orders…' : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>
