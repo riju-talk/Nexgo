@@ -342,7 +342,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
                     <label key={key} style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '9px 10px', borderRadius: 9, cursor: 'pointer', border: `1px solid ${on ? T.NAVY : T.BORDER}`, background: on ? 'rgba(27,159,214,.09)' : T.SURFACE }}>
                       <input type="radio" name="courier" checked={on} onChange={() => setPick(key)} />
                       <span style={{ flex: 1, minWidth: 0 }}>
-                        <b style={{ display: 'block', fontSize: 13, color: T.TEXT }}>{q.provider.name} <span style={{ fontWeight: 500, color: T.TEXT_SECONDARY }}>{q.service.name}</span></b>
+                        <b style={{ display: 'block', fontSize: 13, color: T.TEXT }}>{q.provider.name} <span style={{ fontWeight: 500, color: T.TEXT_SECONDARY }}>{q.service.name.replace(new RegExp(`^${q.provider.name}\s*`, 'i'), '') || 'Standard'}</span></b>
                         <small style={{ color: T.TEXT_MUTED }}>{q.tat.minDays === q.tat.maxDays ? `${q.tat.minDays} day${q.tat.minDays === 1 ? '' : 's'}` : `${q.tat.minDays}–${q.tat.maxDays} days`}{q.tags?.includes('cheapest') ? ' · Cheapest' : ''}{q.tags?.includes('fastest') ? ' · Fastest' : ''}</small>
                       </span>
                       <b style={{ fontSize: 13.5, color: T.TEXT }}>{inr(Math.round(q.price.total * 100))}</b>
