@@ -290,13 +290,14 @@ export default function DashboardContent({ mobile, narrow, phone }) {
               </div>
             </div>
           )}
-          <div style={{ ...GLASS, overflow: 'hidden', gridColumn: '1 / -1' }}>
+          <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 20 }}>
+          <div style={{ ...GLASS, overflow: 'hidden', minWidth: 0 }}>
             <GlassSheen />
             <div style={{ padding: '13px 18px', borderBottom: `1px solid ${T.DIVIDER}`, fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.SECTION_HEAD }}>Top NDR reasons</div>
             {!ndr ? <span style={{ display: 'block', padding: '14px 18px', fontSize: 12.5, color: T.TEXT_MUTED }}>Loading…</span>
               : <BarChartV items={(ndr.reasons || []).slice(0, 6).map((r) => ({ label: NDR_REASONS[r.reason] || r.reason, value: r.count, hint: `${NDR_REASONS[r.reason] || r.reason}: ${r.count} (${r.pct}%)` }))} empty="No NDR reasons recorded yet." />}
           </div>
-          <div style={{ ...GLASS, overflow: 'hidden', gridColumn: '1 / -1' }}>
+          <div style={{ ...GLASS, overflow: 'hidden', minWidth: 0 }}>
             <GlassSheen />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '13px 18px', borderBottom: `1px solid ${T.DIVIDER}` }}>
               <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.SECTION_HEAD }}>State wise delivery</div>
@@ -304,6 +305,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
             </div>
             {!live ? <span style={{ display: 'block', padding: '14px 18px', fontSize: 12.5, color: T.TEXT_MUTED }}>Loading…</span>
               : <BarChartV color={T.NAVY} items={(live.stateDelivery || []).map((x) => ({ label: x.state, value: x.delivered, hint: `${x.state}: ${x.delivered} delivered of ${x.total} shipped` }))} empty="No delivered shipments in this period." />}
+          </div>
           </div>
         </div>
       </div>
