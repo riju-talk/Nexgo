@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element -- seller-supplied logo/signature links on a print-only page; next/image cannot optimise arbitrary hosts */
 'use client';
 
 import { stateCode } from '@/lib/gstStateCodes';
@@ -5,7 +6,11 @@ import { amount, joinParts, longDate, rs } from './format';
 
 // A4 tax invoice for one shipment, laid out like the client's sample.
 // IGST for inter-state supplies, CGST + SGST (half each) when seller and buyer are in the same state.
-export default function InvoiceSheet({ d }) {
+export default function InvoiceSheet({ d, cfg = {} }) {
+  const thermal = String(cfg.pageFormat || '').startsWith('Thermal');
+  const prefix = String(cfg.prefix || '').trim();
+  const invoiceNo = prefix ? `${prefix}${String(d.invoice_seq).padStart(3, '0')}` : `#${d.invoice_seq}`;
+  const custom = thermal ? [] : [[cfg.customName1, cfg.customValue1], [cfg.customName2, cfg.customValue2]].filter(([k, v]) => k && v);
   const items = d.items || [];
   const rate = (d.tax_rate_bps || 0) / 10000;
   const sellerCode = (d.seller_gstin || '').slice(0, 2) || stateCode(d.wh_state);
@@ -31,9 +36,10 @@ export default function InvoiceSheet({ d }) {
     : [`${amount(tax)} | ${pct}%`]);
   return (
     <section className="doc-invoice">
+      {cfg.logoUrl && /^https:\/\//.test(cfg.logoUrl) && <img src={cfg.logoUrl} alt="" className="iv-logo" />}
       <h1 className="iv-title">TAX INVOICE</h1>
       <div className="iv-head">
-        <div className="iv-head-r"><b className="iv-big">Invoice</b><div>Invoice Number - #{d.invoice_seq}</div><div>Invoice Date - {longDate(d.booked_at || d.order_date)}</div></div>
+        <div className="iv-head-r"><b className="iv-big">Invoice</b><div>Invoice Number - {invoiceNo}</div><div>Invoice Date - {longDate(d.booked_at || d.order_date)}</div></div>
       </div>
 
       <div className="iv-parties">
@@ -48,7 +54,7 @@ export default function InvoiceSheet({ d }) {
         </div>
         <div className="iv-right">
           <b>Sold By:</b>
-          <div>M/s {d.seller_name}</div>
+          {!cfg.hideCompanyName && <div>M/s {d.seller_name}</div>}
           <div>{d.seller_address || joinParts(d.wh_line_1, d.wh_line_2, d.wh_city, d.wh_state, d.wh_pincode)}</div>
           {d.seller_gstin && <div>GSTIN : {d.seller_gstin}</div>}
           {sellerCode && <div>State Code : {sellerCode}</div>}
@@ -82,6 +88,8 @@ export default function InvoiceSheet({ d }) {
       </table>
       <div className="iv-total"><div>Total Amount</div><div>{rs(grand)}</div></div>
       {d.payment_mode === 'cod' && <div className="iv-note">Amount payable on delivery (COD): <b>{rs(d.cod_amount_paise)}</b></div>}
+      {custom.length > 0 && <div className="iv-note">{custom.map(([k, v]) => <div key={k}><b>{k}:</b> {v}</div>)}</div>}
+      {cfg.signatureUrl && /^https:\/\//.test(cfg.signatureUrl) && <div className="iv-sign"><img src={cfg.signatureUrl} alt="" /><div>Authorised signatory</div></div>}
       <div className="iv-foot">This is a computer generated invoice and does not require a signature. Goods once sold will only be taken back or exchanged as per the seller&apos;s return policy.</div>
     </section>
   );

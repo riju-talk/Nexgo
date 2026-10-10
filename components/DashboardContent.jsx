@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { METRICS, PIPELINE, QUEUE, TREND_A, TREND_B, COURIER_PERF } from '@/lib/data';
+import { METRICS, PIPELINE, TREND_A, TREND_B, COURIER_PERF } from '@/lib/data';
 import { spark } from '@/lib/charts';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
@@ -10,26 +10,47 @@ import ScenicBackdrop from './ScenicBackdrop';
 import DashboardStatCard from './DashboardStatCard';
 import DashboardStatCardModal from './DashboardStatCardModal';
 import TrendChart from './TrendChart';
+import BarChartV from './BarChartV';
 import { apiFetch } from '@/lib/api';
 
 function GlassSheen() {
   return <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 1, background: 'var(--nx-glass-border)' }} />;
 }
 
+const RANGES = [[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days']];
+const money = (paise) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((paise || 0) / 100);
+const shortDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—');
+
 const NDR_REASONS = { customer_unavailable: 'Customer Not Available', address_incomplete: 'Incomplete Address', address_incorrect: 'Wrong Address', refused_delivery: 'Customer Refused', payment_not_ready: 'Payment Not Ready', customer_requested_reschedule: 'Reschedule Requested', premises_closed: 'Premises Closed', customer_not_contactable: 'Not Contactable', incorrect_product: 'Incorrect Product', damaged_product: 'Damaged Product', other: 'Other' };
 
+function RangeSelect({ days, onChange, label }) {
+  return <select aria-label={label} value={days} onChange={(e) => onChange(Number(e.target.value))} style={{ height: 30, padding: '0 10px', borderRadius: 8, border: `1px solid ${T.INPUT_BORDER}`, background: T.SURFACE, color: T.TEXT, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{RANGES.map(([d, l]) => <option key={d} value={d}>{l}</option>)}</select>;
+}
+
 export default function DashboardContent({ mobile, narrow, phone }) {
-  const { kpis, stage, setStage, expanded, toggleExpanded, queueTab, setQueueTab, setDrawerOpen } = useAppState();
+  const { kpis, stage, setStage, expanded, toggleExpanded, nav, showToast, dashDays: days, setDashDays: setDays } = useAppState();
   const [expandedCardId, setExpandedCardId] = useState(null);
   const [live, setLive] = useState(null);
-  useEffect(() => { apiFetch('/v1/analytics/dashboard').then(setLive).catch(() => {}); }, []);
+  const [tick, setTick] = useState(0);
+  useEffect(() => { let on = true; apiFetch(`/v1/analytics/dashboard?days=${days}`).then((x) => { if (on) setLive(x); }).catch(() => {}); return () => { on = false; }; }, [days, tick]);
+  const rangeLabel = (RANGES.find((r) => r[0] === days) || RANGES[2])[1];
+  const shortRange = days === 1 ? 'Today' : `${days}d`;
+  const [rescheduling, setRescheduling] = useState(false);
+  const reschedule = async () => {
+    if (rescheduling) return;
+    setRescheduling(true);
+    try { const r = await apiFetch('/v1/analytics/dashboard/reschedule-pickups', { method: 'POST' }); showToast(r.message || 'Re-scheduled for tomorrow'); setTick((t) => t + 1); }
+    catch (e) { showToast(e.message || 'Pickup could not be rescheduled', 'error'); }
+    finally { setRescheduling(false); }
+  };
   const [ndr, setNdr] = useState(null);
   useEffect(() => { apiFetch('/v1/ndr/stats').then(setNdr).catch(() => setNdr({ reasons: [] })); }, []);
   const formatMoney = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((value || 0) / 100);
-  const liveValues = live ? { order_volume: String(live.metrics.orderVolume), in_transit: String(live.metrics.inTransit), delivery_rate: `${live.metrics.deliveryRate}%`, ndr_rate: `${live.metrics.ndrRate}%`, rto_rate: `${live.metrics.rtoRate}%`, revenue: formatMoney(live.metrics.shippingSpendPaise) } : {};
+  const liveValues = live ? { order_volume: String(live.metrics.todayVolume), in_transit: String(live.metrics.inTransit), delivery_rate: `${live.metrics.deliveryRate}%`, ndr_rate: `${live.metrics.ndrRate}%`, rto_rate: `${live.metrics.rtoRate}%`, revenue: formatMoney(live.metrics.shippingSpendPaise) } : {};
 
   const statCards = METRICS.filter((m) => kpis.indexOf(m[0]) >= 0 && m[2] === 'Card').map((m, i) => ({
-    id: m[0], label: m[1], value: liveValues[m[0]] ?? m[4], delta: live ? 'Live data' : m[5], sub: live ? 'Current workspace' : m[7], seed: i * 2 + 1,
+    id: m[0], label: m[0] === 'order_volume' && live ? "Order volume · today" : m[1], value: liveValues[m[0]] ?? m[4],
+    delta: live ? (m[0] === 'order_volume' ? `${shortRange}: ${live.metrics.orderVolume}` : shortRange) : m[5], sub: live ? (m[0] === 'order_volume' ? 'by order date' : 'selected period') : m[7], seed: i * 2 + 1,
     deltaColor: m[6] === 'up' ? T.GREEN : m[6] === 'down' ? T.RED : T.MUTE,
     sparkPath: spark(i * 2 + 1),
     sparkColor: m[6] === 'up' ? T.ACCENT : m[6] === 'down' ? '#D9A79E' : '#BDB8AC',
@@ -42,13 +63,25 @@ export default function DashboardContent({ mobile, narrow, phone }) {
   const chartColCount = [showTrend, showCourier, showCod].filter(Boolean).length;
   const chartCols = mobile ? '1fr' : chartColCount ? [showTrend ? '1.7fr' : null, showCourier ? '1fr' : null, showCod ? '1fr' : null].filter(Boolean).join(' ') : '1fr';
 
-  const dashboardPipeline = live ? PIPELINE.map(([label, count, color]) => [label, live.pipeline[label.toLowerCase().replaceAll(' ', '_')] ?? count, color]) : PIPELINE;
+  const dashboardPipeline = live ? PIPELINE.map(([label, count, color]) => [label, live.pipeline[label.toLowerCase().replaceAll(' ', '_')] ?? 0, color]) : PIPELINE;
   const total = dashboardPipeline.reduce((a, p) => a + p[1], 0);
+  const queue = live?.queue;
+  const trend = live?.trend || [];
+  const trendMax = Math.max(1, ...trend.flatMap((x) => [x.orders, x.delivered]));
+  const axis = [1, 2 / 3, 1 / 3, 0].map((f) => Math.round(trendMax * 1.15 * f));
+  const trendTicks = trend.length > 1 ? [0, 0.25, 0.5, 0.75, 1].map((f) => trend[Math.round((trend.length - 1) * f)].day.toUpperCase()) : [];
+  const courierRows = live?.courierMix?.length ? live.courierMix.map((c) => { const r = c.total ? (c.delivered / c.total) * 100 : 0; return { name: c.name, rate: `${r.toFixed(1)}%`, w: `${r}%`, vol: String(c.total), color: r >= 90 ? T.GREEN : r >= 75 ? T.AMBER : T.RED }; }) : live ? [] : COURIER_PERF;
   const statCols = mobile ? 'repeat(2,minmax(0,1fr))' : narrow ? 'repeat(3,minmax(0,1fr))' : 'repeat(5,minmax(0,1fr))';
   const pipeCols = phone ? 'repeat(2,minmax(0,1fr))' : mobile ? 'repeat(3,minmax(0,1fr))' : narrow ? 'repeat(5,minmax(0,1fr))' : 'repeat(9,minmax(0,1fr))';
   const pagePad = phone ? 12 : mobile ? 16 : 28;
 
-  const queueTabs = ['All', 'Time critical', 'Money at risk'];
+  // Decisions waiting on you: live counts, every action lands on the page that resolves it.
+  const QUEUE = !queue ? [] : [
+    { id: 'ndr', n: String(queue.ndr.open), title: 'NDR shipments awaiting action', sub: 'Open non-delivery cases that need your decision', sla: 'ACTION', cta: 'Action', rows: queue.ndr.reasons.map((r) => [NDR_REASONS[r.reason] || r.reason, String(r.n)]), rec: queue.ndr.open ? `Reattempt or update the address for the ${queue.ndr.open} open NDR shipment${queue.ndr.open === 1 ? '' : 's'} before the courier returns them.` : 'No open NDR shipments. Nothing needs your attention.', primary: `Resolve ${queue.ndr.open} NDR${queue.ndr.open === 1 ? '' : 's'}`, go: () => nav('ndr') },
+    { id: 'weight', n: String(queue.weight.open), title: 'Weight discrepancies raised by couriers', sub: `${money(queue.weight.heldPaise)} held against wallet`, sla: 'REVIEW', cta: 'Review', rows: queue.weight.couriers.map((c) => [c.name, `${c.count} · ${money(c.amountPaise)}`]), rec: queue.weight.open ? 'Dispute with packing photos as evidence, or accept the revised charge. Undisputed charges are debited from your wallet.' : 'No open weight discrepancies.', primary: `Dispute ${queue.weight.open} case${queue.weight.open === 1 ? '' : 's'}`, go: () => nav('weight') },
+    { id: 'pickup', n: String(queue.pickup.missed), title: 'Pickups missed', sub: 'Booked shipments the courier has not picked up in time', sla: 'TODAY', cta: 'Reschedule', rows: queue.pickup.couriers.map((c) => [c.name, `${c.n} shipments`]), rec: queue.pickup.missed ? 'Rebook these pickups for the next available slot. The courier will be asked to collect them tomorrow.' : 'No missed pickups.', primary: 'Reschedule pickup', go: reschedule, disabled: !queue.pickup.missed },
+    { id: 'cod', n: money(queue.cod.totalDuePaise), title: 'COD remittance', sub: queue.cod.nextExpectedDate ? `Next payout due ${shortDate(queue.cod.nextExpectedDate)}` : 'No payout cycle scheduled yet', sla: 'COD', cta: 'View', rows: [['Delivered COD value (today)', money(queue.cod.deliveredTodayPaise)], ['Next expected COD', money(queue.cod.nextExpectedPaise)], ['Total remittance due', money(queue.cod.totalDuePaise)]], rec: 'COD is paid out after the configured days from delivery (D+N). A negative wallet balance is adjusted against the payout first.', go: () => nav('cod') },
+  ];
 
   const GLASS = {
     position: 'relative',
@@ -77,14 +110,14 @@ export default function DashboardContent({ mobile, narrow, phone }) {
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', padding: phone ? '12px 14px' : '13px 18px', borderBottom: `1px solid ${T.DIVIDER}` }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.SECTION_HEAD }}>Order pipeline</div>
-              <div style={{ fontFamily: T.MONO, fontSize: 13, color: T.TEXT_MUTED }}>12,480 orders · click a stage to filter the queue</div>
+              <div style={{ fontFamily: T.MONO, fontSize: 13, color: T.TEXT_MUTED }}>{total.toLocaleString('en-IN')} {live ? 'in' : 'orders ·'} {live ? rangeLabel.toLowerCase() : 'click a stage to filter the queue'}</div>
             </div>
-            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#14527f', cursor: 'pointer' }}>Export →</div>
+            <RangeSelect days={days} onChange={setDays} label="Order pipeline date range" />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: pipeCols, gap: phone ? 8 : 10, padding: phone ? 10 : 14 }}>
             {dashboardPipeline.map(([label, count, color]) => {
               const on = stage === label;
-              const pct = (count / total) * 100;
+              const pct = total ? (count / total) * 100 : 0;
               return (
                 <motion.div
                   key={label}
@@ -127,23 +160,10 @@ export default function DashboardContent({ mobile, narrow, phone }) {
               <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.SECTION_HEAD }}>Decisions waiting on you</div>
               <div style={{ fontFamily: T.MONO, fontSize: 12, color: T.TEXT_MUTED }}>expand a row to act without leaving this screen</div>
             </div>
-            <div style={{ display: 'flex', gap: 7 }}>
-              {queueTabs.map((label) => {
-                const on = queueTab === label;
-                return (
-                  <div
-                    key={label}
-                    onClick={() => setQueueTab(label)}
-                    style={{ height: 30, display: 'flex', alignItems: 'center', padding: '0 11px', border: `1px solid ${on ? T.NAVY : T.INPUT_BORDER}`, background: on ? T.NAVY : T.SURFACE, color: on ? '#fff' : T.TEXT_LABEL, fontSize: 12.5, fontWeight: on ? 600 : 500, cursor: 'pointer' }}
-                  >
-                    {label}
-                  </div>
-                );
-              })}
-            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 14 }}>
-            {QUEUE.map(([n, title, sub, id, sla, key, cta, primary, secondaryLabel, rows, rec]) => {
+            {!queue && <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>Loading…</span>}
+            {QUEUE.map(({ id, n, title, sub, sla, cta, rows, rec, primary, go, disabled }) => {
               const open = expanded === id;
               const color = id === 'ndr' ? T.AMBER : id === 'weight' ? T.RED : id === 'pickup' ? '#2A4570' : T.GREEN;
               const chipBd = id === 'ndr' ? '#E5D3A8' : id === 'weight' ? '#E8C4BD' : id === 'pickup' ? '#C6D2E6' : '#BDDCC9';
@@ -174,7 +194,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
                     </div>
                     <div style={{ fontFamily: T.MONO, fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color, border: `1px solid ${chipBd}`, borderRadius: 20, padding: '3px 8px' }}>{sla}</div>
                     <div
-                      onClick={(e) => { e.stopPropagation(); setDrawerOpen(true); }}
+                      onClick={(e) => { e.stopPropagation(); go(); }}
                       style={{ fontSize: 12.5, fontWeight: 600, color: '#14527f' }}
                     >
                       {cta} →
@@ -186,6 +206,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
                         <div>
                           <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: T.TEXT_FAINT }}>Breakdown</div>
                           <div style={{ marginTop: 10, background: T.SURFACE, border: `1px solid ${T.BORDER}`, borderRadius: 8, overflow: 'hidden' }}>
+                            {!rows.length && <div style={{ padding: '9px 12px', fontSize: 12, color: T.TEXT_MUTED }}>Nothing to show.</div>}
                             {rows.map(([k, v], i) => (
                               <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderBottom: `1px solid ${T.ROW_DIVIDER}`, fontSize: 12 }}>
                                 <div style={{ color: T.TEXT_LABEL }}>{k}</div>
@@ -198,8 +219,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
                           <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: T.TEXT_FAINT }}>Recommended action</div>
                           <div style={{ fontSize: 12.5, color: T.TEXT_LABEL, marginTop: 10, lineHeight: 1.65, maxWidth: 520 }}>{rec}</div>
                           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                            <div onClick={() => setDrawerOpen(true)} style={{ height: 32, padding: '0 13px', borderRadius: 7, background: T.NAVY, color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{primary}</div>
-                            <div style={{ height: 32, padding: '0 13px', borderRadius: 7, border: `1px solid ${T.INPUT_BORDER}`, background: T.SURFACE, display: 'flex', alignItems: 'center', fontSize: 12.5, cursor: 'pointer' }}>{secondaryLabel}</div>
+                            {primary && <button type="button" disabled={disabled} onClick={go} style={{ height: 32, padding: '0 13px', borderRadius: 7, border: 0, background: T.NAVY, color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}>{primary}</button>}
                           </div>
                         </div>
                       </div>
@@ -224,12 +244,12 @@ export default function DashboardContent({ mobile, narrow, phone }) {
               </div>
               <div style={{ padding: '16px 18px 12px', display: 'flex', gap: 12 }}>
                 <div style={{ flex: '0 0 30px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', fontFamily: T.MONO, fontSize: 11, color: T.TEXT_FAINT, textAlign: 'right', height: 196 }}>
-                  <div>150</div><div>100</div><div>50</div><div>0</div>
+                  {axis.map((v, i) => <div key={i}>{v}</div>)}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <TrendChart seriesA={live ? live.trend.map((x) => x.orders) : TREND_A} seriesB={live ? live.trend.map((x) => x.delivered) : TREND_B} />
+                  <TrendChart seriesA={live ? trend.map((x) => x.orders) : TREND_A} seriesB={live ? trend.map((x) => x.delivered) : TREND_B} labels={live ? trend.map((x) => x.day.toUpperCase()) : undefined} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: T.MONO, fontSize: 11, color: T.TEXT_FAINT, marginTop: 7 }}>
-                    <div>05 AUG</div><div>12 AUG</div><div>19 AUG</div><div>26 AUG</div><div>03 SEP</div>
+                    {live ? trendTicks.map((d, i) => <div key={i}>{d}</div>) : <><div>05 AUG</div><div>12 AUG</div><div>19 AUG</div><div>26 AUG</div><div>03 SEP</div></>}
                   </div>
                 </div>
               </div>
@@ -239,7 +259,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
             <div style={{ ...GLASS, overflow: 'hidden' }}>
               <GlassSheen />
               <div style={{ padding: '13px 18px', borderBottom: `1px solid ${T.DIVIDER}`, fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.SECTION_HEAD }}>Courier performance</div>
-              {COURIER_PERF.map((c) => (
+              {courierRows.map((c) => (
                 <div key={c.name} style={{ padding: '11px 18px', borderBottom: `1px solid ${T.PAPER}` }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</div>
@@ -273,16 +293,17 @@ export default function DashboardContent({ mobile, narrow, phone }) {
           <div style={{ ...GLASS, overflow: 'hidden', gridColumn: '1 / -1' }}>
             <GlassSheen />
             <div style={{ padding: '13px 18px', borderBottom: `1px solid ${T.DIVIDER}`, fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.SECTION_HEAD }}>Top NDR reasons</div>
-            <div style={{ padding: '14px 18px 16px', display: 'grid', gap: 12, gridTemplateColumns: mobile ? '1fr' : '1fr 1fr' }}>
-              {!ndr && <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>Loading…</span>}
-              {ndr && !(ndr.reasons || []).length && <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>No NDR reasons recorded yet.</span>}
-              {(ndr?.reasons || []).slice(0, 6).map((r) => (
-                <div key={r.reason}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: T.TEXT_SECONDARY }}><span>{NDR_REASONS[r.reason] || r.reason}</span><b style={{ color: T.TEXT }}>{r.count} ({r.pct}%)</b></div>
-                  <div style={{ height: 5, marginTop: 4, borderRadius: 3, background: T.DIVIDER }}><div style={{ height: 5, borderRadius: 3, width: `${r.pct}%`, background: T.ACCENT }} /></div>
-                </div>
-              ))}
+            {!ndr ? <span style={{ display: 'block', padding: '14px 18px', fontSize: 12.5, color: T.TEXT_MUTED }}>Loading…</span>
+              : <BarChartV items={(ndr.reasons || []).slice(0, 6).map((r) => ({ label: NDR_REASONS[r.reason] || r.reason, value: r.count, hint: `${NDR_REASONS[r.reason] || r.reason}: ${r.count} (${r.pct}%)` }))} empty="No NDR reasons recorded yet." />}
+          </div>
+          <div style={{ ...GLASS, overflow: 'hidden', gridColumn: '1 / -1' }}>
+            <GlassSheen />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '13px 18px', borderBottom: `1px solid ${T.DIVIDER}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.SECTION_HEAD }}>State wise delivery</div>
+              <RangeSelect days={days} onChange={setDays} label="State wise delivery date range" />
             </div>
+            {!live ? <span style={{ display: 'block', padding: '14px 18px', fontSize: 12.5, color: T.TEXT_MUTED }}>Loading…</span>
+              : <BarChartV color={T.NAVY} items={(live.stateDelivery || []).map((x) => ({ label: x.state, value: x.delivered, hint: `${x.state}: ${x.delivered} delivered of ${x.total} shipped` }))} empty="No delivered shipments in this period." />}
           </div>
         </div>
       </div>

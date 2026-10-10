@@ -74,9 +74,25 @@ function Progress({ state }) {
 const openDocs = (kind, ids) => window.open(`/documents/${kind}?ids=${ids.join(',')}`, '_blank', 'noopener');
 const copyText = (text, showToast, done) => { navigator.clipboard?.writeText(text).then(() => showToast(done)).catch(() => showToast('Copy is not available in this browser', 'error')); };
 
-function Detail({ shipment, mobile, onClose }) {
+// Auto-assign couriers to not-yet-shipped orders using the seller's courier priority list (Settings > Courier rules).
+async function assignCouriers(orderIds, showToast, reload) {
+  try {
+    const r = await apiFetch('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds } });
+    const bad = r.results.find((x) => !x.ok);
+    showToast(r.failed ? `${r.assigned} assigned, ${r.failed} not assigned: ${bad.error}` : `${r.assigned} order${r.assigned === 1 ? '' : 's'} assigned to a courier`, r.failed ? 'error' : 'success');
+    await reload();
+  } catch (e) { showToast(e.message || 'Couriers could not be assigned', 'error'); }
+}
+
+function Detail({ shipment, mobile, onClose, reload }) {
   const { showToast, nav } = useAppState();
   const [events, setEvents] = useState(null);
+  const cancellable = ['booked', 'pickup_pending', 'pickup_scheduled'].includes(shipment.state);
+  const cancelShipment = async () => {
+    if (!window.confirm(`Cancel shipment ${shipment.awb}? The shipping charge is credited back to your wallet.`)) return;
+    try { const r = await apiFetch(`/v1/shipments/${shipment.id}/cancel`, { method: 'POST' }); showToast(`Shipment cancelled. ${inr(r.refundedPaise)} credited to your wallet.`); await reload(); onClose(); }
+    catch (e) { showToast(e.message || 'Shipment could not be cancelled', 'error'); }
+  };
 
   useEffect(() => {
     let live = true;
@@ -123,7 +139,8 @@ function Detail({ shipment, mobile, onClose }) {
         ))}
       </div>
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
-        {failedOrder ? <Btn primary onClick={() => nav('orders')}>Fix and assign courier</Btn> : <><Btn primary onClick={() => openDocs('label', [shipment.id])}>Print label</Btn><Btn onClick={() => openDocs('invoice', [shipment.id])}>Invoice</Btn><Btn onClick={() => copyText(shipment.awb, showToast, 'AWB copied')}>Copy AWB</Btn></>}
+        {failedOrder ? <Btn primary onClick={() => assignCouriers([shipment.id], showToast, reload)}>Assign courier now</Btn> : <><Btn primary onClick={() => openDocs('label', [shipment.id])}>Print label</Btn><Btn onClick={() => openDocs('invoice', [shipment.id])}>Invoice</Btn><Btn onClick={() => copyText(shipment.awb, showToast, 'AWB copied')}>Copy AWB</Btn></>}
+        {cancellable && <Btn danger onClick={cancelShipment}>Cancel shipment</Btn>}
         {shipment.state === 'ndr' && <Btn onClick={() => nav('ndr')}>Resolve NDR</Btn>}
         {RTO.includes(shipment.state) && <Btn onClick={() => nav('rto')}>View RTO</Btn>}
       </div>
@@ -272,6 +289,7 @@ export default function LiveTrack({ mobile }) {
         <div style={{ ...CARD, padding: '9px 12px', marginBottom: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', background: 'rgba(27,159,214,.08)', boxShadow: 'none' }}>
           <b style={{ fontSize: 13, color: T.TEXT }}>{picked.size} selected</b>
           <Btn small onClick={() => copyText(visible.filter((r) => picked.has(r.id)).map((r) => r.awb).join('\n'), showToast, 'AWBs copied')}>Copy AWBs</Btn>
+          {visible.some((r) => picked.has(r.id) && r.state === 'failed') && <Btn small primary onClick={() => assignCouriers(visible.filter((r) => picked.has(r.id) && r.state === 'failed').map((r) => r.id), showToast, async () => { await load(); setPicked(new Set()); })}>Assign couriers</Btn>}
           <Btn small onClick={() => printSelected('label')}>Print labels</Btn>
           <Btn small onClick={() => printSelected('invoice')}>Print invoices</Btn>
           <Btn small onClick={exportRows}>Export selected</Btn>
@@ -325,7 +343,7 @@ export default function LiveTrack({ mobile }) {
               </>
             )}
           </section>
-          {selected && <Detail key={selected.id} shipment={selected} mobile={mobile} onClose={() => setSelectedId(null)} />}
+          {selected && <Detail key={selected.id} shipment={selected} mobile={mobile} reload={load} onClose={() => setSelectedId(null)} />}
         </div>
       )}
     </div>

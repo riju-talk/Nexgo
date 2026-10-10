@@ -14,7 +14,7 @@ export async function billingRoutes(app: FastifyInstance) {
   // first and filtered afterwards, so a filtered view still shows the true balance after each entry.
   app.get('/v1/billing/wallet', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
-    const query = z.object({ from: day.optional(), to: day.optional(), type: z.enum(['all', 'shipping', 'recharge', 'dispute', 'credit', 'debit']).default('all'), q: z.string().trim().max(500).optional(), ...page }).parse(request.query);
+    const query = z.object({ from: day.optional(), to: day.optional(), type: z.enum(['all', 'shipping', 'recharge', 'dispute', 'refund', 'credit', 'debit']).default('all'), q: z.string().trim().max(500).optional(), ...page }).parse(request.query);
     return withSellerTransaction(p.sellerId, async (client) => {
       const where: string[] = []; const params: unknown[] = [p.sellerId];
       const add = (sql: string, value: unknown) => { params.push(value); where.push(sql.replaceAll('?', `$${params.length}`)); };
@@ -23,6 +23,7 @@ export async function billingRoutes(app: FastifyInstance) {
       if (query.type === 'shipping') where.push(`l.reference_type = 'shipment'`);
       if (query.type === 'recharge') where.push(`l.reference_type = 'wallet_recharge'`);
       if (query.type === 'dispute') where.push(`l.reference_type = 'weight_dispute'`);
+      if (query.type === 'refund') where.push(`l.reference_type = 'shipment_cancel'`);
       if (query.type === 'credit') where.push('l.credit_paise > 0');
       if (query.type === 'debit') where.push('l.debit_paise > 0');
       const refs = refList(query.q);
@@ -36,7 +37,7 @@ export async function billingRoutes(app: FastifyInstance) {
       const from = `FROM ledger l LEFT JOIN shipments s ON l.reference_type = 'shipment' AND s.id::text = l.reference_id ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`;
       const total = Number((await client.query<{ n: string }>(`${cte} SELECT count(*) AS n ${from}`, params)).rows[0].n);
       const rows = await client.query(
-        `${cte} SELECT l.id, l.created_at, CASE l.reference_type WHEN 'shipment' THEN 'Shipping' WHEN 'wallet_recharge' THEN 'Recharge' WHEN 'weight_dispute' THEN 'Weight dispute' ELSE 'Adjustment' END AS txn_type,
+        `${cte} SELECT l.id, l.created_at, CASE l.reference_type WHEN 'shipment' THEN 'Shipping' WHEN 'wallet_recharge' THEN 'Recharge' WHEN 'weight_dispute' THEN 'Weight dispute' WHEN 'shipment_cancel' THEN 'Cancellation refund' WHEN 'cod_remittance' THEN 'COD wallet recovery' ELSE 'Adjustment' END AS txn_type,
                 COALESCE(s.awb, l.reference_id) AS ref_no, upper(substr(replace(l.id::text, '-', ''), 1, 10)) AS txn_id, l.credit_paise, l.debit_paise, l.closing_paise, l.description
          ${from} ORDER BY l.created_at DESC, l.id DESC LIMIT ${query.pageSize} OFFSET ${(query.page - 1) * query.pageSize}`, params);
       const balance = await client.query<{ b: string }>(`SELECT COALESCE(SUM(CASE WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END), 0)::bigint AS b FROM wallet_entries WHERE seller_id = $1`, [p.sellerId]);
@@ -85,14 +86,15 @@ export async function billingRoutes(app: FastifyInstance) {
       const total = Number((await client.query<{ n: string }>(`SELECT count(*) AS n FROM cod_remittance_cycles c WHERE ${where.join(' AND ')}`, params)).rows[0].n);
       const rows = await client.query(
         `SELECT c.id, 'CR' || to_char(c.cycle_end, 'YYMMDD') || upper(substr(replace(c.id::text, '-', ''), 1, 3)) AS remittance_no, c.cycle_start, c.cycle_end, c.shipment_count, c.cod_collected_paise, c.charges_deducted_paise AS freight_deduction_paise,
-                c.net_remitted_paise AS remittance_paise, c.status, c.remitted_at AS payment_date, c.bank_reference
+                c.net_remitted_paise AS remittance_paise, c.wallet_offset_paise, c.payout_paise, c.due_date, c.status, c.remitted_at AS payment_date, c.bank_reference
          FROM cod_remittance_cycles c WHERE ${where.join(' AND ')} ORDER BY c.cycle_end DESC, c.id LIMIT ${query.pageSize} OFFSET ${(query.page - 1) * query.pageSize}`, params);
-      const sum = await client.query(`SELECT COALESCE(sum(net_remitted_paise) FILTER (WHERE status = 'remitted'), 0)::bigint AS remitted, COALESCE(sum(net_remitted_paise) FILTER (WHERE status IN ('pending','approved')), 0)::bigint AS due FROM cod_remittance_cycles WHERE seller_id = $1`, [p.sellerId]);
-      const last = await client.query(`SELECT net_remitted_paise, remitted_at FROM cod_remittance_cycles WHERE seller_id = $1 AND status = 'remitted' ORDER BY remitted_at DESC NULLS LAST LIMIT 1`, [p.sellerId]);
+      const sum = await client.query(`SELECT COALESCE(sum(COALESCE(payout_paise, net_remitted_paise)) FILTER (WHERE status = 'remitted'), 0)::bigint AS remitted, COALESCE(sum(net_remitted_paise) FILTER (WHERE status IN ('pending','approved')), 0)::bigint AS due FROM cod_remittance_cycles WHERE seller_id = $1`, [p.sellerId]);
+      const last = await client.query(`SELECT COALESCE(payout_paise, net_remitted_paise) AS net_remitted_paise, remitted_at FROM cod_remittance_cycles WHERE seller_id = $1 AND status = 'remitted' ORDER BY remitted_at DESC NULLS LAST LIMIT 1`, [p.sellerId]);
       const next = await client.query(`SELECT net_remitted_paise, cycle_end FROM cod_remittance_cycles WHERE seller_id = $1 AND status IN ('pending','approved') ORDER BY cycle_end LIMIT 1`, [p.sellerId]);
+      const cfg = await client.query<{ remittance_days: number }>('SELECT remittance_days FROM sellers WHERE id = $1', [p.sellerId]);
       return {
         items: rows.rows, total, page: query.page, pageSize: query.pageSize, pages: Math.max(1, Math.ceil(total / query.pageSize)),
-        summary: { remittedTillDatePaise: Number(sum.rows[0].remitted), lastRemittancePaise: Number(last.rows[0]?.net_remitted_paise ?? 0), lastRemittanceAt: last.rows[0]?.remitted_at ?? null, nextRemittancePaise: Number(next.rows[0]?.net_remitted_paise ?? 0), totalDuePaise: Number(sum.rows[0].due) },
+        summary: { remittanceDays: cfg.rows[0]?.remittance_days ?? 2, remittedTillDatePaise: Number(sum.rows[0].remitted), lastRemittancePaise: Number(last.rows[0]?.net_remitted_paise ?? 0), lastRemittanceAt: last.rows[0]?.remitted_at ?? null, nextRemittancePaise: Number(next.rows[0]?.net_remitted_paise ?? 0), totalDuePaise: Number(sum.rows[0].due) },
       };
     });
   });

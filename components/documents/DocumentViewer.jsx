@@ -12,7 +12,8 @@ export default function DocumentViewer({ kind }) {
   const params = useSearchParams();
   const ids = params.get('ids') || '';
   const [state, setState] = useState({ ids: '', items: [], error: '' });
-  const [layout, setLayout] = useState('thermal'); // labels: 4×6 in thermal, or four per A4 sheet
+  const [layout, setLayout] = useState('thermal'); // labels: 4×6 in thermal, 3×5 in thermal, or four per A4 sheet
+  const [cfg, setCfg] = useState({});
   const label = kind === 'label';
 
   useEffect(() => {
@@ -24,22 +25,34 @@ export default function DocumentViewer({ kind }) {
     return () => { live = false; };
   }, [ids]);
 
+  // Saved Control Tower settings: label size / printer format pick the layout, invoice settings dress the invoice.
+  useEffect(() => {
+    let live = true;
+    Promise.all(['label', 'printer', 'inv-settings'].map((a) => apiFetch(`/v1/settings/${a}`).then((x) => x.values || {}).catch(() => ({})))).then(([label, printer, invoice]) => {
+      if (!live) return;
+      const size = String(label.labelSize || printer.format || '');
+      setLayout(size.includes('3×5') ? 'thermal35' : size.startsWith('A4') ? 'a4' : 'thermal');
+      setCfg(invoice);
+    });
+    return () => { live = false; };
+  }, []);
+
   const loading = !!ids && state.ids !== ids;
   const { items, error } = ids ? state : { items: [], error: 'No shipments selected.' };
-  const page = label ? (layout === 'thermal' ? '4in 6in' : 'A4') : 'A4';
+  const page = label ? (layout === 'thermal' ? '4in 6in' : layout === 'thermal35' ? '3in 5in' : 'A4') : String(cfg.pageFormat || '').startsWith('Thermal') ? '4in 6in' : 'A4';
 
   return (
     <div className={`doc-root ${label ? `doc-${layout}` : 'doc-a4'}`}>
       <style>{CSS.replace('__PAGE__', page)}</style>
       <header className="doc-bar">
         <b>{label ? 'Shipping labels' : 'Tax invoices'}{items.length ? ` · ${items.length}` : ''}</b>
-        {label && <select value={layout} onChange={(e) => setLayout(e.target.value)} aria-label="Label size"><option value="thermal">4 × 6 in (thermal printer)</option><option value="a4">A4 sheet (4 labels per page)</option></select>}
+        {label && <select value={layout} onChange={(e) => setLayout(e.target.value)} aria-label="Label size"><option value="thermal">4 × 6 in (thermal printer)</option><option value="thermal35">3 × 5 in (thermal printer)</option><option value="a4">A4 sheet (4 labels per page)</option></select>}
         <button type="button" onClick={() => window.print()} disabled={!items.length}>Print / Save as PDF</button>
       </header>
       {loading && <p className="doc-msg">Preparing {label ? 'labels' : 'invoices'}…</p>}
       {!loading && error && <p className="doc-msg doc-err">{error}</p>}
       <main className="doc-pages">
-        {!loading && items.map((d) => (label ? <LabelSheet key={d.id} d={d} /> : <InvoiceSheet key={d.id} d={d} />))}
+        {!loading && items.map((d) => (label ? <LabelSheet key={d.id} d={d} /> : <InvoiceSheet key={d.id} d={d} cfg={cfg} />))}
       </main>
     </div>
   );
@@ -83,6 +96,9 @@ const CSS = `
 .lb-foot { margin-top: auto; border-top: 1px solid #000; padding-top: 5px; font-size: 7.5px; line-height: 1.3; }
 svg { max-width: 100%; }
 
+/* 3 x 5 in thermal: the 4 x 6 layout scaled to 75% (6.667in tall at 4in wide = 5in x 3in) */
+.doc-thermal35 .doc-label { height: 6.667in; zoom: .75; }
+
 /* four labels per A4 sheet */
 .doc-a4 .doc-pages:has(.doc-label) { display: grid; grid-template-columns: repeat(2, 4in); gap: 0; justify-content: center; }
 .doc-a4 .doc-label { width: 4in; height: 5.6in; page-break-after: auto; break-after: auto; }
@@ -107,6 +123,9 @@ svg { max-width: 100%; }
 .iv-total div { padding: 7px 10px; }
 .iv-total div:first-child { flex: 1; text-align: center; border-right: 1px solid #000; }
 .iv-note { width: 76%; margin: 8px 0 0 auto; text-align: right; font-size: 11px; }
+.iv-logo { display: block; max-height: 56px; max-width: 180px; margin: 0 auto 10px; object-fit: contain; }
+.iv-sign { margin: 22px 0 0 auto; width: 180px; text-align: center; font-size: 10px; }
+.iv-sign img { max-height: 54px; max-width: 160px; object-fit: contain; }
 .iv-foot { margin-top: 30px; padding-top: 8px; border-top: 1px solid #bbb; font-size: 9.5px; color: #555; }
 
 @media print {

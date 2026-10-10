@@ -32,22 +32,25 @@ function CodTab() {
       columns={[
         { h: '#', cell: (r, i) => i + 1 }, { h: 'Remittance ID', cell: (r) => <b style={{ fontFamily: T.MONO }}>{r.remittance_no}</b> }, { h: 'COD amount', cell: (r) => inr(r.cod_collected_paise) },
         { h: 'Status', cell: (r) => { const [l, c] = CODE_STATUS[r.status] || [titleCase(r.status), T.TEXT]; return <Pill color={c}>{l}</Pill>; } },
-        { h: 'Payment date', cell: (r) => dayText(r.payment_date) }, { h: 'Freight deductions', cell: (r) => money(r.freight_deduction_paise) }, { h: 'Remittance amount', cell: (r) => <b>{inr(r.remittance_paise)}</b> },
-        { h: 'Convenience fee', cell: () => inr(0) }, { h: 'Payment ref', cell: (r) => r.bank_reference || dash }, { h: 'Remark', cell: (r) => `${r.shipment_count} shipment${r.shipment_count === 1 ? '' : 's'} · ${dayText(r.cycle_start)} – ${dayText(r.cycle_end)}` },
+        { h: 'Due date (D+N)', cell: (r) => dayText(r.due_date) }, { h: 'Payment date', cell: (r) => dayText(r.payment_date) }, { h: 'Freight deductions', cell: (r) => money(r.freight_deduction_paise) },
+        { h: 'Wallet adjustment', cell: (r) => (Number(r.wallet_offset_paise) ? <span style={{ color: T.AMBER, fontWeight: 700 }}>−{inr(r.wallet_offset_paise)}</span> : dash) }, { h: 'Remittance amount', cell: (r) => <b>{inr(r.payout_paise ?? r.remittance_paise)}</b> }, { h: 'Payment ref', cell: (r) => r.bank_reference || dash }, { h: 'Remark', cell: (r) => `${r.shipment_count} shipment${r.shipment_count === 1 ? '' : 's'} · ${dayText(r.cycle_start)} – ${dayText(r.cycle_end)}` },
         { h: 'Download', cell: () => <Btn small onClick={soon(showToast)}>⤓</Btn> },
       ]}
       exportColumns={[
         { h: 'Remittance ID', value: (r) => r.remittance_no }, { h: 'Cycle start', value: (r) => r.cycle_start?.slice(0, 10) }, { h: 'Cycle end', value: (r) => r.cycle_end?.slice(0, 10) }, { h: 'Shipments', value: (r) => r.shipment_count },
         { h: 'COD amount INR', value: (r) => r.cod_collected_paise / 100 }, { h: 'Status', value: (r) => (CODE_STATUS[r.status] || [r.status])[0] }, { h: 'Payment date', value: (r) => r.payment_date?.slice(0, 10) || '' },
-        { h: 'Freight deductions INR', value: (r) => r.freight_deduction_paise / 100 }, { h: 'Remittance amount INR', value: (r) => r.remittance_paise / 100 }, { h: 'Convenience fee INR', value: () => 0 }, { h: 'Payment ref', value: (r) => r.bank_reference || '' },
+        { h: 'Due date', value: (r) => r.due_date?.slice(0, 10) || '' }, { h: 'Freight deductions INR', value: (r) => r.freight_deduction_paise / 100 }, { h: 'Wallet adjustment INR', value: (r) => (r.wallet_offset_paise || 0) / 100 }, { h: 'Remittance amount INR', value: (r) => (r.payout_paise ?? r.remittance_paise) / 100 }, { h: 'Payment ref', value: (r) => r.bank_reference || '' },
       ]}
     >
       {(d) => (
+        <>
+        <p style={{ margin: '0 0 10px', fontSize: 13, color: T.TEXT_SECONDARY }}>COD is paid <b>D+{d.summary?.remittanceDays ?? 2}</b>: {d.summary?.remittanceDays ?? 2} days after delivery. A negative wallet balance is recovered from the payout first.</p>
         <div style={{ ...CARD, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', marginBottom: 12, textAlign: 'center' }}>
           {[['Remitted Till Date', d.summary?.remittedTillDatePaise], ['Last Remittance', d.summary?.lastRemittancePaise], ['Next Remittance (Expected)', d.summary?.nextRemittancePaise], ['Total Remittance Due', d.summary?.totalDuePaise]].map(([l, v], i) => (
             <div key={l} style={{ padding: '16px 10px', borderLeft: i ? `1px solid ${T.DIVIDER}` : 0 }}><span style={{ fontSize: 13, color: T.TEXT_SECONDARY }}>{l}</span><b style={{ display: 'block', fontSize: 24, marginTop: 4, color: T.TEXT }}>{d.summary ? inr(v).replace('.00', '') : '—'}</b></div>
           ))}
         </div>
+        </>
       )}
     </ListTab>
   );

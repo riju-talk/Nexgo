@@ -15,7 +15,6 @@ const METRICS = [
   ['▣', 'Active couriers', '26', 'No change', '#E8EEF7', '#3C6094'],
   ['!', 'NDR rate', '2.46%', '−0.35%', '#FFF0F2', '#E3435B'],
   ['↩', 'RTO rate', '1.78%', '−0.25%', '#FFF4E9', '#D9781E'],
-  ['✓', 'System health', '99.95%', 'All systems operational', '#E9F8EF', '#169C60'],
 ];
 const COURIERS = [['Delhivery', '8,740', '#0F1F3D'], ['Blue Dart', '6,256', '#3C6094'], ['XpressBees', '3,987', '#14724F'], ['Ecom Express', '2,456', '#8A5A00'], ['Shadowfax', '1,145', '#1b9fd6']];
 const ALERTS = [['!', 'High NDR alert: Maharashtra has crossed the 2% watch threshold.', '10m ago', '#B23A2B'], ['△', 'Pickup SLA breach: 23 pickups are waiting past cutoff.', '25m ago', '#8A5A00'], ['i', 'COD reconciliation pending for Blue Dart · 16 May cycle.', '1h ago', '#3C6094'], ['✓', 'System backup completed successfully.', '2h ago', '#14724F']];
@@ -96,28 +95,27 @@ function Donut() {
 }
 
 export default function AdminDashboard({ mobile, phone }) {
-  const [range, setRange] = useState('This week');
+  const [days, setDays] = useState(30);
   const [live, setLive] = useState(null);
   const { theme } = useAppState();
   const dark = theme === 'dark';
-  useEffect(() => { adminApi.dashboardAnalytics().then(setLive).catch(() => {}); }, []);
+  useEffect(() => { let on = true; adminApi.dashboardAnalytics(days).then((x) => { if (on) setLive(x); }).catch(() => {}); return () => { on = false; }; }, [days]);
   const metrics = live ? [
     ['▦', 'Total orders', Number(live.metrics?.orderVolume || 0).toLocaleString('en-IN'), 'Live platform intake', '#E8EEF7', '#1C5476'],
-    ['₹', 'Shipping spend', `₹${(Number(live.metrics?.shippingSpendPaise || 0) / 100).toLocaleString('en-IN')}`, 'Booked shipment charges', '#E8F8F1', '#0F9C61'],
     ['◌', 'Orders in transit', Number(live.metrics?.inTransit || 0).toLocaleString('en-IN'), 'Live shipment states', '#FFF0E4', '#D87620'],
     ['◎', 'Active sellers', Number(live.activeSellers || 0).toLocaleString('en-IN'), 'Live platform accounts', '#E7F8F5', '#008F84'],
     ['▣', 'Open NDR cases', Number(live.ndrOpen || 0).toLocaleString('en-IN'), 'Needs operational action', '#E8EEF7', '#3C6094'],
     ['!', 'NDR rate', `${Number(live.metrics?.ndrRate || 0).toFixed(1)}%`, 'Across booked shipments', '#FFF0F2', '#E3435B'],
     ['↩', 'RTO rate', `${Number(live.metrics?.rtoRate || 0).toFixed(1)}%`, 'Across booked shipments', '#FFF4E9', '#D9781E'],
-    ['✓', 'System health', '99.95%', 'All systems operational', '#E9F8EF', '#169C60'],
   ] : METRICS;
   const pad = phone ? 13 : mobile ? 18 : 28;
   const metricCols = phone ? 'repeat(2,minmax(0,1fr))' : mobile ? 'repeat(4,minmax(150px,1fr))' : 'repeat(auto-fit,minmax(145px,1fr))';
-  const selectRange = <motion.button whileTap={{ scale: .96 }} onClick={() => setRange(range === 'This week' ? 'Last 30 days' : 'This week')} style={{ height: 29, padding: '0 9px', border: '1px solid var(--ops-border)', borderRadius: 7, background: 'var(--ops-surface)', color: 'var(--ops-muted)', fontSize: 11.5, cursor: 'pointer' }}>{range}⌄</motion.button>;
+  const rangeSelect = <select aria-label="Date range" value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ height: 36, padding: '0 11px', border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer' }}>{[[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days']].map(([d, l]) => <option key={d} value={d}>{l}</option>)}</select>;
+  const selectRange = null;
   return <div style={{ padding: `${phone ? 22 : 34}px ${pad}px 46px`, maxWidth: '100%', margin: '0 auto' }}>
-    <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 18, marginBottom: 26, flexWrap: 'wrap' }}><div><div style={{ fontSize: 29, lineHeight: 1.05, fontWeight: 780, letterSpacing: '-.035em', color: 'var(--ops-heading)' }}>Platform dashboard</div><div style={{ marginTop: 8, fontSize: 14, color: 'var(--ops-muted)' }}>A calm view of sellers, couriers, finance, and customer support.</div></div><motion.button whileTap={{ scale: .97 }} style={{ height: 36, padding: '0 13px', border: '1px solid rgba(27,159,214,.32)', borderRadius: 9, background: 'rgba(27,159,214,.08)', color: T.ACCENT, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>⚙ Customise dashboard</motion.button></div>
+    <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 18, marginBottom: 26, flexWrap: 'wrap' }}><div><div style={{ fontSize: 29, lineHeight: 1.05, fontWeight: 780, letterSpacing: '-.035em', color: 'var(--ops-heading)' }}>Platform dashboard</div><div style={{ marginTop: 8, fontSize: 14, color: 'var(--ops-muted)' }}>A calm view of sellers, couriers, finance, and customer support.</div></div><div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>{rangeSelect}<motion.button whileTap={{ scale: .97 }} style={{ height: 36, padding: '0 13px', border: '1px solid rgba(27,159,214,.32)', borderRadius: 9, background: 'rgba(27,159,214,.08)', color: T.ACCENT, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>⚙ Customise dashboard</motion.button></div></div>
 
-    <section style={{ display: 'grid', gridTemplateColumns: metricCols, gap: 14, overflowX: mobile && !phone ? 'auto' : 'visible' }}>{metrics.map(([icon, label, value, delta, bg, color], i) => <motion.div key={label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING, delay: i * .035 }} whileHover={{ y: -2, boxShadow: '0 10px 20px rgba(28,49,69,.10)' }} style={{ minWidth: mobile && !phone ? 170 : 0, padding: '17px 16px 15px', border: '1px solid var(--ops-border)', borderRadius: 12, background: 'var(--ops-surface)', boxShadow: 'var(--ops-shadow)', cursor: 'default' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ width: 31, height: 31, display: 'grid', placeItems: 'center', borderRadius: 9, background: dark ? `${color}24` : bg, color, fontWeight: 800 }}>{icon}</span><span style={{ fontSize: 12, color: 'var(--ops-muted)', fontWeight: 650 }}>{label}</span></div><div style={{ marginTop: 16, fontSize: 23, fontWeight: 780, letterSpacing: '-.04em', color: 'var(--ops-heading)' }}>{value}</div><div style={{ marginTop: 9, fontSize: 11, color: delta.includes('−') ? '#B23A2B' : color === '#3C6094' ? 'var(--ops-subtle)' : '#14724F', fontWeight: 650 }}>{delta} <span style={{ color: 'var(--ops-subtle)', fontWeight: 500 }}>{delta.includes('change') || delta.includes('operational') ? '' : 'vs previous day'}</span></div></motion.div>)}</section>
+    <section style={{ display: 'grid', gridTemplateColumns: metricCols, gap: 14, overflowX: mobile && !phone ? 'auto' : 'visible' }}>{metrics.map(([icon, label, value, delta, bg, color], i) => <motion.div key={label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING, delay: i * .035 }} whileHover={{ y: -2, boxShadow: '0 10px 20px rgba(28,49,69,.10)' }} style={{ minWidth: mobile && !phone ? 170 : 0, padding: '17px 16px 15px', border: '1px solid var(--ops-border)', borderRadius: 12, background: 'var(--ops-surface)', boxShadow: 'var(--ops-shadow)', cursor: 'default' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ width: 31, height: 31, display: 'grid', placeItems: 'center', borderRadius: 9, background: dark ? `${color}24` : bg, color, fontWeight: 800 }}>{icon}</span><span style={{ fontSize: 12, color: 'var(--ops-muted)', fontWeight: 650 }}>{label}</span></div><div style={{ marginTop: 16, fontSize: 23, fontWeight: 780, letterSpacing: '-.04em', color: 'var(--ops-heading)' }}>{value}</div><div style={{ marginTop: 9, fontSize: 11, color: delta.includes('−') ? '#B23A2B' : color === '#3C6094' ? 'var(--ops-subtle)' : '#14724F', fontWeight: 650 }}>{delta} <span style={{ color: 'var(--ops-subtle)', fontWeight: 500 }}>{delta.includes('change') || delta.includes('operational') ? '' : 'in selected period'}</span></div></motion.div>)}</section>
     <ControlDeck mobile={mobile} />
 
     <section style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.5fr 1.02fr .95fr', gap: 12, marginTop: 14 }}>

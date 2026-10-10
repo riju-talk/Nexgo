@@ -7,11 +7,12 @@ import * as T from '@/lib/theme';
 import KpiDropdown from './KpiDropdown';
 import FilterDropdown from './FilterDropdown';
 
+const DASH_RANGES = [[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days']];
 const TAP = { scale: 0.96 };
 const TAP_FAST = { duration: 0.08 };
 
 export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
-  const { nav } = useAppState();
+  const { nav, dashDays, setDashDays } = useAppState();
   const actions = (ACTIONS[activeId] || []).filter(([, , dest]) => dest); // buttons without a destination had no handler
   // The page name is already in the top bar, so a page with nothing to act on needs no header at all.
   if (!isDashboard && !actions.length) return null;
@@ -38,8 +39,9 @@ export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
             <>
               <KpiDropdown mobile={mobile} />
               <FilterDropdown
-                label="Last 30 days"
-                options={['Today', 'Last 7 days', 'Last 30 days', 'Last 90 days', 'Custom range']}
+                value={DASH_RANGES.find(([d]) => d === dashDays)?.[1]}
+                onSelect={(l) => setDashDays(DASH_RANGES.find(([, name]) => name === l)[0])}
+                options={DASH_RANGES.map(([, l]) => l)}
                 className="nxc-btn"
                 align="right"
                 style={{ height: 32, padding: '0 12px', borderRadius: 7, border: `1px solid ${T.INPUT_BORDER}`, background: T.SURFACE, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12.5, color: T.TEXT_LABEL }}

@@ -105,7 +105,7 @@ export function ListTab({ path, filters = [], columns, exportColumns, exportName
         <input aria-label="From date" type="date" style={FIELD} value={draft.from} max={draft.to || undefined} onChange={(e) => setDraft({ ...draft, from: e.target.value })} />
         <span style={{ color: T.TEXT_MUTED }}>–</span>
         <input aria-label="To date" type="date" style={FIELD} value={draft.to} min={draft.from || undefined} onChange={(e) => setDraft({ ...draft, to: e.target.value })} />
-        {filters.includes('type') && <select aria-label="Type" style={FIELD} value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}><option value="all">Show all</option><option value="shipping">Shipping</option><option value="recharge">Recharge</option><option value="dispute">Weight dispute</option><option value="credit">Credits only</option><option value="debit">Debits only</option></select>}
+        {filters.includes('type') && <select aria-label="Type" style={FIELD} value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })}><option value="all">Show all</option><option value="shipping">Shipping</option><option value="recharge">Recharge</option><option value="dispute">Weight dispute</option><option value="refund">Cancellation refund</option><option value="credit">Credits only</option><option value="debit">Debits only</option></select>}
         {filters.includes('q') && <input aria-label="AWB numbers" style={{ ...FIELD, width: 240 }} placeholder="AWB no(s) separated by comma" value={draft.q} onChange={(e) => setDraft({ ...draft, q: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && apply()} />}
         <Btn primary small onClick={apply}>Apply</Btn>
         <Btn small onClick={clear}>Clear</Btn>

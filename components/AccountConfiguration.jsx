@@ -15,6 +15,7 @@ const ITEMS = [
   ['Order confirmation', 'Ask customers to confirm before dispatch', 'notifications', '✓'],
   ['Abandoned checkout notifications', 'Win back shoppers who left before paying', 'abandoned', '↺'],
   ['Team & roles', 'Members, permissions and workspace access', 'team', '♙'],
+  ['Support & tickets', 'Raise a ticket and follow its progress', 'support', '?'],
 ];
 
 export default function AccountConfiguration({ phone, mobile }) {

@@ -6,9 +6,10 @@ import * as T from '@/lib/theme';
 
 const TAP = { scale: 0.97 };
 
-export default function FilterDropdown({ label, options, className, style, align = 'left' }) {
+export default function FilterDropdown({ label, options, className, style, align = 'left', value, onSelect }) {
   const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState(label || options[0]);
+  const [picked, setSelected] = useState(label || options[0]);
+  const selected = value ?? picked; // controlled when `value` is given
   const reduced = useReducedMotion();
 
   return (
@@ -43,7 +44,7 @@ export default function FilterDropdown({ label, options, className, style, align
                 return (
                   <div
                     key={opt}
-                    onClick={() => { setSelected(opt); setOpen(false); }}
+                    onClick={() => { setSelected(opt); setOpen(false); onSelect?.(opt); }}
                     className="nxc-filter-opt"
                     style={{ padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: on ? '#14527f' : T.TEXT, fontWeight: on ? 600 : 500, background: on ? 'rgba(27,159,214,.08)' : 'transparent', whiteSpace: 'nowrap' }}
                   >

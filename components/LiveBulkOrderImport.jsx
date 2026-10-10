@@ -143,7 +143,7 @@ function validate(order) {
 // A re-upload-ready file: the failed orders laid out in the same columns as the NEXGO template, plus an Error column.
 // Fix the cells, delete the Error column (or leave it, it is ignored) and upload the file again.
 const TEMPLATE_HEADERS = ['Order number', 'Customer name', 'Company name', 'Phone', 'Alternate phone', 'Email', 'Address line 1', 'Address line 2', 'Landmark', 'Pincode', 'City', 'State', 'SKU', 'Product name', 'HSN code', 'Quantity', 'Unit price', 'Weight (g)', 'Length (cm)', 'Breadth (cm)', 'Height (cm)', 'Payment mode', 'COD amount'];
-const isFailed = (o) => !o.created && (o.errors.length || o.failure || !o.quote);
+const isFailed = (o) => o.unassigned || (!o.created && (o.errors.length || o.failure || !o.quote));
 const failureReason = (o) => o.failure || (o.errors.length ? o.errors.join(' | ') : 'No courier could be assigned: no serviceable courier for this pincode, weight or payment mode');
 function failedRows(orders) {
   const rows = [];
@@ -248,26 +248,37 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     const outcome = new Map();
     for (const o of validOrders) {
       try {
-        await apiFetch('/v1/orders', { method: 'POST', body: {
+        const made = await apiFetch('/v1/orders', { method: 'POST', body: {
           warehouseId: o.warehouseId, orderNumber: o.orderNumber, orderFlow: 'forward', channel: 'bulk_upload', notes: 'Created from bulk order upload',
           paymentMode: o.paymentMode, codAmountPaise: o.codAmountPaise,
           customer: { fullName: o.customerName, companyName: o.companyName || undefined, email: o.email || undefined, phone: o.phone, alternatePhone: o.alternatePhone || undefined, addressLine1: o.address, addressLine2: o.address2 || undefined, landmark: o.landmark || undefined, city: o.city, state: o.state, pincode: o.pincode },
           items: o.items.map((i) => ({ productId: i.productId, sku: i.sku, name: i.name, hsnCode: i.hsn || undefined, quantity: i.quantity, unitPricePaise: i.pricePaise, weightG: Math.round(i.weight) })),
           package: { weightG: o.weightG, ...(o.dims ? { lengthMm: o.dims[0], widthMm: o.dims[1], heightMm: o.dims[2] } : {}) },
         } });
-        outcome.set(o.orderNumber, { created: true });
+        outcome.set(o.orderNumber, { created: true, orderId: made?.id });
       } catch (error) {
         outcome.set(o.orderNumber, { failure: error instanceof ApiError ? error.message : 'Not created' });
+      }
+    }
+    // Allocate couriers by the seller's priority list (Settings > Courier rules). Orders no courier could take stay listed as failed.
+    const made = [...outcome.values()].filter((x) => x.orderId);
+    if (made.length) {
+      try {
+        const r = await apiFetch('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds: made.map((x) => x.orderId) } });
+        const by = new Map(r.results.map((x) => [x.orderId, x]));
+        for (const [num, x] of outcome) { const a = x.orderId && by.get(x.orderId); if (a) outcome.set(num, a.ok ? { ...x, courier: a.courier, awb: a.awb } : { ...x, unassigned: true, failure: `Order created, but no courier assigned: ${a.error}` }); }
+      } catch (error) {
+        for (const [num, x] of outcome) if (x.orderId) outcome.set(num, { ...x, unassigned: true, failure: `Order created, but couriers could not be assigned: ${error.message || 'try again from All orders'}` });
       }
     }
     const next = orders.map((o) => (outcome.has(o.orderNumber) ? { ...o, ...outcome.get(o.orderNumber) } : o));
     setOrders(next);
     setCreating(false);
-    const created = next.filter((o) => o.created).length;
+    const created = next.filter((o) => o.created && !o.unassigned).length;
     const failed = next.filter((o) => o.errors.length || o.failure).length;
     setResult({ total: next.length, created, failed });
-    if (created) showToast(`${created} order${created === 1 ? '' : 's'} created. Book couriers from All orders.`);
-    if (failed) showToast(`${failed} order${failed === 1 ? '' : 's'} not created — download the error report.`, 'error');
+    if (created) showToast(`${created} order${created === 1 ? '' : 's'} created and assigned to a courier.`);
+    if (failed) showToast(`${failed} order${failed === 1 ? '' : 's'} failed or not assigned — download the failed orders file.`, 'error');
   };
 
   const onDrop = (e) => { e.preventDefault(); setDragging(false); importFile(e.dataTransfer.files?.[0]); };
@@ -288,7 +299,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
         <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4,minmax(0,1fr))', gap: 12, marginTop: 18 }}>
           <SummaryCard label="Total uploads" value={fileName ? 1 : 0} tone="#1b9fd6" icon="⇧" />
           <SummaryCard label="Total orders" value={orders.length} tone="#3B82F6" icon="□" />
-          <SummaryCard label="Successful orders" value={result?.created || orders.filter((o) => o.created).length} tone="#22C55E" icon="✓" />
+          <SummaryCard label="Successful orders" value={result?.created ?? orders.filter((o) => o.created && !o.unassigned).length} tone="#22C55E" icon="✓" />
           <SummaryCard label="Failed orders" value={failedCount} tone="#EF4444" icon="×" />
         </div>
 

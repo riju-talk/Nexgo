@@ -13,7 +13,7 @@ function dateAt(i) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).toUpperCase();
 }
 
-export default function TrendChart({ seriesA, seriesB, labelA = 'ORDERS', labelB = 'DELIVERED' }) {
+export default function TrendChart({ seriesA, seriesB, labelA = 'ORDERS', labelB = 'DELIVERED', labels }) {
   const hostRef = useRef(null);
   const [hover, setHover] = useState(null); // { i, x }
 
@@ -70,7 +70,7 @@ export default function TrendChart({ seriesA, seriesB, labelA = 'ORDERS', labelB
             fontSize: 11.5, whiteSpace: 'nowrap', boxShadow: '0 10px 24px rgba(23,22,19,.28)', zIndex: 5,
           }}
         >
-          <div style={{ fontFamily: T.MONO, fontSize: 10, color: '#C9C3B6', marginBottom: 4 }}>{dateAt(hover.i)}</div>
+          <div style={{ fontFamily: T.MONO, fontSize: 10, color: '#C9C3B6', marginBottom: 4 }}>{labels?.[hover.i] ?? dateAt(hover.i)}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 7, height: 7, borderRadius: 4, background: '#C6D2E6' }} />{labelA} <b style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>{Math.round(seriesA[hover.i])}</b></div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}><div style={{ width: 7, height: 7, borderRadius: 4, background: T.ACCENT }} />{labelB} <b style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>{Math.round(seriesB[hover.i])}</b></div>
         </div>

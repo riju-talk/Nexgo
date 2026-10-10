@@ -34,11 +34,14 @@ const CELL = { padding: '12px 10px', borderTop: `1px solid ${T.DIVIDER}`, vertic
 const HEAD = { padding: '10px', textAlign: 'center', fontSize: 12.5, fontWeight: 750, color: T.TEXT, background: T.TABLE_HEAD_BG, borderLeft: `1px solid ${T.DIVIDER}` };
 const SUBHEAD = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 6, fontSize: 10, fontWeight: 600, color: T.TEXT_MUTED, textAlign: 'left' };
 
+const WEIGHT_SLABS = [['0.25', '0.25 kg'], ['0.5', '0.50 kg'], ['1', '1 kg'], ['2', '2 kg'], ['5', '5 kg'], ['10', '10 kg'], ['20', '20 kg']];
+
 export default function LiveRateCard({ mobile, embedded = false }) {
   const { showToast, nav } = useAppState();
   const [data, setData] = useState(null); const [error, setError] = useState('');
   const [courier, setCourier] = useState(''); const [mode, setMode] = useState(''); const [format, setFormat] = useState('csv');
   const [slab, setSlab] = useState({});
+  const [weightKg, setWeightKg] = useState(''); // global weight-slab filter (kg); blank = each service's own slab
 
   useEffect(() => {
     let live = true;
@@ -51,7 +54,12 @@ export default function LiveRateCard({ mobile, embedded = false }) {
 
   // A service can have several weight slabs; show one at a time (default: the lightest).
   const slabsOf = (s) => [...new Set(s.slabs.map((l) => l.fromWeightG))].sort((a, b) => a - b);
-  const slabFor = (s) => { const key = `${s.providerCode}:${s.serviceName}`; const all = slabsOf(s); return all.includes(slab[key]) ? slab[key] : all[0]; };
+  const slabFor = (s) => {
+    const key = `${s.providerCode}:${s.serviceName}`; const all = slabsOf(s);
+    // The weight filter picks the slab a parcel of that weight falls into (the heaviest slab starting at or below it).
+    if (weightKg) { const g = Number(weightKg) * 1000; return [...all].reverse().find((x) => x <= g) ?? all[0]; }
+    return all.includes(slab[key]) ? slab[key] : all[0];
+  };
   // Zone rows fall back to the national row where a service has no row for that zone.
   const rateFor = (s, zoneCode, from) => s.slabs.find((l) => l.zone === zoneCode && l.fromWeightG === from) || s.slabs.find((l) => l.zone === 'national' && l.fromWeightG === from) || null;
 
@@ -74,6 +82,7 @@ export default function LiveRateCard({ mobile, embedded = false }) {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <select aria-label="Courier" style={FIELD} value={courier} onChange={(e) => setCourier(e.target.value)}><option value="">All couriers</option>{couriers.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select>
+          <select aria-label="Weight slab" style={FIELD} value={weightKg} onChange={(e) => setWeightKg(e.target.value)}><option value="">All weight slabs</option>{WEIGHT_SLABS.map(([kg, label]) => <option key={kg} value={kg}>{label}</option>)}</select>
           <select aria-label="Mode" style={FIELD} value={mode} onChange={(e) => setMode(e.target.value)}><option value="">All modes</option><option value="Surface">Surface</option><option value="Air">Air</option></select>
           <select aria-label="Export format" style={FIELD} value={format} onChange={(e) => setFormat(e.target.value)}>{FORMATS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select>
           <Btn onClick={exportChart}>⤓ Export</Btn>
@@ -111,7 +120,7 @@ export default function LiveRateCard({ mobile, embedded = false }) {
                         <div style={{ color: T.TEXT, fontSize: 13, fontWeight: 650, marginTop: 2 }}>{s.serviceName}</div>
                         <small style={{ display: 'block', color: T.TEXT_MUTED, marginTop: 3 }}>(extra weight: {grams(first?.additionalWeightG || 500)})</small>
                         {s.minDays ? <small style={{ display: 'block', color: T.TEXT_MUTED }}>Delivery: {s.minDays === s.maxDays ? `${s.minDays} day${s.minDays === 1 ? '' : 's'}` : `${s.minDays}–${s.maxDays} days`}</small> : null}
-                        {slabs.length > 1 && <select aria-label={`Weight slab for ${s.serviceName}`} value={from} onChange={(e) => setSlab((o) => ({ ...o, [`${s.providerCode}:${s.serviceName}`]: Number(e.target.value) }))} style={{ ...FIELD, height: 28, marginTop: 7, fontSize: 12 }}>{slabs.map((g) => <option key={g} value={g}>From {grams(g)}</option>)}</select>}
+                        {slabs.length > 1 && !weightKg && <select aria-label={`Weight slab for ${s.serviceName}`} value={from} onChange={(e) => setSlab((o) => ({ ...o, [`${s.providerCode}:${s.serviceName}`]: Number(e.target.value) }))} style={{ ...FIELD, height: 28, marginTop: 7, fontSize: 12 }}>{slabs.map((g) => <option key={g} value={g}>From {grams(g)}</option>)}</select>}
                       </td>
                       <td style={{ ...CELL, textAlign: 'center', fontSize: 12, fontWeight: 650, color: T.TEXT_SECONDARY }}><span aria-hidden="true" style={{ display: 'block', fontSize: 18 }}>{modeOf(s) === 'Air' ? '✈' : '🚚'}</span>{modeOf(s)}</td>
                       {ZONES.map(([code]) => <ZoneCell key={code} rate={rateFor(s, code, from)} cod={s.codEnabled} />)}
