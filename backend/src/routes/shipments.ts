@@ -43,6 +43,33 @@ export async function shipmentRoutes(app: FastifyInstance) {
        WHERE o.seller_id=$1 AND o.state IN ('new','ready_to_ship') AND o.order_flow <> 'reverse' AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id=o.id)
        ORDER BY o.created_at DESC LIMIT 500`, [p.sellerId])).rows }));
   });
+  // Everything the printable shipping label and tax invoice need, for up to 100 shipments at once (see /documents/label and /documents/invoice).
+  // Assigns the order's invoice number on first use.
+  app.get('/v1/shipments/documents', { preHandler: requireSeller }, async (request) => {
+    const p = principal(request);
+    const { ids } = z.object({ ids: z.string().max(4000) }).parse(request.query);
+    const shipmentIds = z.array(uuid).min(1).max(100).parse([...new Set(ids.split(',').map((v) => v.trim()).filter(Boolean))]);
+    return withSellerTransaction(p.sellerId, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`invoice:${p.sellerId}`]);
+      await client.query(`UPDATE orders o SET invoice_seq = n.seq FROM (
+          SELECT o2.id, (SELECT COALESCE(max(invoice_seq), 0) FROM orders WHERE seller_id=$1) + row_number() OVER (ORDER BY o2.created_at, o2.id) AS seq
+          FROM orders o2 JOIN shipments s ON s.order_id=o2.id WHERE s.id = ANY($2::uuid[]) AND s.seller_id=$1 AND o2.invoice_seq IS NULL) n WHERE o.id = n.id`, [p.sellerId, shipmentIds]);
+      const rows = await client.query(
+        `SELECT s.id, s.awb, s.state, s.booked_at, s.chargeable_weight_g, cp.name AS courier_name, cs.display_name AS service_name,
+                o.order_number, o.nexgo_order_id, o.created_at AS order_date, o.invoice_seq, o.payment_mode, o.cod_amount_paise, o.subtotal_paise, o.total_paise, o.tax_rate_bps, o.tax_paise,
+                o.shipping_charges_paise, o.transaction_charges_paise, o.gift_wrap_paise, o.other_charges_paise, o.discount_paise, o.total_weight_g,
+                o.package_length_mm, o.package_width_mm, o.package_height_mm,
+                c.full_name AS customer_name, c.phone AS customer_phone, c.address_line_1, c.address_line_2, c.landmark, c.city AS customer_city, c.state AS customer_state, c.pincode AS customer_pincode,
+                w.name AS warehouse_name, w.contact_name, w.phone AS warehouse_phone, w.email AS warehouse_email, w.address_line_1 AS wh_line_1, w.address_line_2 AS wh_line_2, w.city AS wh_city, w.state AS wh_state, w.pincode AS wh_pincode,
+                sl.legal_name AS seller_name, k.gstin AS seller_gstin, k.registered_address AS seller_address,
+                (SELECT COALESCE(json_agg(json_build_object('sku', i.sku, 'name', i.name, 'hsn', i.hsn_code, 'quantity', i.quantity, 'unitPricePaise', i.unit_price_paise) ORDER BY i.created_at), '[]'::json) FROM order_items i WHERE i.order_id = o.id) AS items
+         FROM shipments s JOIN orders o ON o.id=s.order_id JOIN customers c ON c.id=o.customer_id JOIN warehouses w ON w.id=o.warehouse_id
+         JOIN courier_providers cp ON cp.id=s.provider_id JOIN courier_services cs ON cs.id=s.service_id JOIN sellers sl ON sl.id=s.seller_id LEFT JOIN seller_kyc k ON k.seller_id=s.seller_id
+         WHERE s.seller_id=$1 AND s.id = ANY($2::uuid[])`, [p.sellerId, shipmentIds]);
+      const order = new Map(shipmentIds.map((id, i) => [id, i]));
+      return { items: rows.rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)) };
+    });
+  });
   // Tags: distinct list for filters, and bulk add/remove on selected shipments.
   app.get('/v1/shipments/tags', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);

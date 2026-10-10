@@ -71,6 +71,7 @@ function Progress({ state }) {
   );
 }
 
+const openDocs = (kind, ids) => window.open(`/documents/${kind}?ids=${ids.join(',')}`, '_blank', 'noopener');
 const copyText = (text, showToast, done) => { navigator.clipboard?.writeText(text).then(() => showToast(done)).catch(() => showToast('Copy is not available in this browser', 'error')); };
 
 function Detail({ shipment, mobile, onClose }) {
@@ -84,8 +85,6 @@ function Detail({ shipment, mobile, onClose }) {
     return () => { live = false; };
   }, [shipment.id, shipment.state]);
 
-  // Label PDFs need object storage, which is not connected yet.
-  const getLabel = () => showToast('Label download is coming soon. It needs file storage, which is not connected yet.');
   const delayed = isDelayed(shipment);
   const failedOrder = shipment.state === 'failed';
   const facts = [
@@ -124,7 +123,7 @@ function Detail({ shipment, mobile, onClose }) {
         ))}
       </div>
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
-        {failedOrder ? <Btn primary onClick={() => nav('orders')}>Fix and assign courier</Btn> : <><Btn primary onClick={getLabel}>Get label</Btn><Btn onClick={() => copyText(shipment.awb, showToast, 'AWB copied')}>Copy AWB</Btn></>}
+        {failedOrder ? <Btn primary onClick={() => nav('orders')}>Fix and assign courier</Btn> : <><Btn primary onClick={() => openDocs('label', [shipment.id])}>Print label</Btn><Btn onClick={() => openDocs('invoice', [shipment.id])}>Invoice</Btn><Btn onClick={() => copyText(shipment.awb, showToast, 'AWB copied')}>Copy AWB</Btn></>}
         {shipment.state === 'ndr' && <Btn onClick={() => nav('ndr')}>Resolve NDR</Btn>}
         {RTO.includes(shipment.state) && <Btn onClick={() => nav('rto')}>View RTO</Btn>}
       </div>
@@ -231,6 +230,12 @@ export default function LiveTrack({ mobile }) {
       setTagInput(''); await Promise.all([load(), loadTags()]);
     } catch (e) { showToast(e instanceof ApiError ? e.message : 'Tags could not be saved', 'error'); }
   };
+  const printSelected = (kind) => {
+    const ids = visible.filter((r) => picked.has(r.id) && r.state !== 'failed').map((r) => r.id);
+    if (!ids.length) return showToast('Select shipments that have an AWB first.', 'error');
+    if (ids.length > 100) return showToast('Print up to 100 shipments at a time.', 'error');
+    openDocs(kind, ids);
+  };
   const allOnPage = pageRows.length > 0 && pageRows.every((r) => picked.has(r.id));
   const togglePage = () => setPicked((s) => { const n = new Set(s); pageRows.forEach((r) => (allOnPage ? n.delete(r.id) : n.add(r.id))); return n; });
   const toggleOne = (id) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -267,7 +272,8 @@ export default function LiveTrack({ mobile }) {
         <div style={{ ...CARD, padding: '9px 12px', marginBottom: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', background: 'rgba(27,159,214,.08)', boxShadow: 'none' }}>
           <b style={{ fontSize: 13, color: T.TEXT }}>{picked.size} selected</b>
           <Btn small onClick={() => copyText(visible.filter((r) => picked.has(r.id)).map((r) => r.awb).join('\n'), showToast, 'AWBs copied')}>Copy AWBs</Btn>
-          <Btn small onClick={() => showToast('Bulk labels and manifests are coming soon. They need file storage, which is not connected yet.')}>Print labels</Btn>
+          <Btn small onClick={() => printSelected('label')}>Print labels</Btn>
+          <Btn small onClick={() => printSelected('invoice')}>Print invoices</Btn>
           <Btn small onClick={exportRows}>Export selected</Btn>
           <input aria-label="Tag name" value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="Tag name" maxLength={30} style={{ ...FIELD, height: 28, width: 130 }} />
           <Btn small disabled={!tagInput.trim()} onClick={() => tagSelected('add')}>Add tag</Btn>
@@ -305,7 +311,7 @@ export default function LiveTrack({ mobile }) {
                             <td style={CELL}>{r.awb ? <b style={{ fontFamily: T.MONO }}>{r.awb}</b> : <span style={{ color: T.TEXT_MUTED }}>—</span>}</td>
                             <td style={CELL}><span style={{ color: waTone(r.whatsapp_status), fontWeight: 650 }}>{WHATSAPP[r.whatsapp_status] || 'Not sent'}</span></td>
                             <td style={CELL}><Pill state={r.state} />{late && <small style={{ ...SUB, color: T.RED }}>Delayed · due {day(r.promised_delivery_at)}</small>}</td>
-                            <td style={CELL} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}><Btn small onClick={() => setSelectedId(r.id)}>{r.state === 'failed' ? 'Details' : 'Track'}</Btn></div></td>
+                            <td style={CELL} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}><Btn small onClick={() => setSelectedId(r.id)}>{r.state === 'failed' ? 'Details' : 'Track'}</Btn>{r.awb && <Btn small onClick={() => openDocs('label', [r.id])}>Label</Btn>}</div></td>
                           </tr>
                         );
                       })}
