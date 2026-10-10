@@ -164,7 +164,7 @@ const CELL = { padding: '12px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 1
 const SUB = { display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 11.5 };
 
 export default function LiveTrack({ mobile }) {
-  const { nav, showToast } = useAppState();
+  const { nav, showToast, trackFocus, setTrackFocus } = useAppState();
   const [rows, setRows] = useState(null);
   const [failed, setFailed] = useState([]);
   const [error, setError] = useState(null);
@@ -176,6 +176,14 @@ export default function LiveTrack({ mobile }) {
   const [page, setPage] = useState(1);
   const [exportFormat, setExportFormat] = useState('csv');
   const [selectedId, setSelectedId] = useState(null);
+  // Opened from the command palette: filter to that AWB and open its detail panel.
+  useEffect(() => {
+    if (!trackFocus || !rows) return;
+    const hit = rows.find((r) => r.awb === trackFocus);
+    setF((x) => ({ ...x, q: trackFocus })); // eslint-disable-line react-hooks/set-state-in-effect -- one-shot hand-off from the palette
+    if (hit) setSelectedId(hit.id);
+    setTrackFocus('');
+  }, [trackFocus, rows, setTrackFocus]);
   const [picked, setPicked] = useState(() => new Set());
   const set = (k) => (e) => { setF((x) => ({ ...x, [k]: e.target.value })); setPage(1); };
 

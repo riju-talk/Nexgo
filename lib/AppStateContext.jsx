@@ -43,6 +43,7 @@ export function AppStateProvider({ children }) {
   const [openGroups, setOpenGroups] = useState({});
   const [stage, setStage] = useState('NDR');
   const [queueTab, setQueueTab] = useState('All');
+  const [trackFocus, setTrackFocus] = useState(''); // AWB the Track page should open (set by the command palette)
   const [dashDays, setDashDays] = useState(30); // dashboard date range in days (header filter + cards share it)
   const [resolution, setResolution] = useState(0);
   const [navOpen, setNavOpen] = useState(false);
@@ -132,10 +133,10 @@ export function AppStateProvider({ children }) {
   const clearToast = useCallback(() => setToast(null), []);
 
   const value = useMemo(() => ({
-    kpis, kpiOpen, paletteOpen, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast,
-    setKpiOpen, setPaletteOpen, setDrawerOpen, setStage, setQueueTab, setDashDays, setResolution, setNavOpen,
+    kpis, kpiOpen, paletteOpen, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, trackFocus, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast,
+    setKpiOpen, setPaletteOpen, setDrawerOpen, setStage, setQueueTab, setDashDays, setTrackFocus, setResolution, setNavOpen,
     toggleKpi, resetKpi, toggleGroup, setTab, toggleExpanded, toggleSidebar, nav, closeTransient, setTheme, toggleTheme, showToast, clearToast,
-  }), [kpis, kpiOpen, paletteOpen, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast, toggleKpi, resetKpi, toggleGroup, setTab, toggleExpanded, toggleSidebar, nav, closeTransient, setTheme, toggleTheme, showToast, clearToast]);
+  }), [kpis, kpiOpen, paletteOpen, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, trackFocus, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast, toggleKpi, resetKpi, toggleGroup, setTab, toggleExpanded, toggleSidebar, nav, closeTransient, setTheme, toggleTheme, showToast, clearToast]);
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }
