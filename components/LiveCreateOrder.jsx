@@ -66,6 +66,11 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
   const [items, setItems] = useState(() => [blankItem()]);
   const [charges, setCharges] = useState(EMPTY_CHARGES);
   const [pkg, setPkg] = useState({ weightKg: '', length: '', width: '', height: '' });
+  // After "Create order": the order exists and the serviceable couriers are listed under the button to pick one and book.
+  const [placed, setPlaced] = useState(null); // { id, orderNumber }
+  const [offer, setOffer] = useState({ loading: false, quotes: [], error: '' });
+  const [pick, setPick] = useState('');
+  const [booking, setBooking] = useState(false);
 
   useEffect(() => {
     Promise.all([apiFetch('/v1/warehouses'), apiFetch('/v1/products')])
@@ -163,13 +168,40 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
         package: { weightG: deadWeightG, lengthMm: dims[0], widthMm: dims[1], heightMm: dims[2] },
         charges: isReverse ? {} : { shippingPaise: totals.shipping, giftWrapPaise: totals.giftWrap, transactionPaise: totals.transaction, otherPaise: totals.other, discountPaise: totals.discount, taxRateBps: totals.taxRateBps },
       } });
-      showToast(isReverse ? 'Return pickup created. Book a courier from All orders.' : 'Order created. Mark it ready and book a courier from All orders.');
-      nav('orders');
+      if (isReverse) { showToast('Return pickup created. Book a courier from All orders.'); nav('orders'); return; }
+      setPlaced({ id: created.id, orderNumber: orderNumber.trim() });
+      showToast('Order created. Choose a courier below.');
+      setOffer({ loading: true, quotes: [], error: '' });
+      try {
+        const [res, rules] = await Promise.all([
+          apiFetch('/v1/shipping/quotes', { method: 'POST', body: { destinationPincode: customer.pincode.trim(), pickupPincode: warehouse.pincode, orderValue: Math.max(totals.total, 0) / 100, weightG: deadWeightG, paymentMode: quoteMode, lengthMm: dims[0], widthMm: dims[1], heightMm: dims[2] } }),
+          apiFetch('/v1/settings/courier-rules').then((x) => x.values || {}).catch(() => ({})),
+        ]);
+        const quotes = res.quotes || [];
+        // Pre-select by the seller's courier priority (Settings > Courier rules), else the cheapest.
+        const order = [1, 2, 3, 4, 5, 6].map((n) => String(rules[`priority${n}`] || '').toLowerCase().replace(/[^a-z]/g, '')).filter((x) => x && x !== 'notset');
+        const rank = (q) => { const k = q.provider.name.toLowerCase().replace(/[^a-z]/g, ''); const i = order.findIndex((o) => k.includes(o) || (o === 'xb' && k.includes('xpressbees'))); return i < 0 ? order.length : i; };
+        const best = [...quotes].sort((a, b) => rank(a) - rank(b) || a.price.total - b.price.total)[0];
+        setOffer({ loading: false, quotes, error: quotes.length ? '' : 'No courier is available for this pincode, weight and payment mode.' });
+        if (best) setPick(`${best.provider.code}:${best.service.code}`);
+      } catch (y) { setOffer({ loading: false, quotes: [], error: y instanceof ApiError ? y.message : 'Courier rates could not be loaded.' }); }
     } catch (x) {
       showToast(x instanceof ApiError ? x.message : 'Unable to create order', 'error');
     } finally {
       setBusy(false);
     }
+  };
+
+  const bookCourier = async () => {
+    const q = offer.quotes.find((x) => `${x.provider.code}:${x.service.code}` === pick);
+    if (!q || !placed) return;
+    setBooking(true);
+    try {
+      await apiFetch(`/v1/orders/${placed.id}/state`, { method: 'PATCH', body: { state: 'ready_to_ship' } }).catch(() => {}); // already ready is fine
+      await apiFetch('/v1/shipments/book', { method: 'POST', headers: { 'Idempotency-Key': `book-${placed.id}-${q.provider.code}-${q.service.code}` }, body: { orderId: placed.id, providerCode: q.provider.code, serviceCode: q.service.code } });
+      showToast(`Booked with ${q.provider.name}. Find it in Track.`);
+      nav('shipments');
+    } catch (x) { showToast(x instanceof ApiError ? x.message : 'Booking failed', 'error'); } finally { setBooking(false); }
   };
 
   const two = mobile ? '1fr' : '1fr 1fr';
@@ -294,9 +326,34 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
           <div style={{ borderTop: `1px solid ${T.DIVIDER}`, marginTop: 6, paddingTop: 6 }}><SummaryRow label="Order total" value={inr(Math.max(totals.total, 0))} strong /></div>
           {quoteMode === 'cod' && <SummaryRow label="Collect on delivery" value={inr(Math.max(totals.total, 0))} />}
           {totals.discount > totals.gross && <small style={{ display: 'block', color: T.RED, fontSize: 11.5 }}>Discount is larger than the order value.</small>}
-          <button disabled={busy || !warehouse} type="submit" style={{ marginTop: 12, width: '100%', height: 42, border: 0, borderRadius: 9, background: T.NAVY, color: '#fff', fontWeight: 800, fontSize: 14, cursor: busy ? 'wait' : 'pointer' }}>
-            {busy ? 'Creating…' : isReverse ? 'Create return pickup' : 'Create order'}
+          <button disabled={busy || !warehouse || !!placed} type="submit" style={{ marginTop: 12, width: '100%', height: 42, border: 0, borderRadius: 9, background: T.NAVY, color: '#fff', fontWeight: 800, fontSize: 14, cursor: busy ? 'wait' : 'pointer' }}>
+            {busy ? 'Creating…' : placed ? 'Order created ✓' : isReverse ? 'Create return pickup' : 'Create order'}
           </button>
+          {placed && (
+            <div style={{ marginTop: 14, borderTop: `1px solid ${T.DIVIDER}`, paddingTop: 12 }}>
+              <b style={{ display: 'block', fontSize: 13, color: T.TEXT }}>Available couriers</b>
+              <small style={{ display: 'block', color: T.TEXT_MUTED, margin: '2px 0 10px' }}>Order {placed.orderNumber} · pick one to book</small>
+              {offer.loading && <div style={{ padding: 14, textAlign: 'center', fontSize: 12.5, color: T.TEXT_MUTED }}>Fetching courier rates…</div>}
+              {offer.error && <div style={{ padding: 12, fontSize: 12.5, color: T.RED, border: `1px dashed ${T.BORDER}`, borderRadius: 9 }}>{offer.error}</div>}
+              <div style={{ display: 'grid', gap: 7 }}>
+                {offer.quotes.map((q) => {
+                  const key = `${q.provider.code}:${q.service.code}`; const on = pick === key;
+                  return (
+                    <label key={key} style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '9px 10px', borderRadius: 9, cursor: 'pointer', border: `1px solid ${on ? T.NAVY : T.BORDER}`, background: on ? 'rgba(27,159,214,.09)' : T.SURFACE }}>
+                      <input type="radio" name="courier" checked={on} onChange={() => setPick(key)} />
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <b style={{ display: 'block', fontSize: 13, color: T.TEXT }}>{q.provider.name} <span style={{ fontWeight: 500, color: T.TEXT_SECONDARY }}>{q.service.name}</span></b>
+                        <small style={{ color: T.TEXT_MUTED }}>{q.tat.minDays === q.tat.maxDays ? `${q.tat.minDays} day${q.tat.minDays === 1 ? '' : 's'}` : `${q.tat.minDays}–${q.tat.maxDays} days`}{q.tags?.includes('cheapest') ? ' · Cheapest' : ''}{q.tags?.includes('fastest') ? ' · Fastest' : ''}</small>
+                      </span>
+                      <b style={{ fontSize: 13.5, color: T.TEXT }}>{inr(Math.round(q.price.total * 100))}</b>
+                    </label>
+                  );
+                })}
+              </div>
+              {offer.quotes.length > 0 && <button type="button" disabled={booking || !pick} onClick={bookCourier} style={{ marginTop: 10, width: '100%', height: 40, border: 0, borderRadius: 9, background: T.ACCENT, color: '#fff', fontWeight: 800, fontSize: 13.5, cursor: booking ? 'wait' : 'pointer' }}>{booking ? 'Booking…' : 'Book selected courier'}</button>}
+              <button type="button" onClick={() => nav('orders')} style={{ marginTop: 8, width: '100%', height: 34, border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 9, background: T.SURFACE, color: T.TEXT_SECONDARY, fontWeight: 650, fontSize: 12.5, cursor: 'pointer' }}>Book later from All orders</button>
+            </div>
+          )}
         </Section>
       </aside>
     </form>
