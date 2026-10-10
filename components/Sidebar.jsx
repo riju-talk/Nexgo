@@ -34,8 +34,8 @@ const MENU = [
   ['book', 'Tools', 'ratecard', [['Rate card', 'ratecard'], ['Rate calculator', 'ratecalc'], ['Pincode serviceability', 'pincode']]],
   ['addons', 'Marketplace', 'shopify', [['Shopify', 'shopify'], ['Magento', 'magento'], ['WooCommerce', 'woo'], ['Amazon.in', 'amazon']]],
   ['money', 'Billing', 'billing', [['COD remittance', 'cod'], ['Wallet transactions', 'wallet', ['recharges']], ['Shipping charges', 'charges'], ['Invoice', 'invoice'], ['Credit notes', 'credit-note'], ['TDS', 'tds']]],
-  // Printer / label / invoice / email-report / WhatsApp / SMS settings live inside Account configuration (cards on that page).
-  ['tower', 'Control Tower', 'account-config', [], ['printer', 'label', 'inv-settings', 'email-reports', 'wa-api', 'sms-api', 'notifications', 'abandoned', 'team', 'support']],
+  // Label / invoice / email-report / WhatsApp / SMS settings live inside Account configuration (cards on that page).
+  ['tower', 'Control Tower', 'account-config', [], ['label', 'inv-settings', 'email-reports', 'wa-api', 'sms-api', 'notifications', 'abandoned', 'team', 'support']],
   ['settings', 'Settings', 'kyc', [['KYC', 'kyc'], ['Profile settings', 'profile', ['password']], ['Warehouse settings', 'warehouse'], ['Courier rules', 'courier-rules']]],
 ];
 

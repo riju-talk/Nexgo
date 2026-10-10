@@ -70,7 +70,7 @@ export default function AppPage({ id, isDashboard = false }) {
   const isLiveShipmentDetail = id === 'ship-detail';
   const isLiveSellerWorkspace = ['recharges', 'team'].includes(id);
   const isLiveAdminOperations = ['a-kyc', 'a-wallets', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
-  const isLiveWorkspaceTool = ['courier-rules', 'label', 'printer', 'inv-settings', 'notifications', 'mis', 'a-tickets', 'wa-api', 'sms-api', 'abandoned', 'email-reports', 'profile', 'support'].includes(id);
+  const isLiveWorkspaceTool = ['courier-rules', 'label', 'inv-settings', 'notifications', 'mis', 'a-tickets', 'wa-api', 'sms-api', 'abandoned', 'email-reports', 'profile', 'support'].includes(id);
   const isLiveAdminReport = ['a-revenue', 'a-sla-report', 'a-analytics', 'a-gst'].includes(id);
   const isAdminDisputes = id === 'a-disputes';
   const isAdminNotes = id === 'a-notes';

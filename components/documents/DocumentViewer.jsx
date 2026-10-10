@@ -25,12 +25,12 @@ export default function DocumentViewer({ kind }) {
     return () => { live = false; };
   }, [ids]);
 
-  // Saved Control Tower settings: label size / printer format pick the layout, invoice settings dress the invoice.
+  // Saved Control Tower settings: label size picks the layout, invoice settings dress the invoice.
   useEffect(() => {
     let live = true;
-    Promise.all(['label', 'printer', 'inv-settings'].map((a) => apiFetch(`/v1/settings/${a}`).then((x) => x.values || {}).catch(() => ({})))).then(([label, printer, invoice]) => {
+    Promise.all(['label', 'inv-settings'].map((a) => apiFetch(`/v1/settings/${a}`).then((x) => x.values || {}).catch(() => ({})))).then(([label, invoice]) => {
       if (!live) return;
-      const size = String(label.labelSize || printer.format || '');
+      const size = String(label.labelSize || '');
       setLayout(size.includes('3×5') ? 'thermal35' : size.startsWith('A4') ? 'a4' : 'thermal');
       setCfg(invoice);
     });
