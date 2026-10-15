@@ -170,7 +170,9 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.post('/v1/admin/sellers/:sellerId/rate-cards', { preHandler: [requirePlatformAdmin, requireCommercialAdmin] }, async (request) => {
-    const sellerId = z.string().uuid().parse((request.params as { sellerId: string }).sellerId);
+    // 'platform' publishes the courier-cost card (seller_id NULL) that profitability is measured against.
+    const rawSellerId = (request.params as { sellerId: string }).sellerId;
+    const sellerId = rawSellerId === 'platform' ? null : z.string().uuid().parse(rawSellerId);
     const input = rateCardInput.parse(request.body);
     const card = await db.query<{ id: string }>(
       `INSERT INTO rate_cards (seller_id, name, state, effective_from, created_by)
@@ -187,7 +189,7 @@ export async function adminRoutes(app: FastifyInstance) {
        SELECT $1, r.service_id, r.zone_code, r.min_weight_g, r.base_weight_g, r.base_price_paise,
          r.additional_weight_g, r.additional_price_paise, r.cod_fee_paise, r.fuel_surcharge_bps, r.cod_percent_bps, r.rto_base_price_paise, r.rto_additional_price_paise
        FROM rate_card_rates r
-       WHERE r.rate_card_id = (SELECT id FROM rate_cards WHERE seller_id=$2 AND state='active' AND id <> $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1)`,
+       WHERE r.rate_card_id = (SELECT id FROM rate_cards WHERE seller_id IS NOT DISTINCT FROM $2 AND state='active' AND id <> $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1)`,
       [rateCardId, sellerId],
     );
     for (const rate of input.rates) {

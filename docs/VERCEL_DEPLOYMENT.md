@@ -47,7 +47,7 @@ Vercel does not host Postgres itself; use Neon, Supabase or any managed Postgres
    | `ENCRYPTION_KEY` | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
    | `COURIER_WEBHOOK_SECRET` | 32+ random characters |
    | `RAZORPAY_WEBHOOK_SECRET` | random string (the boot check rejects the committed default in production) |
-   | `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` | S3-compatible credentials (must not be the committed `nexgo_local` defaults, or the API refuses to boot) |
+   | `AWS_ENDPOINT_URL`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `STORAGE_BUCKET` | S3-compatible credentials (must not be the committed `nexgo_local` defaults, or the API refuses to boot) |
    | `STORAGE_ENABLED` | leave unset (`false`). Label and invoice-PDF buttons then show a "coming soon" message; set `true` only after the `MINIO_*` bucket settings below are configured |
    | `SMTP_HOST`, `SMTP_PORT` | a real SMTP provider (password-reset and invite emails) |
    | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | optional; unset keeps the mock gateway |

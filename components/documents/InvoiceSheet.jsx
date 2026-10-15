@@ -10,7 +10,7 @@ export default function InvoiceSheet({ d, cfg = {} }) {
   const thermal = String(cfg.pageFormat || '').startsWith('Thermal');
   const prefix = String(cfg.prefix || '').trim();
   const invoiceNo = prefix ? `${prefix}${String(d.invoice_seq).padStart(3, '0')}` : `#${d.invoice_seq}`;
-  const custom = thermal ? [] : [[cfg.customName1, cfg.customValue1], [cfg.customName2, cfg.customValue2]].filter(([k, v]) => k && v);
+  const custom = thermal ? [] : [1, 2, 3, 4, 5].map((n) => [cfg[`customName${n}`], cfg[`customValue${n}`]]).filter(([k, v]) => k && v);
   const items = d.items || [];
   const rate = (d.tax_rate_bps || 0) / 10000;
   const sellerCode = (d.seller_gstin || '').slice(0, 2) || stateCode(d.wh_state);

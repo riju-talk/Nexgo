@@ -162,7 +162,33 @@ export async function operationsRoutes(app: FastifyInstance) {
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.created', targetType: 'order', targetId: result.rows[0].id, requestId: request.id, metadata: { orderNumber: input.orderNumber, itemCount: input.items.length } }); return result.rows[0];
     }); return reply.code(201).send(row);
   });
-  app.patch('/v1/orders/:orderId/state', { preHandler: requireSeller }, async (request) => {
+  // Rectify an order that never got a courier (Track > Failed): consignee, payment and parcel can change until a shipment exists.
+  app.patch('/v1/orders/:orderId/details', { preHandler: requireSeller }, async (request) => {
+    const p = getPrincipal(request); const orderId = uuid.parse((request.params as { orderId: string }).orderId);
+    const input = z.object({
+      customer: consignee, paymentMode: z.enum(['prepaid', 'cod']), codAmountPaise: paise.default(0),
+      package: z.object({ weightG: z.number().int().min(1).max(500_000), lengthMm: z.number().int().min(10).max(5_000), widthMm: z.number().int().min(10).max(5_000), heightMm: z.number().int().min(10).max(5_000) }),
+    }).superRefine((v, ctx) => {
+      if (v.paymentMode === 'cod' && v.codAmountPaise <= 0) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'COD orders require a positive COD amount', path: ['codAmountPaise'] });
+      if (v.paymentMode === 'prepaid' && v.codAmountPaise !== 0) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Prepaid orders cannot have a COD amount', path: ['codAmountPaise'] });
+    }).parse(request.body);
+    return withSellerTransaction(p.sellerId, async (client) => {
+      const order = (await client.query<{ state: string; total_paise: string; shipments: string }>('SELECT o.state::text, o.total_paise, (SELECT count(*) FROM shipments s WHERE s.order_id=o.id) AS shipments FROM orders o WHERE o.id=$1 AND o.seller_id=$2 FOR UPDATE', [orderId, p.sellerId])).rows[0];
+      if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      if (Number(order.shipments) > 0 || !['new', 'ready_to_ship'].includes(order.state)) throw Object.assign(new Error('Only orders without a courier can be edited'), { statusCode: 409 });
+      if (input.paymentMode === 'cod' && input.codAmountPaise > Number(order.total_paise)) throw Object.assign(new Error('COD amount cannot exceed the order total'), { statusCode: 422 });
+      const c = input.customer;
+      await checkLocation(client, c.pincode, c.state);
+      let customer = await client.query<{ id: string }>('SELECT id FROM customers WHERE seller_id=$1 AND phone=$2 AND pincode=$3 AND full_name=$4 AND address_line_1=$5 LIMIT 1', [p.sellerId, c.phone, c.pincode, c.fullName, c.addressLine1]);
+      if (!customer.rows[0]) customer = await client.query<{ id: string }>(`INSERT INTO customers (seller_id,full_name,email,phone,address_line_1,address_line_2,city,state,pincode,company_name,alternate_phone,landmark) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`, [p.sellerId, c.fullName, c.email ?? null, c.phone, c.addressLine1, c.addressLine2 ?? null, c.city, c.state, c.pincode, c.companyName ?? null, c.alternatePhone ?? null, c.landmark ?? null]);
+      const pk = input.package;
+      const updated = await client.query('UPDATE orders SET customer_id=$3, payment_mode=$4, cod_amount_paise=$5, total_weight_g=$6, package_length_mm=$7, package_width_mm=$8, package_height_mm=$9, volumetric_weight_g=$10, updated_at=now() WHERE id=$1 AND seller_id=$2 RETURNING *',
+        [orderId, p.sellerId, customer.rows[0].id, input.paymentMode, input.codAmountPaise, pk.weightG, pk.lengthMm, pk.widthMm, pk.heightMm, volumetricWeightG(pk.lengthMm, pk.widthMm, pk.heightMm)]);
+      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.corrected', targetType: 'order', targetId: orderId, requestId: request.id });
+      return updated.rows[0];
+    });
+  });
+  app.patch('/v1/orders/:orderId/state',{ preHandler: requireSeller }, async (request) => {
     const p = getPrincipal(request); const orderId = uuid.parse((request.params as { orderId: string }).orderId); const { state } = z.object({ state: z.enum(['draft', 'new', 'ready_to_ship', 'booked', 'cancelled', 'returned']) }).parse(request.body);
     return withSellerTransaction(p.sellerId, async (client) => { const current = await client.query<{ state: string }>('SELECT state FROM orders WHERE id=$1 AND seller_id=$2 FOR UPDATE', [orderId, p.sellerId]); if (!current.rows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 }); if (!transitions[current.rows[0].state].includes(state)) throw Object.assign(new Error(`Cannot transition order from ${current.rows[0].state} to ${state}`), { statusCode: 409 }); const updated = await client.query(`UPDATE orders SET state=$1::order_state,cancelled_at=CASE WHEN $1::order_state='cancelled'::order_state THEN now() ELSE cancelled_at END,updated_at=now() WHERE id=$2 RETURNING *`, [state, orderId]); await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.state_changed', targetType: 'order', targetId: orderId, requestId: request.id, metadata: { from: current.rows[0].state, to: state } }); return updated.rows[0]; });
   });

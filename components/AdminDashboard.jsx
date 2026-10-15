@@ -1,140 +1,148 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
+import { motion } from 'motion/react';
 import { useAppState } from '@/lib/AppStateContext';
 import { adminApi } from '@/lib/api';
 import * as T from '@/lib/theme';
 
 const SPRING = { type: 'spring', bounce: 0, duration: 0.28 };
-const METRICS = [
-  ['▦', 'Total shipments', '24,568', '+18.45%', '#E8EEF7', '#1C5476'],
-  ['₹', 'Revenue today', '₹8.75L', '+12.32%', '#E8F8F1', '#0F9C61'],
-  ['◌', 'COD pending', '₹12.45L', '+8.14%', '#FFF0E4', '#D87620'],
-  ['◎', 'Active sellers', '4,892', '+16.25%', '#E7F8F5', '#008F84'],
-  ['▣', 'Active couriers', '26', 'No change', '#E8EEF7', '#3C6094'],
-  ['!', 'NDR rate', '2.46%', '−0.35%', '#FFF0F2', '#E3435B'],
-  ['↩', 'RTO rate', '1.78%', '−0.25%', '#FFF4E9', '#D9781E'],
-];
-const COURIERS = [['Delhivery', '8,740', '#0F1F3D'], ['Blue Dart', '6,256', '#3C6094'], ['XpressBees', '3,987', '#14724F'], ['Ecom Express', '2,456', '#8A5A00'], ['Shadowfax', '1,145', '#1b9fd6']];
-const ALERTS = [['!', 'High NDR alert: Maharashtra has crossed the 2% watch threshold.', '10m ago', '#B23A2B'], ['△', 'Pickup SLA breach: 23 pickups are waiting past cutoff.', '25m ago', '#8A5A00'], ['i', 'COD reconciliation pending for Blue Dart · 16 May cycle.', '1h ago', '#3C6094'], ['✓', 'System backup completed successfully.', '2h ago', '#14724F']];
-const SIGNUPS = [['RT', 'Rohit Textiles', 'rohit@rohittextiles.com', '10m ago', '#F5EAFE'], ['MG', 'Metro Gadgets Pvt. Ltd.', 'info@metrogadgets.com', '35m ago', '#EAF5FF'], ['ST', 'Shree Traders', 'contact@shreetraders.in', '1h ago', '#E8F8F1'], ['AB', 'A1 Books Store', 'owner@a1books.com', '2h ago', '#FFF0E4'], ['PK', 'Pooja Kitchenware', 'pooja@pooja.in', '3h ago', '#FFF4E9']];
-const COMMANDS = [
-  ['NDR action queue', '4,218 cases need a decision', 'a-ndr', '#B23A2B', '!'],
-  ['COD approvals', '₹64.2L awaiting release', 'a-cod', '#315F93', '₹'],
-  ['Courier SLA watch', '2 partners below guardrail', 'a-couriers', '#8A5A00', '◌'],
-  ['Seller onboarding', '218 KYC reviews waiting', 'a-sellers', '#1581bd', '◎'],
-];
+const n = (v) => Number(v || 0).toLocaleString('en-IN');
+const rupees = (paise) => `₹${(Number(paise || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+const STATUS_COLORS = { delivered: '#14724F', in_transit: '#3C6094', out_for_delivery: '#1b9fd6', pickup_scheduled: '#8A5A00', ndr: '#B23A2B', rto: '#7A4B9C', cancelled: '#8C8778' };
+const statusName = (k) => k.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function Card({ children, style = {} }) {
-  return <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={SPRING} style={{ overflow: 'hidden', background: 'var(--ops-surface)', border: '1px solid var(--ops-border)', borderRadius: 12, boxShadow: 'var(--ops-shadow)', ...style }}>{children}</motion.div>;
+  return <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={SPRING} style={{ overflow: 'hidden', background: 'var(--ops-surface)', border: '1px solid var(--ops-border)', borderRadius: 14, boxShadow: 'var(--ops-shadow)', ...style }}>{children}</motion.div>;
+}
+function CardTitle({ children }) {
+  return <div style={{ height: 52, padding: '0 19px', display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--ops-divider)', fontSize: 14, fontWeight: 750, color: 'var(--ops-heading)' }}>{children}</div>;
+}
+const Empty = ({ children = 'No data for this period.' }) => <div style={{ padding: '30px 19px', color: 'var(--ops-subtle)', fontSize: 12.5 }}>{children}</div>;
+
+// Solid-colour daily bars. Each series draws side by side; hover shows the exact day figure.
+function DailyBars({ rows, series, format = n }) {
+  const max = Math.max(1, ...rows.flatMap((r) => series.map((s) => r[s.key] || 0)));
+  if (!rows.length || max <= 1 && rows.every((r) => series.every((s) => !r[s.key]))) return <Empty />;
+  return (
+    <div style={{ padding: '14px 18px 12px' }}>
+      <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--ops-muted)', marginBottom: 8 }}>{series.map((s) => <span key={s.key}><b style={{ color: s.color }}>■</b> {s.label}</span>)}</div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: rows.length > 40 ? 1 : 3, height: 150, borderBottom: '1px solid var(--ops-divider)' }}>
+        {rows.map((r) => (
+          <div key={r.day} title={`${r.day} — ${series.map((s) => `${s.label}: ${format(r[s.key] || 0)}`).join(' · ')}`} style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', alignItems: 'flex-end', gap: 1 }}>
+            {series.map((s) => <div key={s.key} style={{ flex: 1, height: `${Math.max(r[s.key] ? 3 : 0, ((r[s.key] || 0) / max) * 100)}%`, background: s.color, borderRadius: '2px 2px 0 0' }} />)}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, color: 'var(--ops-subtle)', fontSize: 10.5 }}><span>{rows[0].day}</span><span>{rows[rows.length - 1].day}</span></div>
+    </div>
+  );
 }
 
-function CardTitle({ children, right }) {
-  return <div style={{ height: 56, padding: '0 19px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--ops-divider)' }}><div style={{ fontSize: 14, fontWeight: 750, letterSpacing: '-.01em', color: 'var(--ops-heading)' }}>{children}</div>{right && <div style={{ height: 30, padding: '0 10px', display: 'flex', alignItems: 'center', border: '1px solid var(--ops-border)', borderRadius: 8, color: 'var(--ops-muted)', fontSize: 12, background: 'var(--nx-surface)' }}>{right}</div>}</div>;
-}
-
-function ControlDeck({ mobile }) {
-  const { nav } = useAppState();
-  return <section aria-label="Priority operations" style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(2,minmax(0,1fr))' : 'repeat(4,minmax(0,1fr))', gap: 12, marginTop: 14 }}>
-    {COMMANDS.map(([title, detail, destination, color, icon]) => <motion.button key={title} onClick={() => nav(destination)} whileTap={{ scale: .975 }} whileHover={{ transform: 'translateY(-2px)' }} transition={SPRING} style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px', textAlign: 'left', cursor: 'pointer', border: '1px solid var(--ops-border)', borderRadius: 13, background: 'var(--ops-surface)', boxShadow: 'var(--ops-shadow)' }}>
-      <span style={{ width: 31, height: 31, flex: '0 0 31px', display: 'grid', placeItems: 'center', borderRadius: 9, color, background: `${color}16`, fontSize: 14, fontWeight: 800 }}>{icon}</span>
-      <span style={{ minWidth: 0 }}><b style={{ display: 'block', color: 'var(--ops-heading)', fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</b><span style={{ display: 'block', marginTop: 3, color: 'var(--ops-muted)', fontSize: 11.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</span></span>
-    </motion.button>)}
-  </section>;
-}
-
-function LineChart({ type = 'shipments' }) {
-  const a = type === 'ndr' ? [55,49,53,58,50,55,48] : [38,54,48,75,90,77,101,92,69,76,56];
-  const b = type === 'ndr' ? [22,22,21,22,19,21,16] : [23,33,34,53,69,61,78,70,42,51,33];
-  const W = 620, H = 178, max = type === 'ndr' ? 70 : 110;
-  const points = (arr) => arr.map((v, i) => `${(i / (arr.length - 1)) * W},${H - (v / max) * (H - 18) - 9}`).join(' ');
-  return <div style={{ padding: '12px 16px 14px' }}>
-    <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: 'var(--ops-muted)', marginBottom: 8 }}><span><b style={{ color: type === 'ndr' ? '#B23A2B' : T.NAVY }}>━</b> {type === 'ndr' ? 'NDR %' : 'Total shipments'}</span><span><b style={{ color: type === 'ndr' ? '#8A5A00' : T.ACCENT }}>┄</b> {type === 'ndr' ? 'RTO %' : 'Delivered'}</span></div>
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 182, display: 'block' }}>
-      {[18, 59, 100, 141].map(y => <line key={y} x1="0" x2={W} y1={y} y2={y} stroke="var(--ops-chart-grid)" strokeWidth="1" strokeDasharray="3 4" />)}
-      {type === 'shipments' && <polygon points={`0,${H} ${points(a)} ${W},${H}`} fill="url(#adminArea)" opacity=".32" />}
-      <defs><linearGradient id="adminArea" x1="0" x2="0" y1="0" y2="1"><stop stopColor="#0F1F3D" stopOpacity=".28"/><stop offset="1" stopColor="#0F1F3D" stopOpacity="0"/></linearGradient></defs>
-      <polyline points={points(a)} fill="none" stroke={type === 'ndr' ? '#B23A2B' : T.NAVY} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
-      <polyline points={points(b)} fill="none" stroke={type === 'ndr' ? '#8A5A00' : T.ACCENT} strokeWidth="2" strokeDasharray={type === 'ndr' ? '0' : '5 4'} strokeLinejoin="round" strokeLinecap="round" />
-      {a.map((v, i) => <circle key={i} cx={(i / (a.length - 1)) * W} cy={H - (v / max) * (H - 18) - 9} r="3.2" fill={type === 'ndr' ? '#B23A2B' : T.NAVY} />)}
-    </svg>
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 2px', color: 'var(--ops-subtle)', fontSize: 10.5 }}>{(type === 'shipments' ? ['03 Sep','04 Sep','05 Sep','06 Sep','07 Sep'] : ['03 Sep','04 Sep','05 Sep','06 Sep','07 Sep','08 Sep','09 Sep']).map(x => <span key={x}>{x}</span>)}</div>
-  </div>;
-}
-
-function FlowChart({ color, values, label }) {
-  const [active, setActive] = useState(null);
-  const reduced = useReducedMotion();
-  const W = 520, H = 174, inset = 17, max = Math.max(...values) * 1.12;
-  const points = values.map((v, i) => ({ x: inset + (i / (values.length - 1)) * (W - inset * 2), y: H - inset - (v / max) * (H - inset * 2) }));
-  const line = points.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-  const area = `${line} L${points.at(-1).x},${H - inset} L${points[0].x},${H - inset} Z`;
-  const grad = `flow-${label.replace(/\s/g, '')}`;
-  return <div style={{ height: 230, padding: '14px 18px 13px', position: 'relative' }}>
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 180, display: 'block', overflow: 'visible' }}>
-      <defs><linearGradient id={grad} x1="0" y1="0" x2="0" y2="1"><stop stopColor={color} stopOpacity=".22" /><stop offset="1" stopColor={color} stopOpacity="0" /></linearGradient></defs>
-      {[.25, .5, .75].map(level => <line key={level} x1={inset} x2={W - inset} y1={inset + (H - inset * 2) * level} y2={inset + (H - inset * 2) * level} stroke="var(--ops-chart-grid)" strokeWidth="1" strokeDasharray="3 5" />)}
-      <motion.path d={area} fill={`url(#${grad})`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: .24, ease: 'easeOut' }} />
-      <motion.path d={line} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" initial={reduced ? { opacity: 0 } : { pathLength: 0, opacity: 0 }} animate={reduced ? { opacity: 1 } : { pathLength: 1, opacity: 1 }} transition={{ duration: .48, ease: 'easeOut' }} />
-      {points.map((p, i) => { const isActive = active === i; const amount = `₹${(values[i] * .094).toFixed(1)}L`; return <g key={i} onPointerEnter={() => setActive(i)} onPointerLeave={() => setActive(null)}>
-        {isActive && <><line x1={p.x} x2={p.x} y1={inset} y2={H - inset} stroke={color} strokeOpacity=".28" strokeWidth="1" strokeDasharray="3 4" /><rect x={p.x - 24} y={Math.max(2, p.y - 32)} width="48" height="20" rx="6" fill={color} /><text x={p.x} y={Math.max(15, p.y - 18)} textAnchor="middle" fill="#fff" fontSize="9" fontWeight="700">{amount}</text></>}
-        <circle cx={p.x} cy={p.y} r={isActive ? 5.5 : 3.8} fill="var(--ops-surface)" stroke={color} strokeWidth={isActive ? 3 : 2} style={{ cursor: 'crosshair', transition: 'r .16s ease' }} />
-      </g>; })}
-    </svg>
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 2px', color: 'var(--ops-subtle)', fontSize: 10.5, fontWeight: 550 }}>{values.map((_, i) => <span key={i}>{i + 3} Sep</span>)}</div>
-  </div>;
-}
-
-function Donut() {
-  const rows = [['Delivered','18,765','76.42%','#14724F'], ['In transit','3,124','12.72%','#3C6094'], ['Pending','1,356','5.52%','#8A5A00'], ['Cancelled','987','4.02%','#B23A2B'], ['RTO','336','1.32%','#1b9fd6']];
-  return <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', alignItems: 'center', gap: 12, padding: '18px 16px' }}>
-    <div style={{ width: 150, height: 150, borderRadius: '50%', background: 'conic-gradient(#14724F 0 76.42%,#3C6094 76.42% 89.14%,#8A5A00 89.14% 94.66%,#B23A2B 94.66% 98.68%,#1b9fd6 98.68% 100%)', position: 'relative' }}><div style={{ position: 'absolute', inset: 27, borderRadius: '50%', background: 'var(--ops-surface)', display: 'grid', placeItems: 'center', textAlign: 'center' }}><b style={{ fontSize: 22, letterSpacing: '-.04em' }}>24,568</b><span style={{ fontSize: 10.5, color: 'var(--ops-subtle)' }}>Total shipments</span></div></div>
-    <div>{rows.map(([name, value, pct, color]) => <div key={name} style={{ display: 'grid', gridTemplateColumns: '8px 1fr auto', gap: 7, alignItems: 'center', padding: '5px 0', fontSize: 11.5 }}><span style={{ width: 7, height: 7, borderRadius: 5, background: color }} /><span style={{ color: 'var(--ops-muted)' }}>{name}</span><span style={{ color: 'var(--ops-text)', fontWeight: 650 }}>{value} <em style={{ color: 'var(--ops-subtle)', fontStyle: 'normal' }}>({pct})</em></span></div>)}</div>
-  </div>;
+function Stat({ icon, label, value, sub, bg, color, dark, index }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING, delay: index * .035 }} style={{ minWidth: 0, padding: '17px 16px 15px', border: '1px solid var(--ops-border)', borderRadius: 12, background: 'var(--ops-surface)', boxShadow: 'var(--ops-shadow)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ width: 31, height: 31, display: 'grid', placeItems: 'center', borderRadius: 9, background: dark ? `${color}24` : bg, color, fontWeight: 800 }}>{icon}</span><span style={{ fontSize: 12, color: 'var(--ops-muted)', fontWeight: 650 }}>{label}</span></div>
+      <div style={{ marginTop: 16, fontSize: 23, fontWeight: 780, letterSpacing: '-.04em', color: 'var(--ops-heading)' }}>{value}</div>
+      <div style={{ marginTop: 9, fontSize: 11, color: 'var(--ops-subtle)' }}>{sub}</div>
+    </motion.div>
+  );
 }
 
 export default function AdminDashboard({ mobile, phone }) {
-  const [days, setDays] = useState(30);
-  const [live, setLive] = useState(null);
-  const { theme } = useAppState();
+  const { nav, theme } = useAppState();
   const dark = theme === 'dark';
-  useEffect(() => { let on = true; adminApi.dashboardAnalytics(days).then((x) => { if (on) setLive(x); }).catch(() => {}); return () => { on = false; }; }, [days]);
-  const metrics = live ? [
-    ['▦', 'Total orders', Number(live.metrics?.orderVolume || 0).toLocaleString('en-IN'), 'Live platform intake', '#E8EEF7', '#1C5476'],
-    ['◌', 'Orders in transit', Number(live.metrics?.inTransit || 0).toLocaleString('en-IN'), 'Live shipment states', '#FFF0E4', '#D87620'],
-    ['◎', 'Active sellers', Number(live.activeSellers || 0).toLocaleString('en-IN'), 'Live platform accounts', '#E7F8F5', '#008F84'],
-    ['▣', 'Open NDR cases', Number(live.ndrOpen || 0).toLocaleString('en-IN'), 'Needs operational action', '#E8EEF7', '#3C6094'],
-    ['!', 'NDR rate', `${Number(live.metrics?.ndrRate || 0).toFixed(1)}%`, 'Across booked shipments', '#FFF0F2', '#E3435B'],
-    ['↩', 'RTO rate', `${Number(live.metrics?.rtoRate || 0).toFixed(1)}%`, 'Across booked shipments', '#FFF4E9', '#D9781E'],
-  ] : METRICS;
+  const [days, setDays] = useState(30);
+  const [live, setLive] = useState(null); const [failed, setFailed] = useState(false); const [sellers, setSellers] = useState(null);
+  useEffect(() => {
+    let on = true;
+    adminApi.dashboardAnalytics(days).then((x) => { if (on) { setLive(x); setFailed(false); } }).catch(() => { if (on) setFailed(true); });
+    return () => { on = false; };
+  }, [days]);
+  useEffect(() => { let on = true; adminApi.sellers({ limit: 5 }).then((d) => on && setSellers(d.items)).catch(() => on && setSellers([])); return () => { on = false; }; }, []);
+
+  const m = live?.metrics || {};
+  const stats = live ? [
+    ['▦', 'Total orders', n(m.orderVolume), `${n(m.todayVolume)} today`, '#E8EEF7', '#1C5476'],
+    ['₹', 'Shipping revenue', rupees(m.shippingSpendPaise), 'Freight booked in period', '#E8F8F1', '#0F9C61'],
+    ['◌', 'COD pending', rupees(live.codPendingPaise), 'Awaiting remittance', '#FFF0E4', '#D87620'],
+    ['◎', 'Active sellers', n(live.activeSellers), 'Platform accounts', '#E7F8F5', '#008F84'],
+    ['▣', 'In transit', n(m.inTransit), 'Shipments on the road', '#E8EEF7', '#3C6094'],
+    ['!', 'NDR rate', `${Number(m.ndrRate || 0).toFixed(1)}%`, 'Of booked shipments', '#FFF0F2', '#E3435B'],
+    ['↩', 'RTO rate', `${Number(m.rtoRate || 0).toFixed(1)}%`, 'Of booked shipments', '#FFF4E9', '#D9781E'],
+  ] : [];
+  const commands = live ? [
+    ['NDR action queue', `${n(live.ndrOpen)} open case${live.ndrOpen === 1 ? '' : 's'}`, 'a-ndr', '#B23A2B', '!'],
+    ['COD approvals', `${rupees(live.codPendingPaise)} awaiting release`, 'a-cod', '#315F93', '₹'],
+    ['Seller onboarding', `${n(live.kycPending)} KYC review${live.kycPending === 1 ? '' : 's'} waiting`, 'a-kyc', '#1581bd', '◎'],
+    ['Weight disputes', 'Review courier claims', 'a-disputes', '#8A5A00', '◇'],
+  ] : [];
+  const statusRows = live ? Object.entries(live.pipeline || {}).filter(([k, v]) => STATUS_COLORS[k] && v > 0) : [];
+  const statusTotal = statusRows.reduce((a, [, v]) => a + v, 0);
+  const couriers = live?.courierMix || [];
   const pad = phone ? 13 : mobile ? 18 : 28;
-  const metricCols = phone ? 'repeat(2,minmax(0,1fr))' : mobile ? 'repeat(4,minmax(150px,1fr))' : 'repeat(auto-fit,minmax(145px,1fr))';
-  const rangeSelect = <select aria-label="Date range" value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ height: 36, padding: '0 11px', border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer' }}>{[[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days']].map(([d, l]) => <option key={d} value={d}>{l}</option>)}</select>;
-  const selectRange = null;
-  return <div style={{ padding: `${phone ? 22 : 34}px ${pad}px 46px`, maxWidth: '100%', margin: '0 auto' }}>
-    <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 18, marginBottom: 26, flexWrap: 'wrap' }}><div><div style={{ fontSize: 29, lineHeight: 1.05, fontWeight: 780, letterSpacing: '-.035em', color: 'var(--ops-heading)' }}>Platform dashboard</div><div style={{ marginTop: 8, fontSize: 14, color: 'var(--ops-muted)' }}>A calm view of sellers, couriers, finance, and customer support.</div></div><div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>{rangeSelect}<motion.button whileTap={{ scale: .97 }} style={{ height: 36, padding: '0 13px', border: '1px solid rgba(27,159,214,.32)', borderRadius: 9, background: 'rgba(27,159,214,.08)', color: T.ACCENT, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>⚙ Customise dashboard</motion.button></div></div>
+  const cols = (count) => (mobile ? '1fr' : `repeat(${count},minmax(0,1fr))`);
+  const select = <select aria-label="Date range" value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ height: 36, padding: '0 11px', border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer' }}>{[[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days']].map(([d, l]) => <option key={d} value={d}>{l}</option>)}</select>;
 
-    <section style={{ display: 'grid', gridTemplateColumns: metricCols, gap: 14, overflowX: mobile && !phone ? 'auto' : 'visible' }}>{metrics.map(([icon, label, value, delta, bg, color], i) => <motion.div key={label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING, delay: i * .035 }} whileHover={{ y: -2, boxShadow: '0 10px 20px rgba(28,49,69,.10)' }} style={{ minWidth: mobile && !phone ? 170 : 0, padding: '17px 16px 15px', border: '1px solid var(--ops-border)', borderRadius: 12, background: 'var(--ops-surface)', boxShadow: 'var(--ops-shadow)', cursor: 'default' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ width: 31, height: 31, display: 'grid', placeItems: 'center', borderRadius: 9, background: dark ? `${color}24` : bg, color, fontWeight: 800 }}>{icon}</span><span style={{ fontSize: 12, color: 'var(--ops-muted)', fontWeight: 650 }}>{label}</span></div><div style={{ marginTop: 16, fontSize: 23, fontWeight: 780, letterSpacing: '-.04em', color: 'var(--ops-heading)' }}>{value}</div><div style={{ marginTop: 9, fontSize: 11, color: delta.includes('−') ? '#B23A2B' : color === '#3C6094' ? 'var(--ops-subtle)' : '#14724F', fontWeight: 650 }}>{delta} <span style={{ color: 'var(--ops-subtle)', fontWeight: 500 }}>{delta.includes('change') || delta.includes('operational') ? '' : 'in selected period'}</span></div></motion.div>)}</section>
-    <ControlDeck mobile={mobile} />
+  return (
+    <div style={{ padding: `${phone ? 22 : 34}px ${pad}px 46px`, maxWidth: '100%', margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 18, marginBottom: 26, flexWrap: 'wrap' }}>
+        <div><div style={{ fontSize: 29, lineHeight: 1.05, fontWeight: 780, letterSpacing: '-.035em', color: 'var(--ops-heading)' }}>Platform dashboard</div><div style={{ marginTop: 8, fontSize: 14, color: 'var(--ops-muted)' }}>Live view of sellers, couriers and finance across the platform.</div></div>
+        {select}
+      </div>
 
-    <section style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.5fr 1.02fr .95fr', gap: 12, marginTop: 14 }}>
-      <Card><CardTitle right={selectRange}>Shipment overview</CardTitle><LineChart /></Card>
-      <Card><CardTitle>Shipments by status</CardTitle><Donut /></Card>
-      <Card><CardTitle>Top couriers by volume</CardTitle><div style={{ padding: '9px 16px 14px' }}>{COURIERS.map(([name, count, color]) => <div key={name} style={{ display: 'grid', gridTemplateColumns: '25px 1fr auto', gap: 8, alignItems: 'center', padding: '9px 0', borderBottom: '1px solid var(--ops-divider)' }}><div style={{ width: 23, height: 23, display: 'grid', placeItems: 'center', borderRadius: 6, background: `${color}14`, color, fontSize: 11, fontWeight: 800 }}>{name[0]}</div><span style={{ fontSize: 12, fontWeight: 650, color: 'var(--ops-text)' }}>{name}</span><span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ops-muted)' }}>{count}</span></div>)}</div></Card>
-    </section>
+      {failed && <Card style={{ padding: 22, marginBottom: 14, color: '#B23A2B', fontSize: 13 }}>The dashboard could not be loaded. Check that you are signed in as a platform administrator.</Card>}
+      {!live && !failed && <Card style={{ padding: 40, textAlign: 'center', color: 'var(--ops-muted)' }}>Loading live platform data…</Card>}
 
-    <section style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3,minmax(0,1fr))', gap: 12, marginTop: 14 }}>
-      <Card><CardTitle right={selectRange}>Revenue overview</CardTitle><FlowChart label="Revenue" color={T.ACCENT} values={[62,92,77,75,82,56,88]} /></Card>
-      <Card><CardTitle right={selectRange}>COD collection overview</CardTitle><FlowChart label="COD collection" color="#315F93" values={[62,96,79,80,70,66,78]} /></Card>
-      <Card><CardTitle right={selectRange}>NDR & RTO overview</CardTitle><LineChart type="ndr" /></Card>
-    </section>
+      {live && <>
+        <section style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2,minmax(0,1fr))' : 'repeat(auto-fit,minmax(150px,1fr))', gap: 14 }}>
+          {stats.map(([icon, label, value, sub, bg, color], i) => <Stat key={label} icon={icon} label={label} value={value} sub={sub} bg={bg} color={color} dark={dark} index={i} />)}
+        </section>
 
-    <section style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.4fr .78fr 1.1fr', gap: 12, marginTop: 14 }}>
-      <Card><CardTitle>Recent alerts</CardTitle><div style={{ padding: '5px 15px 7px' }}>{ALERTS.map(([icon, text, time, color]) => <div key={text} style={{ display: 'grid', gridTemplateColumns: '25px 1fr auto', alignItems: 'center', gap: 8, padding: '10px 0', borderBottom: '1px solid var(--ops-divider)' }}><span style={{ width: 22, height: 22, display: 'grid', placeItems: 'center', background: `${color}14`, borderRadius: 6, color, fontSize: 12, fontWeight: 800 }}>{icon}</span><span style={{ color: 'var(--ops-text)', fontSize: 11.5, fontWeight: 550 }}>{text}</span><span style={{ color: 'var(--ops-subtle)', fontSize: 10.5, whiteSpace: 'nowrap' }}>{time}</span></div>)}</div></Card>
-      <Card><CardTitle>API usage today</CardTitle><div style={{ padding: '23px 20px 18px', textAlign: 'center' }}><div style={{ width: 160, height: 80, margin: '0 auto', borderRadius: '160px 160px 0 0', background: 'conic-gradient(from 270deg at 50% 100%,#1b9fd6 0 56%,var(--ops-divider) 56% 100%)', position: 'relative', overflow: 'hidden' }}><div style={{ position: 'absolute', inset: '10px 10px 0', borderRadius: '150px 150px 0 0', background: 'var(--ops-surface)' }} /></div><div style={{ marginTop: -3, fontSize: 21, fontWeight: 780, letterSpacing: '-.04em' }}>8,45,231</div><div style={{ marginTop: 3, fontSize: 11, color: 'var(--ops-muted)' }}>of 15,00,000 calls · <b style={{ color: 'var(--ops-text)' }}>56.35% used</b></div></div></Card>
-      <Card><CardTitle right={<span style={{ color: T.ACCENT, fontWeight: 700 }}>View all</span>}>Recent signups</CardTitle><div style={{ padding: '4px 15px 7px' }}>{SIGNUPS.map(([ini, name, email, time, bg]) => <div key={email} style={{ display: 'grid', gridTemplateColumns: '25px 1fr auto', gap: 8, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--ops-divider)' }}><span style={{ width: 23, height: 23, display: 'grid', placeItems: 'center', borderRadius: '50%', background: dark ? 'rgba(27,159,214,.12)' : bg, color: 'var(--ops-muted)', fontSize: 9, fontWeight: 800 }}>{ini}</span><span><b style={{ display: 'block', color: 'var(--ops-text)', fontSize: 11.5 }}>{name}</b><small style={{ color: 'var(--ops-subtle)', fontSize: 10 }}>{email}</small></span><span style={{ color: 'var(--ops-subtle)', fontSize: 10, whiteSpace: 'nowrap' }}>{time}</span></div>)}</div></Card>
-    </section>
-    <footer style={{ display: 'flex', justifyContent: 'space-between', marginTop: 22, color: 'var(--ops-subtle)', fontSize: 10.5 }}><span>© 2026 NEXGO Operations</span><span>v0.2.0 · Internal workspace</span></footer>
-  </div>;
+        <section aria-label="Priority operations" style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(2,minmax(0,1fr))' : 'repeat(4,minmax(0,1fr))', gap: 12, marginTop: 14 }}>
+          {commands.map(([title, detail, destination, color, icon]) => (
+            <motion.button key={title} onClick={() => nav(destination)} whileTap={{ scale: .975 }} style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px', textAlign: 'left', cursor: 'pointer', border: '1px solid var(--ops-border)', borderRadius: 13, background: 'var(--ops-surface)', boxShadow: 'var(--ops-shadow)' }}>
+              <span style={{ width: 31, height: 31, flex: '0 0 31px', display: 'grid', placeItems: 'center', borderRadius: 9, color, background: `${color}16`, fontSize: 14, fontWeight: 800 }}>{icon}</span>
+              <span style={{ minWidth: 0 }}><b style={{ display: 'block', color: 'var(--ops-heading)', fontSize: 12.5 }}>{title}</b><span style={{ display: 'block', marginTop: 3, color: 'var(--ops-muted)', fontSize: 11.5 }}>{detail}</span></span>
+            </motion.button>
+          ))}
+        </section>
+
+        <section style={{ display: 'grid', gridTemplateColumns: cols(3), gap: 12, marginTop: 14 }}>
+          <Card><CardTitle>Shipment overview</CardTitle><DailyBars rows={live.trend || []} series={[{ key: 'orders', label: 'Orders', color: T.NAVY }, { key: 'delivered', label: 'Delivered', color: T.ACCENT }]} /></Card>
+          <Card>
+            <CardTitle>Shipments by status</CardTitle>
+            {!statusRows.length ? <Empty /> : <div style={{ padding: '14px 18px', display: 'grid', gap: 9 }}>
+              <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden' }}>{statusRows.map(([k, v]) => <div key={k} title={`${statusName(k)}: ${n(v)}`} style={{ width: `${(v / statusTotal) * 100}%`, background: STATUS_COLORS[k] }} />)}</div>
+              {statusRows.map(([k, v]) => <div key={k} style={{ display: 'grid', gridTemplateColumns: '10px 1fr auto', gap: 8, alignItems: 'center', fontSize: 12 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: STATUS_COLORS[k] }} /><span style={{ color: 'var(--ops-muted)' }}>{statusName(k)}</span><b style={{ color: 'var(--ops-text)' }}>{n(v)} <em style={{ color: 'var(--ops-subtle)', fontStyle: 'normal', fontWeight: 500 }}>({((v / statusTotal) * 100).toFixed(1)}%)</em></b></div>)}
+            </div>}
+          </Card>
+          <Card>
+            <CardTitle>Top couriers by volume</CardTitle>
+            {!couriers.length ? <Empty /> : <div style={{ padding: '10px 18px 14px', display: 'grid', gap: 10 }}>{couriers.map((c) => <div key={c.name} style={{ fontSize: 12.5 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><b style={{ color: 'var(--ops-text)' }}>{c.name}</b><span style={{ color: 'var(--ops-muted)' }}>{n(c.total)} · {c.total ? Math.round((c.delivered / c.total) * 100) : 0}% delivered</span></div>
+              <div style={{ height: 6, marginTop: 5, borderRadius: 3, background: 'var(--ops-divider)' }}><div style={{ height: '100%', width: `${(c.total / Math.max(1, couriers[0].total)) * 100}%`, borderRadius: 3, background: T.ACCENT }} /></div>
+            </div>)}</div>}
+          </Card>
+        </section>
+
+        <section style={{ display: 'grid', gridTemplateColumns: cols(3), gap: 12, marginTop: 14 }}>
+          <Card><CardTitle>Revenue overview</CardTitle><DailyBars rows={live.daily || []} series={[{ key: 'revenuePaise', label: 'Freight booked', color: T.ACCENT }]} format={rupees} /></Card>
+          <Card><CardTitle>COD collection overview</CardTitle><DailyBars rows={live.daily || []} series={[{ key: 'codPaise', label: 'COD delivered', color: '#315F93' }]} format={rupees} /></Card>
+          <Card><CardTitle>NDR & RTO overview</CardTitle><DailyBars rows={live.daily || []} series={[{ key: 'ndr', label: 'NDR', color: '#B23A2B' }, { key: 'rto', label: 'RTO', color: '#8A5A00' }]} /></Card>
+        </section>
+
+        <section style={{ marginTop: 14 }}>
+          <Card>
+            <CardTitle>Recent sellers</CardTitle>
+            {!sellers ? <Empty>Loading…</Empty> : !sellers.length ? <Empty>No sellers yet.</Empty> : <div style={{ padding: '4px 18px 8px' }}>{sellers.map((s) => (
+              <button key={s.id} type="button" onClick={() => nav('a-sellers')} style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', padding: '10px 0', border: 0, borderBottom: '1px solid var(--ops-divider)', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: 'var(--ops-text)' }}>
+                <span><b style={{ fontSize: 13 }}>{s.legal_name}</b><small style={{ display: 'block', color: 'var(--ops-muted)', marginTop: 2 }}>{s.email || '—'} · {s.nexgo_code}</small></span>
+                <small style={{ color: 'var(--ops-subtle)' }}>{new Date(s.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</small>
+              </button>))}</div>}
+          </Card>
+        </section>
+      </>}
+    </div>
+  );
 }

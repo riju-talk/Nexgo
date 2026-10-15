@@ -9,6 +9,7 @@ import { config } from '../config.js';
 import { sessionCookieOptions } from '../lib/cookies.js';
 import { issueCsrfCookie } from '../lib/csrf.js';
 import { requireSeller } from './seller.js';
+import { PERMISSION_GROUPS, PERMISSION_KEYS } from '../lib/permissions.js';
 
 function principal(request: FastifyRequest) {
   if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
@@ -21,15 +22,52 @@ function requireOwner(request: FastifyRequest) {
 
 const inviteInput = z.object({ email: z.string().email().max(254), role: z.enum(['owner', 'operations', 'finance', 'read_only']) });
 const INVITE_TTL_HOURS = 72;
+const permissionList = z.array(z.string()).min(1, 'Pick at least one permission').refine((l) => l.every((k) => PERMISSION_KEYS.includes(k)), 'Unknown permission');
 
 export async function teamRoutes(app: FastifyInstance) {
   app.get('/v1/seller/team', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
     return withSellerTransaction(p.sellerId, async (client) => {
-      const members = await client.query('SELECT u.id AS user_id, u.full_name, u.email, m.role, m.created_at FROM seller_memberships m JOIN users u ON u.id = m.user_id WHERE m.seller_id=$1 ORDER BY m.created_at', [p.sellerId]);
+      const members = await client.query('SELECT u.id AS user_id, u.full_name, u.email, u.phone, m.role, m.permissions, m.created_at FROM seller_memberships m JOIN users u ON u.id = m.user_id WHERE m.seller_id=$1 ORDER BY m.created_at', [p.sellerId]);
       const invitations = await client.query('SELECT id, email, role, status, expires_at, created_at FROM seller_invitations WHERE seller_id=$1 AND status=\'pending\' ORDER BY created_at DESC', [p.sellerId]);
-      return { members: members.rows, pendingInvitations: invitations.rows };
+      return { members: members.rows, pendingInvitations: invitations.rows, permissionGroups: PERMISSION_GROUPS };
     });
+  });
+
+  // Owner adds an employee directly (name, email, optional mobile, password) with chosen permissions.
+  app.post('/v1/seller/team/employees', { preHandler: requireSeller }, async (request, reply) => {
+    requireOwner(request);
+    const p = principal(request);
+    const input = z.object({
+      fullName: z.string().trim().min(2).max(100), email: z.string().email().max(254),
+      phone: z.string().trim().regex(/^[0-9+() -]{7,24}$/).optional().or(z.literal('').transform(() => undefined)),
+      password: z.string().min(12).max(200), permissions: permissionList,
+    }).parse(request.body);
+    const email = input.email.toLowerCase();
+    const row = await withSellerTransaction(p.sellerId, async (client) => {
+      const existing = await client.query('SELECT 1 FROM users WHERE email=$1', [email]);
+      if (existing.rows[0]) throw Object.assign(new Error('An account with this email already exists. Use Invite instead.'), { statusCode: 409 });
+      const hash = await argon2.hash(input.password, { type: argon2.argon2id });
+      const user = await client.query<{ id: string }>('INSERT INTO users (email, password_hash, full_name, phone) VALUES ($1,$2,$3,$4) RETURNING id', [email, hash, input.fullName, input.phone ?? null]);
+      await client.query("INSERT INTO seller_memberships (seller_id, user_id, role, permissions) VALUES ($1,$2,'operations',$3)", [p.sellerId, user.rows[0].id, input.permissions]);
+      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'team.employee_added', targetType: 'user', targetId: user.rows[0].id, requestId: request.id, metadata: { email, permissions: input.permissions } });
+      return { userId: user.rows[0].id, email, permissions: input.permissions };
+    });
+    return reply.code(201).send(row);
+  });
+
+  app.put('/v1/seller/team/:userId/permissions', { preHandler: requireSeller }, async (request, reply) => {
+    requireOwner(request);
+    const p = principal(request);
+    const userId = z.string().uuid().parse((request.params as { userId: string }).userId);
+    const { permissions } = z.object({ permissions: permissionList }).parse(request.body);
+    const updated = await withSellerTransaction(p.sellerId, async (client) => {
+      const row = await client.query("UPDATE seller_memberships SET permissions=$3 WHERE seller_id=$1 AND user_id=$2 AND role <> 'owner' RETURNING user_id", [p.sellerId, userId, permissions]);
+      if (row.rows[0]) await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'team.permissions_updated', targetType: 'user', targetId: userId, requestId: request.id, metadata: { permissions } });
+      return row.rows[0];
+    });
+    if (!updated) return reply.code(404).send({ error: 'MEMBER_NOT_FOUND' });
+    return { ok: true, permissions };
   });
 
   app.post('/v1/seller/team/invite', { preHandler: requireSeller }, async (request, reply) => {

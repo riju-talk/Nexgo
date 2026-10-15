@@ -33,6 +33,10 @@ export default function DocumentViewer({ kind }) {
       const size = String(label.labelSize || '');
       setLayout(size.includes('3×5') ? 'thermal35' : size.startsWith('A4') ? 'a4' : 'thermal');
       setCfg(invoice);
+      // Uploaded logo / signature are private files; each is shown through a short-lived link.
+      [['logoFileId', 'logoUrl'], ['signatureFileId', 'signatureUrl']].forEach(([idKey, urlKey]) => {
+        if (invoice[idKey]) apiFetch(`/v1/seller/files/${invoice[idKey]}/url`).then((x) => live && setCfg((c) => ({ ...c, [urlKey]: x.url }))).catch(() => {});
+      });
     });
     return () => { live = false; };
   }, []);

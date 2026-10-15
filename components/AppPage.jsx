@@ -25,7 +25,13 @@ import LiveNdr from './LiveNdr';
 import LiveRto from './LiveRto';
 import LiveAdminDisputes from './LiveAdminDisputes';
 import LiveAdminNotes from './LiveAdminNotes';
+import AdminSellerProfile from './AdminSellerProfile';
 import LiveRateCard from './LiveRateCard';
+import LiveTeamRoles from './LiveTeamRoles';
+import LiveCodConfirmation from './LiveCodConfirmation';
+import LiveInvoiceSettings from './LiveInvoiceSettings';
+import LiveEmailScheduler from './LiveEmailScheduler';
+import LiveNotifyChannels from './LiveNotifyChannels';
 import LiveMarketplace from './LiveMarketplace';
 import LiveKyc from './LiveKyc';
 import LiveBillingHub from './LiveBillingHub';
@@ -37,7 +43,7 @@ import LiveTrack from './LiveTrack';
 import ComingSoon from './ComingSoon';
 import PageContainer from './PageContainer';
 
-export default function AppPage({ id, isDashboard = false }) {
+export default function AppPage({ id, isDashboard = false, sellerId }) {
   const { vw } = useAppState();
   const mobile = vw <= MOBILE_BREAK;
   const phone = vw <= PHONE_BREAK;
@@ -68,13 +74,23 @@ export default function AppPage({ id, isDashboard = false }) {
   const isLiveMarketing = ['whatsapp', 'email'].includes(id);
   const isLiveSellerSecurity = id === 'password';
   const isLiveShipmentDetail = id === 'ship-detail';
-  const isLiveSellerWorkspace = ['recharges', 'team'].includes(id);
+  const isLiveSellerWorkspace = ['recharges'].includes(id);
+  const isTeamRoles = id === 'team';
+  const isCodConfirmation = id === 'notifications';
+  const isInvoiceSettings = id === 'inv-settings';
+  const isEmailScheduler = id === 'email-reports';
+  const isNotifyChannels = id === 'wa-api' || id === 'sms-api';
+  const isCustomSetting = isTeamRoles || isCodConfirmation || isInvoiceSettings || isEmailScheduler || isNotifyChannels;
   const isLiveAdminOperations = ['a-kyc', 'a-wallets', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
-  const isLiveWorkspaceTool = ['courier-rules', 'label', 'inv-settings', 'notifications', 'mis', 'a-tickets', 'wa-api', 'sms-api', 'abandoned', 'email-reports', 'profile', 'support'].includes(id);
+  const isLiveWorkspaceTool = ['courier-rules', 'label', 'mis', 'a-tickets', 'abandoned', 'profile', 'support'].includes(id);
   const isLiveAdminReport = ['a-revenue', 'a-sla-report', 'a-analytics', 'a-gst'].includes(id);
   const isAdminDisputes = id === 'a-disputes';
   const isAdminNotes = id === 'a-notes';
-  const isAdminUtility = isAdminPage && !isAdminOverview && !hasTable && !isLiveAdminReport && !isAdminDisputes && !isAdminNotes;
+  const isSellerProfile = id === 'a-seller-profile';
+  // Admin screens that have no backend yet say so instead of showing sample figures.
+  const ADMIN_SOON = { 'a-escalations': 'Escalations', 'a-credit': 'Credit limits', 'a-live-chat': 'Live chat', 'a-system': 'System settings', 'a-api': 'API management', 'a-roles': 'Role permissions' };
+  const isAdminSoon = id in ADMIN_SOON;
+  const isAdminUtility = isAdminPage && !isAdminSoon && !isAdminOverview && !hasTable && !isLiveAdminReport && !isAdminDisputes && !isAdminNotes && !isSellerProfile;
 
   return (
     <>
@@ -95,6 +111,8 @@ export default function AppPage({ id, isDashboard = false }) {
         {isRto && <LiveRto mobile={mobile} />}
         {isAdminDisputes && <LiveAdminDisputes mobile={mobile} />}
         {isAdminNotes && <LiveAdminNotes mobile={mobile} />}
+        {isAdminSoon && <ComingSoon mobile={mobile} name={ADMIN_SOON[id]} blurb="This admin screen is not connected to live data yet, so it shows nothing rather than sample numbers." back="a-overview" backLabel="Back to dashboard" />}
+        {isSellerProfile && <AdminSellerProfile sellerId={sellerId} />}
         {isRateCard && <LiveRateCard mobile={mobile} />}
         {isMarketplace && <LiveMarketplace id={id} mobile={mobile} />}
         {isKyc && <LiveKyc mobile={mobile} />}
@@ -104,11 +122,16 @@ export default function AppPage({ id, isDashboard = false }) {
         {isLiveSellerSecurity && <LiveSellerSecurity mobile={mobile} />}
         {isLiveShipmentDetail && <LiveShipmentDetail mobile={mobile} />}
         {isLiveSellerWorkspace && <LiveSellerWorkspace activeId={id} mobile={mobile} />}
+        {isTeamRoles && <LiveTeamRoles mobile={mobile} />}
+        {isCodConfirmation && <LiveCodConfirmation mobile={mobile} />}
+        {isInvoiceSettings && <LiveInvoiceSettings mobile={mobile} />}
+        {isEmailScheduler && <LiveEmailScheduler mobile={mobile} />}
+        {isNotifyChannels && <LiveNotifyChannels initialTab={id === 'sms-api' ? 'sms' : 'whatsapp'} mobile={mobile} />}
         {isLiveAdminOperations && <LiveAdminOperations activeId={id} mobile={mobile} />}
         {isLiveAdminReport && <LiveAdminReports activeId={id} mobile={mobile} />}
         {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
-        {hasTable && !isNew && !isNdr && !isWeight && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <TablePage activeId={id} mobile={mobile} phone={phone} />}
-        {hasForm && !isNew && !isWeight && !isWarehouse && !isRateCalc && !isPincode && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && <FormPage activeId={id} mobile={mobile} phone={phone} />}
+        {hasTable && !isNew && !isNdr && !isWeight && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isCustomSetting && <TablePage activeId={id} mobile={mobile} phone={phone} />}
+        {hasForm && !isNew && !isWeight && !isWarehouse && !isRateCalc && !isPincode && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isCustomSetting && <FormPage activeId={id} mobile={mobile} phone={phone} />}
         {isAdminUtility && !isLiveAdminOperations && !isLiveWorkspaceTool && <AdminUtilityPage activeId={id} mobile={mobile} />}
         {isAccountConfig && <AccountConfiguration mobile={mobile} phone={phone} />}
       </PageContainer>

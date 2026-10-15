@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db, withSellerTransaction, withTransaction } from '../db/client.js';
 import { requireAccountAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
 import { requireSeller } from './seller.js';
-import { ensurePrivateBucket, storage } from '../lib/storage.js';
+import { storage } from '../lib/storage.js';
 import { config } from '../config.js';
 
 const GST_BPS = 1800; // 18%, matches the rate already used across the mock UI
@@ -133,8 +133,7 @@ export async function invoiceRoutes(app: FastifyInstance) {
       const doc = result.rows[0];
       if (!doc) return reply.code(404).send({ error: 'INVOICE_DOCUMENT_NOT_READY' });
       if (doc.status !== 'ready') return { status: doc.status };
-      await ensurePrivateBucket();
-      return { status: 'ready', downloadUrl: await storage.presignedGetObject(config.MINIO_BUCKET, doc.storage_key, 300), expiresInSeconds: 300 };
+      return { status: 'ready', downloadUrl: await storage.presignedGetObject(doc.storage_key, 300), expiresInSeconds: 300 };
     });
   });
 }

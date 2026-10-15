@@ -14,6 +14,9 @@ import { sellerRoutes } from './routes/seller.js';
 import { adminRoutes } from './routes/admin.js';
 import { adminMfaRoutes } from './routes/adminMfa.js';
 import { adminOperationsRoutes } from './routes/adminOperations.js';
+import { fileRoutes } from './routes/files.js';
+import { emailScheduleRoutes } from './routes/emailSchedules.js';
+import { adminSellerProfileRoutes, impersonationAudit, impersonationGuard } from './routes/adminSellerProfile.js';
 import { adminVisibilityRoutes } from './routes/adminVisibility.js';
 import { kycRoutes } from './routes/kyc.js';
 import { teamRoutes } from './routes/team.js';
@@ -56,6 +59,8 @@ await app.register(cors, { origin: config.FRONTEND_ORIGIN, credentials: true, me
 // tighter per-route limit since those are the actual brute-force surface.
 await app.register(rateLimit, { global: true, max: 300, timeWindow: '1 minute' });
 app.addHook('onRequest', requireCsrfHeader);
+app.addHook('preHandler', impersonationGuard);
+app.addHook('onResponse', impersonationAudit);
 
 app.setErrorHandler((error, request, reply) => {
   if (error instanceof ZodError) return reply.code(400).send({ error: 'VALIDATION_ERROR', details: error.flatten() });
@@ -98,6 +103,9 @@ await app.register(sessionRoutes);
 await app.register(adminRoutes);
 await app.register(adminMfaRoutes);
 await app.register(adminOperationsRoutes);
+await app.register(adminSellerProfileRoutes);
+await app.register(fileRoutes);
+await app.register(emailScheduleRoutes);
 await app.register(adminVisibilityRoutes);
 await app.register(kycRoutes);
 await app.register(ndrRoutes);

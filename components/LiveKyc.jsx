@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
+import { uploadSellerFile } from '@/lib/uploadFile';
 import * as T from '@/lib/theme';
 import { BLUE, Btn, CARD, FIELD, Pill, dateTime, titleCase } from './Kit';
 
 const ENTITY = [['proprietorship', 'Proprietorship'], ['partnership', 'Partnership'], ['private_limited', 'Private Limited'], ['llp', 'LLP'], ['public_limited', 'Public Limited']];
 const STATUS = { unsubmitted: ['Not submitted', T.TEXT_MUTED], pending_review: ['Under review', T.AMBER], verified: ['Verified', T.GREEN], rejected: ['Needs changes', T.RED] };
-const MAX_BYTES = 5 * 1024 * 1024;
+const MAX_BYTES = 3 * 1024 * 1024;
 const RULES = { pan: /^[A-Z]{5}[0-9]{4}[A-Z]$/, aadhaar: /^[2-9][0-9]{11}$/, gstin: /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, ifsc: /^[A-Z]{4}0[A-Z0-9]{6}$/, account: /^[0-9]{9,18}$/ };
 
 const Label = ({ children, required }) => <span style={{ display: 'block', fontSize: 12.5, fontWeight: 650, color: T.TEXT_LABEL, marginBottom: 6 }}>{children}{required && <span style={{ color: T.RED }}> *</span>}</span>;
@@ -21,14 +22,14 @@ function Section({ n, title, hint, children }) {
   );
 }
 
-// Document chooser. Files are validated here; they are attached once document storage is connected.
+// Document chooser. Files are validated here and uploaded together with the KYC submission.
 function DocPicker({ label, file, onPick, onClear }) {
   const { showToast } = useAppState(); const ref = useRef(null);
   const choose = (e) => {
     const f = e.target.files?.[0]; e.target.value = ''; if (!f) return;
     if (!/\.(pdf|png|jpe?g)$/i.test(f.name)) return showToast('Choose a PDF, PNG or JPG file.', 'error');
-    if (f.size > MAX_BYTES) return showToast('The file must be smaller than 5 MB.', 'error');
-    onPick(f); showToast('Document noted. File upload goes live once document storage is connected; your details are saved now.');
+    if (f.size > MAX_BYTES) return showToast('The file must be smaller than 3 MB.', 'error');
+    onPick(f);
   };
   return (
     <div>
@@ -36,7 +37,7 @@ function DocPicker({ label, file, onPick, onClear }) {
       <input ref={ref} type="file" accept=".pdf,.png,.jpg,.jpeg" hidden onChange={choose} />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <Btn small onClick={() => ref.current?.click()}>{file ? 'Replace file' : '⬆ Choose file'}</Btn>
-        {file ? <><span style={{ fontSize: 12.5, color: T.TEXT }}>{file.name} <small style={{ color: T.TEXT_MUTED }}>({Math.max(1, Math.round(file.size / 1024))} KB · uploads when storage is enabled)</small></span><button type="button" onClick={onClear} style={{ border: 0, background: 'transparent', color: T.RED, cursor: 'pointer', fontSize: 12 }}>Remove</button></> : <small style={{ color: T.TEXT_MUTED }}>PDF, PNG or JPG · max 5 MB</small>}
+        {file ? <><span style={{ fontSize: 12.5, color: T.TEXT }}>{file.name} <small style={{ color: T.TEXT_MUTED }}>({Math.max(1, Math.round(file.size / 1024))} KB · uploads on submit)</small></span><button type="button" onClick={onClear} style={{ border: 0, background: 'transparent', color: T.RED, cursor: 'pointer', fontSize: 12 }}>Remove</button></> : <small style={{ color: T.TEXT_MUTED }}>PDF, PNG or JPG · max 5 MB</small>}
       </div>
     </div>
   );
@@ -72,7 +73,11 @@ export default function LiveKyc({ mobile }) {
     try {
       const body = { gstApplicable: f.gstApplicable, gstin: f.gstApplicable ? f.gstin : undefined, pan: f.pan, panHolderName: f.panHolderName.trim() || undefined, aadhaarNumber: aadhaarDigits, entityType: f.entityType, registeredAddress: f.registeredAddress.trim(), bankAccountHolder: f.bankAccountHolder.trim(), bankAccountNumber: f.bankAccountNumber, bankIfsc: f.bankIfsc };
       setCurrent(await apiFetch('/v1/seller/kyc', { method: 'POST', body })); setEditing(false); setF((x) => ({ ...x, aadhaar: '', bankAccountNumber: '' }));
-      showToast('KYC submitted for verification');
+      const uploads = [['pan', 'kyc_pan'], ['aadhaar', 'kyc_aadhaar'], ['gst', 'kyc_gst'], ['bank', 'kyc_bank']].filter(([k]) => files[k]);
+      const failed = [];
+      for (const [k, purpose] of uploads) { try { await uploadSellerFile(purpose, files[k]); } catch (err) { failed.push(`${files[k].name}: ${err.message}`); } }
+      if (failed.length) showToast(`KYC submitted, but a document did not upload (${failed[0]}). Upload it again from this page.`, 'error');
+      else { setFiles({ pan: null, aadhaar: null, gst: null, bank: null }); showToast('KYC submitted for verification'); }
     } catch (x) { showToast(x instanceof ApiError ? (x.body?.details?.fieldErrors ? Object.values(x.body.details.fieldErrors).flat()[0] : x.message) : 'KYC could not be submitted', 'error'); }
     finally { setBusy(false); }
   };

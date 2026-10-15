@@ -67,10 +67,19 @@ function CollapseControl({ collapsed, onClick }) {
   );
 }
 
+// Employees with an explicit permission list only see the sections they can open.
+const MENU_PERMISSION = { dashboard: 'dashboard', intake: 'orders.manage', flight: 'shipments.manage' };
+function visibleMenu(me) {
+  const granted = me?.permissions;
+  if (!granted || me.role === 'owner') return MENU;
+  return MENU.filter(([id]) => !MENU_PERMISSION[id] || granted.includes(MENU_PERMISSION[id]));
+}
+
 export default function Sidebar({ activeId, mobile }) {
   const { navOpen, nav, openGroups, toggleGroup, setNavOpen, sidebarCollapsed, toggleSidebar, theme, toggleTheme } = useAppState();
   const reduced = useReducedMotion();
   const { me } = useSellerSession();
+  const menu = visibleMenu(me);
   const signOut = async () => { try { await apiFetch('/v1/auth/logout', { method: 'POST' }); } catch { /* session already gone: still leave */ } nav('login'); };
   const [dragVelocity, setDragVelocity] = useState(0);
   const collapsed = !mobile && sidebarCollapsed;
@@ -123,7 +132,7 @@ export default function Sidebar({ activeId, mobile }) {
         <div style={{ flex: 1, padding: '14px 14px', display: 'grid', alignContent: 'start', gap: 8 }}>
           <motion.div onClick={() => nav('dashboard')} title="Dashboard" whileTap={{ scale: 0.94 }} style={{ height: 46, display: 'grid', placeItems: 'center', borderRadius: 11, cursor: 'pointer', background: onDashboard ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${onDashboard ? 'rgba(27,159,214,.24)' : 'var(--nx-side-edge)'}` }}><NavIcon name="dashboard" active={onDashboard} /></motion.div>
           <div style={{ height: 1, margin: '4px 3px', background: 'var(--nx-side-edge)' }} />
-          {MENU.filter(([id]) => id !== 'dashboard').map((item) => {
+          {menu.filter(([id]) => id !== 'dashboard').map((item) => {
             const [id, label, destination] = item;
             const on = isMenuActive(item, activeId);
             return <motion.div key={id} onClick={() => nav(destination)} title={label} whileTap={{ scale: 0.94 }} style={{ height: 46, display: 'grid', placeItems: 'center', borderRadius: 11, cursor: 'pointer', background: on ? 'var(--nx-side-active)' : 'var(--nx-side-soft)', border: `1px solid ${on ? 'rgba(27,159,214,.24)' : 'var(--nx-side-edge)'}` }}><NavIcon name={id} active={on} /></motion.div>;
@@ -151,7 +160,7 @@ export default function Sidebar({ activeId, mobile }) {
 
       <div className="nx-side-scroll" style={{ flex: 1, overflowY: 'scroll', padding: '14px 8px 18px' }}>
         <div style={{ padding: '0 10px 9px', fontSize: 12, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nx-side-label)' }}>Main menu</div>
-        {MENU.map((item) => {
+        {menu.map((item) => {
           const [id, label, destination, children] = item;
           const on = isMenuActive(item, activeId);
           const open = openGroups[label] === undefined ? on : !!openGroups[label];

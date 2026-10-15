@@ -9,7 +9,7 @@ const ITEMS = [
   ['Schedule email reports', 'Automated operational reports for your team', 'email-reports', '✉'],
   ['WhatsApp notifications', 'Delivery updates and customer follow-ups', 'wa-api', '◌'],
   ['SMS notifications', 'Shipment alerts and delivery events', 'sms-api', '□'],
-  ['Order confirmation', 'Ask customers to confirm before dispatch', 'notifications', '✓'],
+  ['COD order confirmation', 'IVR call asking COD customers to confirm or cancel', 'notifications', '✓'],
   ['Abandoned checkout notifications', 'Win back shoppers who left before paying', 'abandoned', '↺'],
   ['Team & roles', 'Members, permissions and workspace access', 'team', '♙'],
   ['Support & tickets', 'Raise a ticket and follow its progress', 'support', '?'],

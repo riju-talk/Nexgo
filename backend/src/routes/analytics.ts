@@ -110,9 +110,26 @@ export async function analyticsRoutes(app: FastifyInstance) {
     });
   });
   app.get('/v1/admin/analytics/dashboard', { preHandler: requirePlatformAdmin }, async (request) => {
-    const data = await summarize(db, range.parse(request.query));
-    const sellers = await db.query<{ value: string }>(`SELECT count(*)::int AS value FROM sellers WHERE state='active'`);
-    const ndr = await db.query<{ value: string }>(`SELECT count(*)::int AS value FROM ndr_cases WHERE state = 'open'`);
-    return { ...data, activeSellers: Number(sellers.rows[0].value), ndrOpen: Number(ndr.rows[0].value) };
+    const q = range.parse(request.query);
+    const data = await summarize(db, q);
+    const [sellers, ndr, kyc, cod, daily] = await Promise.all([
+      db.query<{ value: number }>(`SELECT count(*)::int AS value FROM sellers WHERE state='active'`),
+      db.query<{ value: number }>(`SELECT count(*)::int AS value FROM ndr_cases WHERE state = 'open'`),
+      db.query<{ value: number }>(`SELECT count(*)::int AS value FROM seller_kyc WHERE status = 'pending_review'`),
+      db.query<{ value: string }>(`SELECT COALESCE(sum(net_remitted_paise),0)::bigint AS value FROM cod_remittance_cycles WHERE status IN ('pending','approved')`),
+      // Per-day platform revenue (booked freight), delivered COD value and NDR / RTO counts for the same window.
+      db.query<{ day: string; revenue: string; cod: string; ndr: number; rto: number }>(
+        `WITH days AS (SELECT generate_series((now() ${IST})::date - ($1::int - 1), (now() ${IST})::date, interval '1 day')::date AS day)
+         SELECT to_char(days.day,'DD Mon') AS day,
+           COALESCE((SELECT sum(sh.shipping_charge_paise) FROM shipments sh WHERE (sh.created_at ${IST})::date = days.day AND sh.state <> 'cancelled'),0)::text AS revenue,
+           COALESCE((SELECT sum(o.cod_amount_paise) FROM shipments sh JOIN orders o ON o.id = sh.order_id WHERE sh.state = 'delivered' AND o.payment_mode = 'cod' AND (COALESCE(sh.delivered_at, sh.created_at) ${IST})::date = days.day),0)::text AS cod,
+           (SELECT count(*) FROM shipments sh WHERE sh.state = 'ndr' AND (sh.created_at ${IST})::date = days.day)::int AS ndr,
+           (SELECT count(*) FROM shipments sh WHERE sh.state IN ('rto','rto_in_transit') AND (sh.created_at ${IST})::date = days.day)::int AS rto
+         FROM days ORDER BY days.day`, [q.days]),
+    ]);
+    return {
+      ...data, activeSellers: sellers.rows[0].value, ndrOpen: ndr.rows[0].value, kycPending: kyc.rows[0].value, codPendingPaise: Number(cod.rows[0].value),
+      daily: daily.rows.map((r) => ({ day: r.day, revenuePaise: Number(r.revenue), codPaise: Number(r.cod), ndr: r.ndr, rto: r.rto })),
+    };
   });
 }

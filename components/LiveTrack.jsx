@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 import { FORMATS, saveRows } from '@/lib/exportFile';
+import { diagnose, failedSheet, readCorrections, toPatch } from '@/lib/failedOrders';
 import { Pager } from './Kit';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 12, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 10px 28px rgba(20,44,66,.055)' };
@@ -176,6 +177,9 @@ export default function LiveTrack({ mobile }) {
   const [page, setPage] = useState(1);
   const [exportFormat, setExportFormat] = useState('csv');
   const [selectedId, setSelectedId] = useState(null);
+  const fixInput = useRef(null);
+  const [fixing, setFixing] = useState(false);
+  const [fixReport, setFixReport] = useState(null);
   // Opened from the command palette: filter to that AWB and open its detail panel.
   useEffect(() => {
     if (!trackFocus || !rows) return;
@@ -245,6 +249,46 @@ export default function LiveTrack({ mobile }) {
     showToast(`${source.length} shipments exported (${exportFormat === 'xlsx' ? 'Excel' : 'CSV'})`);
   };
 
+  // Failed orders: download them as Excel (with the reason), fix the cells, upload the file: orders are updated in place and couriers assigned.
+  const downloadFailed = async () => {
+    const source = visible.filter((r) => r.state === 'failed');
+    if (!source.length) return showToast('There are no failed orders to download.', 'error');
+    await saveRows(failedSheet(source), `failed-orders-${isoDay(Date.now())}`, 'xlsx', 'Failed orders');
+    showToast(`${source.length} failed order${source.length === 1 ? '' : 's'} downloaded. Correct them in Excel and upload the file.`);
+  };
+  const uploadCorrected = async (file) => {
+    if (!file) return;
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) return showToast('Upload the .xlsx, .xls or .csv file you downloaded.', 'error');
+    setFixing(true); setFixReport(null);
+    try {
+      const rows = await readCorrections(file);
+      if (!rows) throw new Error('"NEXGO order ID" column not found. Upload the file downloaded from the Failed tab.');
+      if (!rows.length) throw new Error('The file has no order rows.');
+      if (rows.length > 500) throw new Error('Upload up to 500 orders at a time.');
+      const byId = new Map(failed.map((o) => [o.nexgo_order_id, o]));
+      const report = []; const fixed = [];
+      for (const row of rows) {
+        const order = byId.get(row.nexgoId);
+        if (!order) { report.push({ id: row.nexgoId, line: row.line, problem: 'Not a failed order of yours (already assigned or unknown ID)' }); continue; }
+        const { errors, body } = toPatch(row);
+        if (errors.length) { report.push({ id: row.nexgoId, ref: order.order_number, line: row.line, problem: errors.join(' | ') }); continue; }
+        try { await apiFetch(`/v1/orders/${order.id}/details`, { method: 'PATCH', body }); fixed.push(order); }
+        catch (e) { report.push({ id: row.nexgoId, ref: order.order_number, line: row.line, problem: e instanceof ApiError ? e.message : 'Could not save this order' }); }
+      }
+      let assigned = 0;
+      if (fixed.length) {
+        const r = await apiFetch('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds: fixed.map((o) => o.id) } });
+        assigned = r.assigned;
+        const byOrder = new Map(fixed.map((o) => [o.id, o]));
+        r.results.filter((x) => !x.ok).forEach((x) => report.push({ id: byOrder.get(x.orderId)?.nexgo_order_id, ref: byOrder.get(x.orderId)?.order_number, problem: `Saved, but no courier assigned: ${x.error}` }));
+      }
+      setFixReport({ total: rows.length, assigned, problems: report });
+      showToast(`${assigned} of ${rows.length} order${rows.length === 1 ? '' : 's'} assigned to a courier${report.length ? `, ${report.length} still need attention` : ''}`, report.length ? 'error' : 'success');
+      await load();
+    } catch (e) { showToast(e instanceof ApiError ? e.message : e.message || 'The file could not be processed', 'error'); }
+    finally { setFixing(false); }
+  };
+
   // Tags go onto the selected shipments (never onto not-yet-shipped "failed" orders).
   const tagSelected = async (mode) => {
     const ids = visible.filter((r) => picked.has(r.id) && r.state !== 'failed').map((r) => r.id);
@@ -292,6 +336,24 @@ export default function LiveTrack({ mobile }) {
           return <button key={key} role="tab" aria-selected={on} onClick={() => { setTab(key); setPage(1); }} style={{ height: 32, padding: '0 12px', borderRadius: 99, border: `1px solid ${on ? T.NAVY : T.BORDER}`, background: on ? T.NAVY : T.SURFACE, color: on ? '#fff' : key === 'delayed' && counts.delayed ? T.RED : T.TEXT_LABEL, fontWeight: 720, fontSize: 12.5, cursor: 'pointer' }}>{name} <span style={{ opacity: 0.7, fontWeight: 600 }}>{counts[key] || 0}</span></button>;
         })}
       </div>
+
+      {tab === 'failed' && (
+        <div style={{ ...CARD, padding: '12px 14px', marginBottom: 12, boxShadow: 'none' }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ flex: '1 1 320px', fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.5 }}>These orders have no courier. Download the Excel file, correct what it flags (invalid mobile number, missing address, pincode, weight or size), then upload it to re-assign.</div>
+            <Btn onClick={downloadFailed}>Download Excel file</Btn>
+            <Btn primary disabled={fixing} onClick={() => fixInput.current?.click()}>{fixing ? 'Re-assigning…' : 'Upload corrected file'}</Btn>
+            <input ref={fixInput} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; uploadCorrected(file); }} />
+          </div>
+          {visible.some((r) => diagnose(r).length) && <div style={{ marginTop: 8, fontSize: 12, color: T.AMBER }}>{visible.filter((r) => diagnose(r).length).length} order(s) have missing or invalid details; they are flagged in the Issue column.</div>}
+          {fixReport && (
+            <div style={{ marginTop: 10, fontSize: 12.5 }}>
+              <b style={{ color: fixReport.problems.length ? T.TEXT : T.GREEN }}>{fixReport.assigned} of {fixReport.total} assigned to a courier.</b>
+              {fixReport.problems.slice(0, 20).map((p, i) => <div key={i} style={{ marginTop: 4, color: T.RED }}>{p.ref || p.id}{p.line ? ` (row ${p.line})` : ''}: {p.problem}</div>)}
+            </div>
+          )}
+        </div>
+      )}
 
       {picked.size > 0 && (
         <div style={{ ...CARD, padding: '9px 12px', marginBottom: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', background: 'rgba(27,159,214,.08)', boxShadow: 'none' }}>

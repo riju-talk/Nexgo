@@ -7,7 +7,7 @@ import * as T from '@/lib/theme';
 // so the menu item is visible without any half-working behaviour behind it.
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
 
-export default function ComingSoon({ name, blurb, mobile }) {
+export default function ComingSoon({ name, blurb, mobile, back = 'orders', backLabel = 'Back to all orders' }) {
   const { nav } = useAppState();
   return (
     <div style={{ padding: mobile ? '14px 12px 42px' : '18px 28px 48px', position: 'relative', maxWidth: '100%' }}>
@@ -24,7 +24,7 @@ export default function ComingSoon({ name, blurb, mobile }) {
           <div style={{ display: 'inline-flex', padding: '4px 10px', borderRadius: 99, fontSize: 11, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: T.ACCENT, background: 'rgba(27,159,214,.12)' }}>Phase 2</div>
           <div style={{ marginTop: 12, color: T.TEXT, fontSize: 18, fontWeight: 760 }}>{name} is coming soon</div>
           <p style={{ margin: '8px 0 18px', color: T.TEXT_SECONDARY, fontSize: 13.5, lineHeight: 1.55 }}>{blurb}</p>
-          <button onClick={() => nav('orders')} style={{ height: 34, padding: '0 14px', borderRadius: 8, border: `1px solid ${T.NAVY}`, background: T.NAVY, color: '#fff', fontWeight: 720, fontSize: 12.5, cursor: 'pointer' }}>Back to all orders</button>
+          <button onClick={() => nav(back)} style={{ height: 34, padding: '0 14px', borderRadius: 8, border: `1px solid ${T.NAVY}`, background: T.NAVY, color: '#fff', fontWeight: 720, fontSize: 12.5, cursor: 'pointer' }}>{backLabel}</button>
         </div>
       </div>
     </div>

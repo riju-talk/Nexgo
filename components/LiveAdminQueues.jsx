@@ -3,7 +3,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { adminApi, ApiError } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { adminApi, apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 import AdminRateEditor from './AdminRateEditor';
@@ -17,15 +18,16 @@ function Button({ children, onClick, disabled }) { return <motion.button whileTa
 
 export default function LiveAdminQueues({ activeId, mobile }) {
   const { nav, showToast } = useAppState();
+  const router = useRouter();
   const [items, setItems] = useState(null); const [error, setError] = useState(null); const [busy, setBusy] = useState('');
   const kind = activeId.replace('a-', '');
   const loader = useMemo(() => ({ sellers: adminApi.sellers, orders: adminApi.orders, shipments: adminApi.shipments, ndr: adminApi.ndr, rto: () => adminApi.shipments({ state: 'rto' }), pickups: adminApi.pickups, couriers: adminApi.couriers })[kind], [kind]);
   const load = useCallback(async () => { setError(null); try { const data = await loader(); setItems(data.items || []); } catch (e) { setError(e); } }, [loader]);
   useEffect(() => { load(); }, [load]); // eslint-disable-line react-hooks/set-state-in-effect -- async fetch on mount; state is set after the await
   const changeState = async (row, state) => { setBusy(row.id); try { await adminApi.setSellerState(row.id, state, 'Updated from operations queue'); showToast(`${row.legal_name} is now ${state}`); await load(); } catch (e) { showToast(e instanceof ApiError ? e.message : 'Seller state could not be changed', 'error'); } finally { setBusy(''); } };
-  const columns = { sellers: ['Seller', 'KYC', 'Orders', 'Shipments', 'State', ''], orders: ['Order', 'Seller', 'Customer', 'Flow', 'Value', 'State'], shipments: ['AWB', 'Seller', 'Order', 'Charge', 'Status'], rto: ['AWB', 'Seller', 'Order', 'Charge', 'Status'], pickups: ['Seller', 'Warehouse', 'Courier', 'Requested for', 'Status'], ndr: ['AWB', 'Seller', 'Reason', 'State'], couriers: ['Courier', 'Integration', 'Services', 'COD'] }[kind];
+  const columns = { sellers: ['Seller Name', 'Email ID', 'KYC Status', 'Nexgo Code', 'Created on', 'POC', 'Status', 'View Details'], orders: ['Order', 'Seller', 'Customer', 'Flow', 'Value', 'State'], shipments: ['AWB', 'Seller', 'Order', 'Charge', 'Status'], rto: ['AWB', 'Seller', 'Order', 'Charge', 'Status'], pickups: ['Seller', 'Warehouse', 'Courier', 'Requested for', 'Status'], ndr: ['AWB', 'Seller', 'Reason', 'State'], couriers: ['Courier', 'Integration', 'Services', 'COD'] }[kind];
   const cells = (r) => {
-    if (kind === 'sellers') return [<><b>{r.legal_name}</b><small>{r.slug}</small></>, <Badge tone={r.kyc_status === 'verified' ? 'ok' : 'warn'}>{title(r.kyc_status)}</Badge>, r.order_count, r.shipment_count, <Badge tone={r.state === 'active' ? 'ok' : r.state === 'suspended' ? 'bad' : 'warn'}>{title(r.state)}</Badge>, r.state === 'active' ? <Button disabled={busy === r.id} onClick={() => changeState(r, 'suspended')}>Suspend</Button> : r.state === 'suspended' ? <Button disabled={busy === r.id} onClick={() => changeState(r, 'active')}>Restore</Button> : null];
+    if (kind === 'sellers') return [<b>{r.legal_name}</b>, r.email || '—', <Badge tone={r.kyc_status === 'verified' ? 'ok' : 'warn'}>{title(r.kyc_status)}</Badge>, <b style={{ fontFamily: T.MONO }}>{r.nexgo_code}</b>, new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), r.poc_name || '—', <Badge tone={r.state === 'active' ? 'ok' : r.state === 'suspended' ? 'bad' : 'warn'}>{title(r.state)}</Badge>, <Button onClick={() => router.push(`/admin/sellers/${r.id}`)}>View Details</Button>];
     if (kind === 'orders') { const flow = r.notes === 'Created from bulk order upload' ? 'bulk import' : r.order_flow; return [<b style={{ fontFamily: T.MONO }}>{r.order_number}</b>, r.seller_name, <><b>{r.customer_name}</b><small>{r.customer_city} · {r.customer_pincode}</small></>, <Badge tone={r.order_flow === 'reverse' ? 'warn' : r.order_flow === 'ship_now' ? 'ok' : 'neutral'}>{title(flow)}</Badge>, money(r.subtotal_paise), <Badge tone={r.state === 'booked' ? 'ok' : r.state === 'cancelled' ? 'bad' : 'neutral'}>{title(r.state)}</Badge>]; }
     if (kind === 'shipments' || kind === 'rto') return [<b style={{ fontFamily: T.MONO }}>{r.awb}</b>, r.seller_name, r.order_number, money(r.shipping_charge_paise), <Badge tone={r.state === 'delivered' ? 'ok' : r.state === 'ndr' || r.state === 'rto' ? 'warn' : 'neutral'}>{title(r.state)}</Badge>];
     if (kind === 'pickups') return [r.seller_name, <b>{r.warehouse_name}</b>, r.courier_name || 'Courier to be assigned', new Date(r.requested_for).toLocaleDateString('en-IN'), <Badge tone={r.state === 'completed' ? 'ok' : r.state === 'cancelled' ? 'bad' : 'warn'}>{title(r.state)}</Badge>];

@@ -66,11 +66,13 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
   app.get('/v1/admin/sellers', { preHandler: requirePlatformAdmin }, async (request) => {
     const q = pageQuery.parse(request.query);
     const result = await db.query(
-      `SELECT s.id, s.legal_name, s.slug, s.state, s.created_at, COALESCE(k.status, 'unsubmitted') AS kyc_status,
+      `SELECT s.id, s.legal_name, s.slug, s.nexgo_code, s.state, s.created_at, COALESCE(k.status, 'unsubmitted') AS kyc_status,
+              poc.email AS email, poc.full_name AS poc_name,
               (SELECT count(*) FROM orders o WHERE o.seller_id = s.id) AS order_count,
               (SELECT count(*) FROM shipments sh WHERE sh.seller_id = s.id) AS shipment_count
        FROM sellers s
        LEFT JOIN seller_kyc k ON k.seller_id = s.id
+       LEFT JOIN LATERAL (SELECT u.email, u.full_name FROM seller_memberships m JOIN users u ON u.id = m.user_id WHERE m.seller_id = s.id ORDER BY (m.role = 'owner') DESC, m.created_at LIMIT 1) poc ON true
        WHERE ($1::seller_state IS NULL OR s.state = $1)
          AND ($2::text IS NULL OR s.legal_name ILIKE '%' || $2 || '%')
        ORDER BY s.created_at DESC LIMIT $3 OFFSET $4`,

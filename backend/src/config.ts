@@ -11,14 +11,9 @@ const schema = z.object({
   FRONTEND_ORIGIN: z.string().url().default(process.env.VERCEL ? 'https://nexgo-beta.vercel.app' : 'http://localhost:3021'),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().max(30).default(7),
   COURIER_WEBHOOK_SECRET: z.string().min(32).optional(),
-  MINIO_ENDPOINT: z.string().default('localhost'),
-  MINIO_PORT: z.coerce.number().int().positive().default(9000),
-  MINIO_ACCESS_KEY: z.string().default('nexgo_local'),
-  MINIO_SECRET_KEY: z.string().default('nexgo_local_only_change_me'),
   // Label/invoice PDFs need an S3-compatible bucket. Until one is connected the file endpoints answer 501 instead of failing.
   STORAGE_ENABLED: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
-  MINIO_USE_SSL: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
-  MINIO_BUCKET: z.string().default('nexgo-private'),
+  STORAGE_BUCKET: z.string().min(3).default('assets'),
   // 32-byte AES-256 key, base64-encoded. Local dev only — production uses
   // per-record envelope encryption via AWS KMS instead of a static key.
   // DEMO ONLY default so a test-data deployment boots with just DATABASE_URL. Set a real key (and STRICT_SECRETS=true) before holding real data.
@@ -41,8 +36,6 @@ export const config = schema.parse(process.env);
 // RAZORPAY_WEBHOOK_SECRET would let anyone forge wallet-credit webhooks.
 if (config.NODE_ENV === 'production' && config.STRICT_SECRETS) {
   const publicDefaults: Array<[keyof typeof config, string]> = [
-    ['MINIO_ACCESS_KEY', 'nexgo_local'],
-    ['MINIO_SECRET_KEY', 'nexgo_local_only_change_me'],
     ['RAZORPAY_WEBHOOK_SECRET', 'local-development-razorpay-webhook-secret'],
   ];
   const insecure = publicDefaults.filter(([key, value]) => config[key] === value).map(([key]) => key);
