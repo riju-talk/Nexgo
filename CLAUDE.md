@@ -139,3 +139,4 @@ The app-shell chrome (Sidebar, TopBar, CommandPalette, KpiDropdown, NdrDrawer, M
 ## Working agreement
 - This file is the source of truth for backend scope — **update it every session** as decisions get made or the mock data model changes, the same pattern used in `ai-technical-decomposer`.
 - When wiring a mock screen to the API, replace it with a `Live*` component end to end (loading, empty, 401 → sign-in states) rather than mixing live and mock data on one screen — half-wired screens break the demo.
+**Deploy config (2026-10-16):** backend `.env` now points at the Neon production DB and `FRONTEND_ORIGIN=https://nexgo-beta.vercel.app` (no docker/local DB). `sendMail` is best effort (5 s timeouts, errors logged, never a 500) so a missing SMTP host cannot break password reset or team invites. Migrations 0001-0040 are applied on Neon.
