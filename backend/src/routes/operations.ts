@@ -1,3 +1,5 @@
+import { queueCodConfirmation } from '../lib/codConfirmation.js';
+import { maskCustomerRows } from '../lib/permissions.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
@@ -132,7 +134,7 @@ export async function operationsRoutes(app: FastifyInstance) {
       return { id, deactivated: true, newDefaultId: target.is_default ? others.id : null };
     });
   });
-  app.get('/v1/customers', { preHandler: requireSeller }, async (request) => { const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query('SELECT * FROM customers WHERE seller_id = $1 ORDER BY created_at DESC LIMIT 100', [p.sellerId])).rows })); });
+  app.get('/v1/customers', { preHandler: requireSeller }, async (request) => { const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: maskCustomerRows((await client.query('SELECT * FROM customers WHERE seller_id = $1 ORDER BY created_at DESC LIMIT 100', [p.sellerId])).rows, p, 'orders.view_customer') })); });
   app.get('/v1/products', { preHandler: requireSeller }, async (request) => { const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query('SELECT * FROM products WHERE seller_id = $1 ORDER BY sku LIMIT 250', [p.sellerId])).rows })); });
   app.post('/v1/products', { preHandler: requireSeller }, async (request, reply) => {
     const input = productInput.parse(request.body); const p = getPrincipal(request);
@@ -158,6 +160,7 @@ export async function operationsRoutes(app: FastifyInstance) {
       const t = orderTotals(input); const ch = input.charges; const pk = input.package;
       const result = await client.query(`INSERT INTO orders (seller_id,warehouse_id,customer_id,order_number,external_reference,order_flow,payment_mode,cod_amount_paise,subtotal_paise,total_weight_g,notes,state,package_length_mm,package_width_mm,package_height_mm,volumetric_weight_g,shipping_charges_paise,gift_wrap_paise,transaction_charges_paise,other_charges_paise,discount_paise,tax_rate_bps,tax_paise,total_paise) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'new',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`, [p.sellerId, input.warehouseId, customer.rows[0].id, input.orderNumber, input.externalReference ?? input.orderNumber, input.orderFlow, input.paymentMode, input.codAmountPaise, t.subtotal, t.deadWeight, input.notes ?? null, pk.lengthMm ?? null, pk.widthMm ?? null, pk.heightMm ?? null, t.volumetric, ch.shippingPaise, ch.giftWrapPaise, ch.transactionPaise, ch.otherPaise, ch.discountPaise, ch.taxRateBps, t.tax, t.total]);
       if (input.channel !== 'single') { await client.query('UPDATE orders SET channel=$1 WHERE id=$2', [input.channel, result.rows[0].id]); result.rows[0].channel = input.channel; }
+      await queueCodConfirmation(client, { sellerId: p.sellerId, orderId: result.rows[0].id, paymentMode: input.paymentMode, channel: input.channel, customerName: c.fullName, orderNumber: input.orderNumber });
       for (const item of input.items) await client.query('INSERT INTO order_items (order_id,product_id,sku,name,quantity,unit_price_paise,weight_g,hsn_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [result.rows[0].id, item.productId ?? null, item.sku, item.name, item.quantity, item.unitPricePaise, item.weightG, item.hsnCode ?? null]);
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.created', targetType: 'order', targetId: result.rows[0].id, requestId: request.id, metadata: { orderNumber: input.orderNumber, itemCount: input.items.length } }); return result.rows[0];
     }); return reply.code(201).send(row);

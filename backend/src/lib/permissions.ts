@@ -22,3 +22,20 @@ export function requiredPermission(method: string, route: string, body: unknown)
   }
   return null;
 }
+
+// Data-level checks (route gating above only covers who may call an endpoint).
+export type PermissionPrincipal = { role: string; permissions: string[] | null };
+export const hasPermission = (p: PermissionPrincipal, key: string) => !p.permissions || p.role === 'owner' || p.permissions.includes(key);
+
+// Without "View Customer Details" a member still sees who the order is for and where it is going (city, pincode, state),
+// but not phone, street address, landmark or email.
+const HIDDEN = ['customer_address1', 'customer_address2', 'customer_landmark', 'customer_email', 'address_line_1', 'address_line_2', 'landmark', 'email'];
+export function maskCustomerRows<T extends Record<string, unknown>>(rows: T[], p: PermissionPrincipal, key: string): T[] {
+  if (hasPermission(p, key)) return rows;
+  return rows.map((r) => {
+    const out: Record<string, unknown> = { ...r };
+    for (const k of ['customer_phone', 'phone']) if (typeof out[k] === 'string') out[k] = (out[k] as string).replace(/\d(?=\d{4})/g, 'X');
+    for (const k of HIDDEN) if (k in out) out[k] = null;
+    return out as T;
+  });
+}

@@ -1,3 +1,4 @@
+import { hasPermission } from '../lib/permissions.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
@@ -113,6 +114,9 @@ export async function reportRoutes(app: FastifyInstance) {
     const p = principal(request);
     const input = generateInput.parse(request.body);
     const def = DEFS[input.type];
+    // Server-side exports need the matching Export permission (orders -> Export Orders; shipment-based reports -> Export Shipment).
+    const exportKey = input.type === 'orders' ? 'orders.export' : ['shipments', 'ndr', 'cod'].includes(input.type) ? 'shipments.export' : null;
+    if (exportKey && !hasPermission(p, exportKey)) throw Object.assign(new Error('Your account does not have permission to export this report'), { statusCode: 403 });
     if (input.status && input.status !== 'all' && !def.statuses.includes(input.status)) throw Object.assign(new Error(`Status "${input.status}" does not apply to this report`), { statusCode: 400 });
     const status = input.status && input.status !== 'all' ? input.status : undefined;
     const run = await withSellerTransaction(p.sellerId, async (client) => {

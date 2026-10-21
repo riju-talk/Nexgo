@@ -1,3 +1,4 @@
+import { maskCustomerRows } from '../lib/permissions.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
@@ -45,7 +46,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
   // Seller shipment register: everything the Track page filters, groups and exports on, in one round trip.
   app.get('/v1/shipments', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
-    return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query(
+    return withSellerTransaction(p.sellerId, async (client) => ({ items: maskCustomerRows((await client.query(
       `SELECT s.*, o.order_number, o.nexgo_order_id, o.channel, o.payment_mode, o.cod_amount_paise, o.subtotal_paise, o.total_weight_g, o.order_flow, o.created_at AS order_created_at,
               c.full_name AS customer_name, c.phone AS customer_phone, c.city AS customer_city, c.pincode AS customer_pincode,
               cp.name AS courier_name, cs.display_name AS service_name, cs.service_type,
@@ -57,9 +58,9 @@ export async function shipmentRoutes(app: FastifyInstance) {
        JOIN courier_providers cp ON cp.id=s.provider_id JOIN courier_services cs ON cs.id=s.service_id
        LEFT JOIN LATERAL (SELECT count(*)::int AS products, COALESCE(sum(quantity),0)::int AS quantity, string_agg(name, ', ' ORDER BY name) AS product_names FROM order_items WHERE order_id=o.id) it ON true
        LEFT JOIN LATERAL (SELECT description, location, occurred_at FROM shipment_events WHERE shipment_id=s.id ORDER BY occurred_at DESC LIMIT 1) ev ON true
-       WHERE s.seller_id=$1 ORDER BY s.created_at DESC LIMIT 500`, [p.sellerId])).rows,
+       WHERE s.seller_id=$1 ORDER BY s.created_at DESC LIMIT 500`, [p.sellerId])).rows, p, 'shipments.view_customer'),
       // Orders that never got a courier (booking failed, or no courier could be assigned): the "Failed" tab, to fix and re-assign.
-      failed: (await client.query(
+      failed: maskCustomerRows((await client.query(
       `SELECT o.id, o.order_number, o.nexgo_order_id, o.channel, o.state AS order_state, o.payment_mode, o.cod_amount_paise, o.subtotal_paise, o.total_weight_g, o.created_at,
               o.package_length_mm, o.package_width_mm, o.package_height_mm,
               c.full_name AS customer_name, c.phone AS customer_phone, c.city AS customer_city, c.pincode AS customer_pincode,
@@ -69,7 +70,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
        FROM orders o JOIN customers c ON c.id=o.customer_id JOIN warehouses w ON w.id=o.warehouse_id
        LEFT JOIN LATERAL (SELECT COALESCE(sum(quantity),0)::int AS quantity, string_agg(name, ', ' ORDER BY name) AS product_names FROM order_items WHERE order_id=o.id) it ON true
        WHERE o.seller_id=$1 AND o.state IN ('new','ready_to_ship') AND o.order_flow <> 'reverse' AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id=o.id)
-       ORDER BY o.created_at DESC LIMIT 500`, [p.sellerId])).rows }));
+       ORDER BY o.created_at DESC LIMIT 500`, [p.sellerId])).rows, p, 'orders.view_customer') }));
   });
   // Everything the printable shipping label and tax invoice need, for up to 100 shipments at once (see /documents/label and /documents/invoice).
   // Assigns the order's invoice number on first use.

@@ -1,5 +1,6 @@
 'use client';
 
+import { useSellerSession } from '@/lib/useSellerSession';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
@@ -165,6 +166,10 @@ const CELL = { padding: '12px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 1
 const SUB = { display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 11.5 };
 
 export default function LiveTrack({ mobile }) {
+  const { me } = useSellerSession();
+  const allowed = (key) => !me?.permissions || me.role === 'owner' || me.permissions.includes(key);
+  const canExport = allowed('shipments.export');
+  const canExportCustomer = allowed('shipments.export_customer');
   const { nav, showToast, trackFocus, setTrackFocus } = useAppState();
   const [rows, setRows] = useState(null);
   const [failed, setFailed] = useState([]);
@@ -242,10 +247,13 @@ export default function LiveTrack({ mobile }) {
   if (!rows) return <div style={{ padding: pad }}><div style={{ ...CARD, padding: 26, color: T.TEXT_MUTED, fontSize: 13 }}>Loading shipments…</div></div>;
 
   const exportRows = async () => {
+    if (!canExport) return showToast('Your account does not have permission to export shipments.', 'error');
     const source = picked.size ? visible.filter((r) => picked.has(r.id)) : visible;
     const head = ['Channel', 'Order ID', 'NEXGO order ID', 'Date', 'Payment method', 'COD amount INR', 'Order value INR', 'Customer', 'Phone', 'City', 'Pincode', 'Carrier', 'Service', 'Mode', 'AWB', 'WhatsApp status', 'Status', 'Pickup warehouse', 'Products', 'Qty', 'Dead weight kg', 'Billed weight kg', 'Freight INR', 'Last scan', 'Last scan location', 'Last scan time', 'Expected delivery', 'Delivered', 'Delayed', 'Tags'];
     const body = source.map((r) => [channelName(r.channel), r.order_number, r.nexgo_order_id, stamp(r.booked_at), r.payment_mode === 'cod' ? 'COD' : 'Prepaid', r.payment_mode === 'cod' ? r.cod_amount_paise / 100 : 0, r.subtotal_paise / 100, r.customer_name, r.customer_phone, r.customer_city, r.customer_pincode, r.courier_name || '', r.service_name || '', r.service_type ? modeOf(r) : '', r.awb || '', WHATSAPP[r.whatsapp_status] || 'Not sent', label(r.state), r.warehouse_name, r.product_names, r.quantity, r.total_weight_g / 1000, r.chargeable_weight_g / 1000, r.shipping_charge_paise / 100, r.last_description || '', r.last_location || '', r.last_event_at ? stamp(r.last_event_at) : '', day(r.promised_delivery_at), r.delivered_at ? stamp(r.delivered_at) : '', isDelayed(r) ? 'Yes' : 'No', (r.tags || []).join(', ')]);
-    await saveRows([head, ...body], `shipments-${isoDay(Date.now())}`, exportFormat, 'Shipments');
+    // Customer name and phone only leave the app for members with Export Customer Details.
+    const safeBody = canExportCustomer ? body : body.map((row) => row.map((cell, i) => (i === 7 || i === 8 ? '' : cell)));
+    await saveRows([head, ...safeBody], `shipments-${isoDay(Date.now())}`, exportFormat, 'Shipments');
     showToast(`${source.length} shipments exported (${exportFormat === 'xlsx' ? 'Excel' : 'CSV'})`);
   };
 
@@ -315,8 +323,8 @@ export default function LiveTrack({ mobile }) {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <input aria-label="Search shipments" value={f.q} onChange={set('q')} placeholder="Search AWB, order, customer, phone, pincode or product" style={{ ...FIELD, flex: '1 1 280px', height: 38 }} />
           <Btn onClick={load}>Refresh</Btn>
-          <select aria-label="Export format" value={exportFormat} onChange={(e) => setExportFormat(e.target.value)} style={{ ...FIELD, height: 32 }}>{FORMATS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select>
-          <Btn onClick={exportRows}>{picked.size ? `Export ${picked.size} selected` : 'Export'}</Btn>
+          {canExport && <><select aria-label="Export format" value={exportFormat} onChange={(e) => setExportFormat(e.target.value)} style={{ ...FIELD, height: 32 }}>{FORMATS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select>
+          <Btn onClick={exportRows}>{picked.size ? `Export ${picked.size} selected` : 'Export'}</Btn></>}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
           <select aria-label="Courier" value={f.courier} onChange={set('courier')} style={FIELD}><option value="">All couriers</option>{options.couriers.map((c) => <option key={c}>{c}</option>)}</select>
@@ -362,7 +370,7 @@ export default function LiveTrack({ mobile }) {
           {visible.some((r) => picked.has(r.id) && r.state === 'failed') && <Btn small primary onClick={() => assignCouriers(visible.filter((r) => picked.has(r.id) && r.state === 'failed').map((r) => r.id), showToast, async () => { await load(); setPicked(new Set()); })}>Assign couriers</Btn>}
           <Btn small onClick={() => printSelected('label')}>Print labels</Btn>
           <Btn small onClick={() => printSelected('invoice')}>Print invoices</Btn>
-          <Btn small onClick={exportRows}>Export selected</Btn>
+          {canExport && <Btn small onClick={exportRows}>Export selected</Btn>}
           <input aria-label="Tag name" value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="Tag name" maxLength={30} style={{ ...FIELD, height: 28, width: 130 }} />
           <Btn small disabled={!tagInput.trim()} onClick={() => tagSelected('add')}>Add tag</Btn>
           <Btn small disabled={!tagInput.trim()} onClick={() => tagSelected('remove')}>Remove tag</Btn>

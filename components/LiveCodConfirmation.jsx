@@ -24,6 +24,14 @@ export default function LiveCodConfirmation({ mobile }) {
     }).catch(() => {}).finally(() => live && setLoaded(true));
     return () => { live = false; };
   }, []);
+  const [pending, setPending] = useState([]);
+  const loadPending = () => apiFetch('/v1/cod-confirmations').then((x) => setPending(x.items || [])).catch(() => {});
+  useEffect(() => { loadPending(); }, []);
+  // Until a telephony provider is connected, the customer's reply is recorded here by hand.
+  const answer = async (id, a) => {
+    try { const r = await apiFetch(`/v1/cod-confirmations/${id}/answer`, { method: 'POST', body: { answer: a } }); showToast(r.state === 'declined' ? (r.orderCancelled ? 'Declined: order cancelled' : 'Declined: order already has a courier, cancel it from Track') : r.replay ? 'Already answered' : 'Order confirmed'); loadPending(); }
+    catch (err) { showToast(err instanceof ApiError ? err.message : 'Answer could not be saved', 'error'); }
+  };
   const submit = async (e) => {
     e.preventDefault();
     if (status === 'Enable' && !brand.trim()) return showToast('Enter the brand name customers will hear', 'error');
@@ -61,6 +69,19 @@ export default function LiveCodConfirmation({ mobile }) {
           <p style={{ margin: '14px 0 0', color: T.TEXT_MUTED, fontSize: 12 }}>Your settings are saved now. Calls start once a telephony (IVR) provider is connected to the platform.</p>
         </div>
       </form>
+      <div style={{ ...CARD, padding: 20, marginTop: 16 }}>
+        <h3 style={{ margin: '0 0 10px', color: T.TEXT, fontSize: 15 }}>Confirmation requests</h3>
+        {pending.length === 0 ? <p style={{ margin: 0, color: T.TEXT_MUTED, fontSize: 13 }}>No COD orders have been queued for confirmation yet. New COD orders on the selected channels appear here.</p> : (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {pending.map((c) => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', padding: '9px 12px', borderRadius: 8, border: `1px solid ${T.BORDER}`, fontSize: 13, color: T.TEXT }}>
+                <span><b>{c.order_number}</b> · {c.customer_name} · ₹{(c.cod_amount_paise / 100).toLocaleString('en-IN')}</span>
+                {c.state === 'pending' ? <span style={{ display: 'flex', gap: 8 }}><Btn small onClick={() => answer(c.id, 'confirm')}>Confirm</Btn><Btn small onClick={() => answer(c.id, 'decline')}>Decline</Btn></span> : <b style={{ color: c.state === 'confirmed' ? T.GREEN : T.RED }}>{c.state === 'confirmed' ? 'Confirmed' : 'Declined'}</b>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </main>
   );
 }
