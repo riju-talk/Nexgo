@@ -70,7 +70,7 @@ const summarize = async (client: Pool | PoolClient, q: Range, sellerId?: string)
 // "Decisions waiting on you": live NDR, weight-dispute, missed-pickup and COD figures for the seller (open items, not date-filtered).
 async function sellerQueue(client: PoolClient, sellerId: string) {
   const overdue = (a = '') => `${a}state IN ('booked','pickup_pending','pickup_scheduled') AND COALESCE(${a}pickup_deadline_at, ${a}booked_at + interval '1 day') < now()`;
-  const [ndr, ndrReasons, wd, wdCouriers, pickup, pickupCouriers, codToday, cycles, uncycled] = await Promise.all([
+  const [ndr, ndrReasons, wd, wdCouriers, pickup, pickupCouriers, codToday, cycles, uncycled, inflight] = await Promise.all([
     client.query<{ n: number }>(`SELECT count(*)::int AS n FROM ndr_cases WHERE seller_id = $1 AND state = 'open'`, [sellerId]),
     client.query<{ reason: string; n: number }>(`SELECT ndr_reason::text AS reason, count(*)::int AS n FROM ndr_cases WHERE seller_id = $1 AND state = 'open' GROUP BY 1 ORDER BY 2 DESC LIMIT 4`, [sellerId]),
     client.query<{ n: number; held: string }>(`SELECT count(*)::int AS n, COALESCE(sum(held_amount_paise),0)::bigint AS held FROM weight_disputes WHERE seller_id = $1 AND status = 'open'`, [sellerId]),
@@ -81,6 +81,8 @@ async function sellerQueue(client: PoolClient, sellerId: string) {
     client.query<{ net: string; due_date: string | null }>(`SELECT net_remitted_paise::text AS net, due_date::text FROM cod_remittance_cycles WHERE seller_id = $1 AND status IN ('pending','approved') ORDER BY due_date NULLS LAST, cycle_end`, [sellerId]),
     // Delivered COD not yet in any remittance cycle: money the seller is owed once a cycle is cut.
     client.query<{ v: string }>(`SELECT COALESCE(sum(o.cod_amount_paise),0)::bigint AS v FROM shipments s JOIN orders o ON o.id = s.order_id WHERE s.seller_id = $1 AND s.state = 'delivered' AND o.payment_mode = 'cod' AND NOT EXISTS (SELECT 1 FROM cod_remittance_cycles c WHERE c.seller_id = s.seller_id AND COALESCE(s.delivered_at, s.booked_at)::date BETWEEN c.cycle_start AND c.cycle_end)`, [sellerId]),
+    // Upcoming COD = cash still to reach the seller: COD still on its way to the customer (not cancelled, not returning) plus delivered COD no completed payout covers yet. Gross order value, one row per shipment, so nothing counts twice.
+    client.query<{ v: string }>(`SELECT COALESCE(sum(o.cod_amount_paise),0)::bigint AS v FROM shipments s JOIN orders o ON o.id = s.order_id WHERE s.seller_id = $1 AND o.payment_mode = 'cod' AND s.state::text IN ('booked','pickup_pending','pickup_scheduled','in_transit','out_for_delivery','ndr')`, [sellerId]),
   ]);
   const cycleDue = cycles.rows.reduce((a, r) => a + Number(r.net), 0);
   return {
@@ -91,6 +93,7 @@ async function sellerQueue(client: PoolClient, sellerId: string) {
       deliveredTodayPaise: Number(codToday.rows[0].v),
       nextExpectedPaise: cycles.rows[0] ? Number(cycles.rows[0].net) : 0, nextExpectedDate: cycles.rows[0]?.due_date ?? null,
       totalDuePaise: cycleDue + Number(uncycled.rows[0].v),
+      inflightPaise: Number(inflight.rows[0].v), upcomingPaise: Number(inflight.rows[0].v) + cycleDue + Number(uncycled.rows[0].v),
     },
   };
 }

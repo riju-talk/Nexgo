@@ -7,12 +7,13 @@ import * as T from '@/lib/theme';
 import KpiDropdown from './KpiDropdown';
 import FilterDropdown from './FilterDropdown';
 
-const DASH_RANGES = [[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days']];
+const DASH_RANGES = [[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [0, 'Custom range']];
 const TAP = { scale: 0.96 };
 const TAP_FAST = { duration: 0.08 };
 
 export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
-  const { nav, dashDays, setDashDays } = useAppState();
+  const { nav, dashDays, setDashDays, dashRange, setDashRange } = useAppState();
+  const dateInput = { height: 32, borderRadius: 7, border: `1px solid ${T.INPUT_BORDER}`, background: T.SURFACE, color: T.TEXT, padding: '0 8px', fontSize: 12.5 };
   const actions = (ACTIONS[activeId] || []).filter(([, , dest]) => dest); // buttons without a destination had no handler
   // The page name is already in the top bar, so a page with nothing to act on needs no header at all.
   if (!isDashboard && !actions.length) return null;
@@ -38,6 +39,12 @@ export default function PageHeader({ activeId, isDashboard, mobile, phone }) {
           {isDashboard && (
             <>
               <KpiDropdown mobile={mobile} />
+              {dashDays === 0 && (
+                <>
+                  <input type="date" aria-label="From date" value={dashRange.from} max={dashRange.to || undefined} onChange={(e) => setDashRange({ ...dashRange, from: e.target.value })} style={dateInput} />
+                  <input type="date" aria-label="To date" value={dashRange.to} min={dashRange.from || undefined} onChange={(e) => setDashRange({ ...dashRange, to: e.target.value })} style={dateInput} />
+                </>
+              )}
               <FilterDropdown
                 value={DASH_RANGES.find(([d]) => d === dashDays)?.[1]}
                 onSelect={(l) => setDashDays(DASH_RANGES.find(([, name]) => name === l)[0])}

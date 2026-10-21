@@ -1,5 +1,6 @@
 'use client';
 
+import { useSellerSession } from '@/lib/useSellerSession';
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { METRICS, PIPELINE, TREND_A, TREND_B, COURIER_PERF } from '@/lib/data';
@@ -17,7 +18,7 @@ function GlassSheen() {
   return <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 1, background: 'var(--nx-glass-border)' }} />;
 }
 
-const RANGES = [[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days']];
+const RANGES = [[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [0, 'Custom range']];
 const money = (paise) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((paise || 0) / 100);
 const shortDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—');
 
@@ -28,13 +29,22 @@ function RangeSelect({ days, onChange, label }) {
 }
 
 export default function DashboardContent({ mobile, narrow, phone }) {
-  const { kpis, stage, setStage, expanded, toggleExpanded, nav, showToast, dashDays: days, setDashDays: setDays } = useAppState();
+  const { kpis, stage, setStage, expanded, toggleExpanded, nav, showToast, dashDays: days, setDashDays: setDays, dashRange } = useAppState();
+  const { me } = useSellerSession();
+  const firstName = (me?.full_name || '').trim().split(/\s+/)[0];
+  const customReady = days === 0 && dashRange.from && dashRange.to && dashRange.from <= dashRange.to;
   const [expandedCardId, setExpandedCardId] = useState(null);
   const [live, setLive] = useState(null);
   const [tick, setTick] = useState(0);
-  useEffect(() => { let on = true; apiFetch(`/v1/analytics/dashboard?days=${days}`).then((x) => { if (on) setLive(x); }).catch(() => {}); return () => { on = false; }; }, [days, tick]);
+  useEffect(() => {
+    if (days === 0 && !customReady) return undefined; // custom range chosen but dates not complete yet
+    let on = true;
+    const qs = days === 0 ? `from=${dashRange.from}&to=${dashRange.to}` : `days=${days}`;
+    apiFetch(`/v1/analytics/dashboard?${qs}`).then((x) => { if (on) setLive(x); }).catch(() => {});
+    return () => { on = false; };
+  }, [days, tick, customReady, dashRange.from, dashRange.to]);
   const rangeLabel = (RANGES.find((r) => r[0] === days) || RANGES[2])[1];
-  const shortRange = days === 1 ? 'Today' : `${days}d`;
+  const shortRange = days === 1 ? 'Today' : days === 0 ? 'Custom' : `${days}d`;
   const [rescheduling, setRescheduling] = useState(false);
   const reschedule = async () => {
     if (rescheduling) return;
@@ -46,11 +56,11 @@ export default function DashboardContent({ mobile, narrow, phone }) {
   const [ndr, setNdr] = useState(null);
   useEffect(() => { apiFetch('/v1/ndr/stats').then(setNdr).catch(() => setNdr({ reasons: [] })); }, []);
   const formatMoney = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((value || 0) / 100);
-  const liveValues = live ? { order_volume: String(live.metrics.todayVolume), in_transit: String(live.metrics.inTransit), delivery_rate: `${live.metrics.deliveryRate}%`, ndr_rate: `${live.metrics.ndrRate}%`, rto_rate: `${live.metrics.rtoRate}%`, revenue: formatMoney(live.metrics.shippingSpendPaise) } : {};
+  const liveValues = live ? { order_volume: String(live.metrics.todayVolume), in_transit: String(live.metrics.inTransit), delivery_rate: `${live.metrics.deliveryRate}%`, ndr_rate: `${live.metrics.ndrRate}%`, rto_rate: `${live.metrics.rtoRate}%`, revenue: formatMoney(live.metrics.shippingSpendPaise), cod_upcoming: formatMoney(live.queue?.cod.upcomingPaise) } : {};
 
   const statCards = METRICS.filter((m) => kpis.indexOf(m[0]) >= 0 && m[2] === 'Card').map((m, i) => ({
     id: m[0], label: m[0] === 'order_volume' && live ? "Order volume · today" : m[1], value: liveValues[m[0]] ?? m[4],
-    delta: live ? (m[0] === 'order_volume' ? `${shortRange}: ${live.metrics.orderVolume}` : shortRange) : m[5], sub: live ? (m[0] === 'order_volume' ? 'by order date' : 'selected period') : m[7], seed: i * 2 + 1,
+    delta: live ? (m[0] === 'cod_upcoming' ? '' : m[0] === 'order_volume' ? `${shortRange}: ${live.metrics.orderVolume}` : shortRange) : m[5], sub: live ? (m[0] === 'cod_upcoming' ? `${formatMoney(live.queue?.cod.inflightPaise)} still in transit` : m[0] === 'order_volume' ? 'by order date' : 'selected period') : m[7], seed: i * 2 + 1,
     deltaColor: m[6] === 'up' ? T.GREEN : m[6] === 'down' ? T.RED : T.MUTE,
     sparkPath: spark(i * 2 + 1),
     sparkColor: m[6] === 'up' ? T.ACCENT : m[6] === 'down' ? '#D9A79E' : '#BDB8AC',
@@ -96,7 +106,8 @@ export default function DashboardContent({ mobile, narrow, phone }) {
       <ScenicBackdrop />
 
       <div style={{ position: 'relative', zIndex: 1, maxWidth: '100%', margin: '0 auto' }}>
-      <div style={{ padding: `${phone ? 14 : 22}px ${pagePad}px 6px`, display: 'grid', gridTemplateColumns: statCols, gap: phone ? 10 : 14 }}>
+      <div style={{ padding: `${phone ? 14 : 22}px ${pagePad}px 0`, fontSize: phone ? 18 : 22, fontWeight: 700, color: T.TEXT }}>Welcome{firstName ? ` ${me.full_name.trim()}` : ''}</div>
+      <div style={{ padding: `${phone ? 14 : 14}px ${pagePad}px 6px`, display: 'grid', gridTemplateColumns: statCols, gap: phone ? 10 : 14 }}>
         {statCards.map((c) => (
           <DashboardStatCard key={c.id} card={c} hidden={expandedCardId === c.id} onOpen={setExpandedCardId} />
         ))}
