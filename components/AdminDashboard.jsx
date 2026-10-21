@@ -18,7 +18,8 @@ function Card({ children, style = {} }) {
 function CardTitle({ children }) {
   return <div style={{ height: 52, padding: '0 19px', display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--ops-divider)', fontSize: 14, fontWeight: 750, color: 'var(--ops-heading)' }}>{children}</div>;
 }
-const Empty = ({ children = 'No data for this period.' }) => <div style={{ padding: '30px 19px', color: 'var(--ops-subtle)', fontSize: 12.5 }}>{children}</div>;
+const ROW = { width: '100%', display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', padding: '10px 0', border: 0, borderBottom: '1px solid var(--ops-divider)', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: 'var(--ops-text)' };
+const Empty =({ children = 'No data for this period.' }) => <div style={{ padding: '30px 19px', color: 'var(--ops-subtle)', fontSize: 12.5 }}>{children}</div>;
 
 // Solid-colour daily bars. Each series draws side by side; hover shows the exact day figure.
 function DailyBars({ rows, series, format = n }) {
@@ -53,13 +54,15 @@ export default function AdminDashboard({ mobile, phone }) {
   const { nav, theme } = useAppState();
   const dark = theme === 'dark';
   const [days, setDays] = useState(30);
-  const [live, setLive] = useState(null); const [failed, setFailed] = useState(false); const [sellers, setSellers] = useState(null);
+  const [today] = useState(() => new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState(() => new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10)); const [to, setTo] = useState(today);
+  const custom = days === 0;
+  const [live, setLive] = useState(null); const [failed, setFailed] = useState(false);
   useEffect(() => {
     let on = true;
-    adminApi.dashboardAnalytics(days).then((x) => { if (on) { setLive(x); setFailed(false); } }).catch(() => { if (on) setFailed(true); });
+    adminApi.dashboardAnalytics(custom ? 30 : days, custom ? { from, to } : null).then((x) => { if (on) { setLive(x); setFailed(false); } }).catch(() => { if (on) setFailed(true); });
     return () => { on = false; };
-  }, [days]);
-  useEffect(() => { let on = true; adminApi.sellers({ limit: 5 }).then((d) => on && setSellers(d.items)).catch(() => on && setSellers([])); return () => { on = false; }; }, []);
+  }, [days, custom, from, to]);
 
   const m = live?.metrics || {};
   const stats = live ? [
@@ -82,10 +85,18 @@ export default function AdminDashboard({ mobile, phone }) {
   const couriers = live?.courierMix || [];
   const pad = phone ? 13 : mobile ? 18 : 28;
   const cols = (count) => (mobile ? '1fr' : `repeat(${count},minmax(0,1fr))`);
-  const select = <select aria-label="Date range" value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ height: 36, padding: '0 11px', border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer' }}>{[[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days']].map(([d, l]) => <option key={d} value={d}>{l}</option>)}</select>;
+  const INPUT = { height: 36, padding: '0 11px', border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 12.5, fontWeight: 650 };
+  const select = <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+    {custom && <>
+      <input type="date" aria-label="From date" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} style={INPUT} />
+      <span style={{ color: 'var(--ops-muted)', fontSize: 12.5 }}>to</span>
+      <input type="date" aria-label="To date" value={to} min={from} max={today} onChange={(e) => e.target.value && setTo(e.target.value)} style={INPUT} />
+    </>}
+    <select aria-label="Date range" value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ ...INPUT, cursor: 'pointer' }}>{[[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [0, 'Custom range']].map(([d, l]) => <option key={d} value={d}>{l}</option>)}</select>
+  </div>;
 
   return (
-    <div style={{ padding: `${phone ? 22 : 34}px ${pad}px 46px`, maxWidth: '100%', margin: '0 auto' }}>
+    <div style={{ padding: `${phone ? 22 : 34}px ${pad}px 46px`, width: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 18, marginBottom: 26, flexWrap: 'wrap' }}>
         <div><div style={{ fontSize: 29, lineHeight: 1.05, fontWeight: 780, letterSpacing: '-.035em', color: 'var(--ops-heading)' }}>Platform dashboard</div><div style={{ marginTop: 8, fontSize: 14, color: 'var(--ops-muted)' }}>Live view of sellers, couriers and finance across the platform.</div></div>
         {select}
@@ -95,7 +106,7 @@ export default function AdminDashboard({ mobile, phone }) {
       {!live && !failed && <Card style={{ padding: 40, textAlign: 'center', color: 'var(--ops-muted)' }}>Loading live platform data…</Card>}
 
       {live && <>
-        <section style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2,minmax(0,1fr))' : 'repeat(auto-fit,minmax(150px,1fr))', gap: 14 }}>
+        <section style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2,minmax(0,1fr))' : 'repeat(auto-fit,minmax(128px,1fr))', gap: 12 }}>
           {stats.map(([icon, label, value, sub, bg, color], i) => <Stat key={label} icon={icon} label={label} value={value} sub={sub} bg={bg} color={color} dark={dark} index={i} />)}
         </section>
 
@@ -109,7 +120,7 @@ export default function AdminDashboard({ mobile, phone }) {
         </section>
 
         <section style={{ display: 'grid', gridTemplateColumns: cols(3), gap: 12, marginTop: 14 }}>
-          <Card><CardTitle>Shipment overview</CardTitle><DailyBars rows={live.trend || []} series={[{ key: 'orders', label: 'Orders', color: T.NAVY }, { key: 'delivered', label: 'Delivered', color: T.ACCENT }]} /></Card>
+          <Card><CardTitle>Shipment overview · packets</CardTitle><DailyBars rows={live.daily || []} series={[{ key: 'prepaid', label: 'Prepaid', color: T.NAVY }, { key: 'cod', label: 'COD', color: T.ACCENT }]} /></Card>
           <Card>
             <CardTitle>Shipments by status</CardTitle>
             {!statusRows.length ? <Empty /> : <div style={{ padding: '14px 18px', display: 'grid', gap: 9 }}>
@@ -126,18 +137,20 @@ export default function AdminDashboard({ mobile, phone }) {
           </Card>
         </section>
 
-        <section style={{ display: 'grid', gridTemplateColumns: cols(3), gap: 12, marginTop: 14 }}>
-          <Card><CardTitle>Revenue overview</CardTitle><DailyBars rows={live.daily || []} series={[{ key: 'revenuePaise', label: 'Freight booked', color: T.ACCENT }]} format={rupees} /></Card>
-          <Card><CardTitle>COD collection overview</CardTitle><DailyBars rows={live.daily || []} series={[{ key: 'codPaise', label: 'COD delivered', color: '#315F93' }]} format={rupees} /></Card>
-          <Card><CardTitle>NDR & RTO overview</CardTitle><DailyBars rows={live.daily || []} series={[{ key: 'ndr', label: 'NDR', color: '#B23A2B' }, { key: 'rto', label: 'RTO', color: '#8A5A00' }]} /></Card>
-        </section>
-
-        <section style={{ marginTop: 14 }}>
+        <section style={{ display: 'grid', gridTemplateColumns: cols(2), gap: 12, marginTop: 14 }}>
           <Card>
-            <CardTitle>Recent sellers</CardTitle>
-            {!sellers ? <Empty>Loading…</Empty> : !sellers.length ? <Empty>No sellers yet.</Empty> : <div style={{ padding: '4px 18px 8px' }}>{sellers.map((s) => (
-              <button key={s.id} type="button" onClick={() => nav('a-sellers')} style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', padding: '10px 0', border: 0, borderBottom: '1px solid var(--ops-divider)', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: 'var(--ops-text)' }}>
-                <span><b style={{ fontSize: 13 }}>{s.legal_name}</b><small style={{ display: 'block', color: 'var(--ops-muted)', marginTop: 2 }}>{s.email || '—'} · {s.nexgo_code}</small></span>
+            <CardTitle>Total pickup pending{live.pickupPending ? ` · ${n(live.pickupPending.total)}` : ''} <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: 'var(--ops-muted)' }}>seller wise</span></CardTitle>
+            {!live.pickupPending?.sellers.length ? <Empty>No pickups pending.</Empty> : <div style={{ padding: '4px 18px 8px' }}>{live.pickupPending.sellers.map((s) => (
+              <button key={s.id} type="button" onClick={() => nav('a-pickups')} style={ROW}>
+                <span><b style={{ fontSize: 13 }}>{s.name}</b><small style={{ display: 'block', color: 'var(--ops-muted)', marginTop: 2 }}>{s.code}{s.overdue ? ` · ${n(s.overdue)} overdue` : ''}</small></span>
+                <b style={{ fontSize: 15, color: s.overdue ? '#B23A2B' : 'var(--ops-heading)' }}>{n(s.count)}</b>
+              </button>))}</div>}
+          </Card>
+          <Card>
+            <CardTitle>Recent sign-ups</CardTitle>
+            {!live.recentSignups?.length ? <Empty>No sellers yet.</Empty> : <div style={{ padding: '4px 18px 8px' }}>{live.recentSignups.map((s) => (
+              <button key={s.id} type="button" onClick={() => nav('a-sellers')} style={ROW}>
+                <span><b style={{ fontSize: 13 }}>{s.legal_name}</b><small style={{ display: 'block', color: 'var(--ops-muted)', marginTop: 2 }}>{s.email || '—'} · {s.nexgo_code} · KYC {statusName(s.kyc_status)}</small></span>
                 <small style={{ color: 'var(--ops-subtle)' }}>{new Date(s.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</small>
               </button>))}</div>}
           </Card>

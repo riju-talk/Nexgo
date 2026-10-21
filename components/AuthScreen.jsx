@@ -92,7 +92,7 @@ export default function AuthScreen({ mode }) {
             <div style={{ fontSize: 32, lineHeight: 1.25, fontWeight: 600, letterSpacing: '-.015em' }}>Smarter, faster, easier shipping for your business.</div>
             <div style={{ fontSize: 13.5, color: '#8298B8', marginTop: 12, lineHeight: 1.6 }}>Compare live rates, book with any courier, and track every shipment in one console.</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 26 }}>
-              {['Delhivery', 'Blue Dart', 'Ekart', 'XpressBees', 'Ecom Express', 'Shadowfax'].map((c) => (
+              {['Delhivery', 'Blue Dart', 'Ekart', 'XpressBees', 'Shadowfax'].map((c) => (
                 <div key={c} style={{ fontSize: 11.5, fontWeight: 600, color: '#C7D2E2', border: '1px solid rgba(255,255,255,.16)', borderRadius: 20, padding: '5px 11px', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ width: 5, height: 5, borderRadius: 3, background: '#1b9fd6' }} />{c}
                 </div>

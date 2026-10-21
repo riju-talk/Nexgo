@@ -45,7 +45,7 @@ const summarize = async (client: Pool | PoolClient, q: Range, sellerId?: string)
     client.query<{ name: string; total: number; delivered: number }>(
       `SELECT cp.name, count(*)::int AS total, count(*) FILTER (WHERE sh.state = 'delivered')::int AS delivered
        FROM shipments sh JOIN courier_providers cp ON cp.id = sh.provider_id
-       WHERE ${inWindow('sh.created_at')} AND sh.state <> 'cancelled' ${alias('sh')} GROUP BY cp.name ORDER BY total DESC LIMIT 6`, args),
+       WHERE ${inWindow('sh.created_at')} AND sh.state <> 'cancelled' AND cp.name NOT ILIKE 'ecom%express%' ${alias('sh')} GROUP BY cp.name ORDER BY total DESC LIMIT 6`, args),
   ]);
   const by = (rows: { state: string; count: number }[]) => Object.fromEntries(rows.map((x) => [x.state, Number(x.count)]));
   const orderBy = by(orders.rows), shipmentBy = by(shipments.rows);
@@ -112,24 +112,37 @@ export async function analyticsRoutes(app: FastifyInstance) {
   app.get('/v1/admin/analytics/dashboard', { preHandler: requirePlatformAdmin }, async (request) => {
     const q = range.parse(request.query);
     const data = await summarize(db, q);
-    const [sellers, ndr, kyc, cod, daily] = await Promise.all([
+    const explicit = q.from && q.to;
+    const pending = `state IN ('booked','pickup_pending','pickup_scheduled')`;
+    const [sellers, ndr, kyc, cod, daily, pickups, pickupTotal, signups] = await Promise.all([
       db.query<{ value: number }>(`SELECT count(*)::int AS value FROM sellers WHERE state='active'`),
       db.query<{ value: number }>(`SELECT count(*)::int AS value FROM ndr_cases WHERE state = 'open'`),
       db.query<{ value: number }>(`SELECT count(*)::int AS value FROM seller_kyc WHERE status = 'pending_review'`),
       db.query<{ value: string }>(`SELECT COALESCE(sum(net_remitted_paise),0)::bigint AS value FROM cod_remittance_cycles WHERE status IN ('pending','approved')`),
-      // Per-day platform revenue (booked freight), delivered COD value and NDR / RTO counts for the same window.
-      db.query<{ day: string; revenue: string; cod: string; ndr: number; rto: number }>(
-        `WITH days AS (SELECT generate_series((now() ${IST})::date - ($1::int - 1), (now() ${IST})::date, interval '1 day')::date AS day)
+      // Packets (non-cancelled shipments) per day split by payment mode, for the same window as the stat cards.
+      db.query<{ day: string; prepaid: number; cod: number }>(
+        `WITH days AS (SELECT generate_series(COALESCE($1::date, (now() ${IST})::date - ($3::int - 1)), COALESCE($2::date, (now() ${IST})::date), interval '1 day')::date AS day)
          SELECT to_char(days.day,'DD Mon') AS day,
-           COALESCE((SELECT sum(sh.shipping_charge_paise) FROM shipments sh WHERE (sh.created_at ${IST})::date = days.day AND sh.state <> 'cancelled'),0)::text AS revenue,
-           COALESCE((SELECT sum(o.cod_amount_paise) FROM shipments sh JOIN orders o ON o.id = sh.order_id WHERE sh.state = 'delivered' AND o.payment_mode = 'cod' AND (COALESCE(sh.delivered_at, sh.created_at) ${IST})::date = days.day),0)::text AS cod,
-           (SELECT count(*) FROM shipments sh WHERE sh.state = 'ndr' AND (sh.created_at ${IST})::date = days.day)::int AS ndr,
-           (SELECT count(*) FROM shipments sh WHERE sh.state IN ('rto','rto_in_transit') AND (sh.created_at ${IST})::date = days.day)::int AS rto
-         FROM days ORDER BY days.day`, [q.days]),
+           (SELECT count(*) FROM shipments sh JOIN orders o ON o.id = sh.order_id WHERE (sh.created_at ${IST})::date = days.day AND sh.state <> 'cancelled' AND o.payment_mode = 'prepaid')::int AS prepaid,
+           (SELECT count(*) FROM shipments sh JOIN orders o ON o.id = sh.order_id WHERE (sh.created_at ${IST})::date = days.day AND sh.state <> 'cancelled' AND o.payment_mode = 'cod')::int AS cod
+         FROM days ORDER BY days.day`, [explicit ? q.from : null, explicit ? q.to : null, q.days]),
+      // Open pickups right now (not date-filtered), grouped by seller.
+      db.query<{ id: string; legal_name: string; nexgo_code: string; n: number; overdue: number }>(
+        `SELECT s.id, s.legal_name, s.nexgo_code, count(*)::int AS n,
+                count(*) FILTER (WHERE COALESCE(sh.pickup_deadline_at, sh.booked_at + interval '1 day') < now())::int AS overdue
+         FROM shipments sh JOIN sellers s ON s.id = sh.seller_id
+         WHERE sh.${pending} GROUP BY s.id, s.legal_name, s.nexgo_code ORDER BY n DESC, s.legal_name LIMIT 10`),
+      db.query<{ total: number }>(`SELECT count(*)::int AS total FROM shipments WHERE ${pending}`),
+      db.query(`SELECT s.id, s.legal_name, s.nexgo_code, s.created_at, COALESCE(k.status, 'unsubmitted') AS kyc_status, poc.email
+         FROM sellers s LEFT JOIN seller_kyc k ON k.seller_id = s.id
+         LEFT JOIN LATERAL (SELECT u.email FROM seller_memberships m JOIN users u ON u.id = m.user_id WHERE m.seller_id = s.id ORDER BY (m.role = 'owner') DESC, m.created_at LIMIT 1) poc ON true
+         ORDER BY s.created_at DESC LIMIT 6`),
     ]);
     return {
       ...data, activeSellers: sellers.rows[0].value, ndrOpen: ndr.rows[0].value, kycPending: kyc.rows[0].value, codPendingPaise: Number(cod.rows[0].value),
-      daily: daily.rows.map((r) => ({ day: r.day, revenuePaise: Number(r.revenue), codPaise: Number(r.cod), ndr: r.ndr, rto: r.rto })),
+      daily: daily.rows.map((r) => ({ day: r.day, prepaid: r.prepaid, cod: r.cod })),
+      pickupPending: { total: pickupTotal.rows[0].total, sellers: pickups.rows.map((r) => ({ id: r.id, name: r.legal_name, code: r.nexgo_code, count: r.n, overdue: r.overdue })) },
+      recentSignups: signups.rows,
     };
   });
 }

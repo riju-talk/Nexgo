@@ -20,7 +20,7 @@ function Btn({ children, onClick, disabled, tone, type = 'button' }) {
   return <button type={type} disabled={disabled} onClick={onClick} style={{ minHeight: 36, padding: '0 14px', borderRadius: 8, border: solid ? '1px solid var(--ac, #1b9fd6)' : '1px solid var(--ops-border)', background: solid ? 'var(--ac, #1b9fd6)' : 'var(--ops-surface)', color: solid ? '#fff' : tone === 'danger' ? '#B23A2B' : 'var(--ops-text)', fontSize: 13, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? .55 : 1, textAlign: 'left' }}>{children}</button>;
 }
 const Row = ({ k, v }) => <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '7px 0', fontSize: 13 }}><span style={{ color: 'var(--ops-muted)', flexShrink: 0 }}>{k}</span><b style={{ textAlign: 'right', wordBreak: 'break-word', fontWeight: 600 }}>{v ?? '—'}</b></div>;
-const Section = ({ heading, children, span }) => <section style={{ ...CARD, gridColumn: span ? `span ${span}` : undefined, minWidth: 0 }}><h3 style={{ margin: '0 0 8px', fontSize: 13.5, fontWeight: 700, color: 'var(--ops-heading)' }}>{heading}</h3>{children}</section>;
+const Section = ({ heading, children, full }) => <section style={{ ...CARD, gridColumn: full ? '1 / -1' : undefined, minWidth: 0 }}><h3 style={{ margin: '0 0 8px', fontSize: 13.5, fontWeight: 700, color: 'var(--ops-heading)' }}>{heading}</h3>{children}</section>;
 const Label = ({ children, hint }) => <label style={{ display: 'grid', gap: 5, fontSize: 12, color: 'var(--ops-muted)' }}><span>{children}</span>{hint}</label>;
 
 function Modal({ heading, onClose, children, wide }) {
@@ -190,7 +190,7 @@ function Reports({ sellerId }) {
   const current = res?.key === key ? res : null;
   const { perf, profit, error } = current || {};
   const stat = (k, v, sub) => <div style={{ padding: '10px 12px', border: '1px solid var(--ops-divider)', borderRadius: 10 }}><div style={{ fontSize: 11, color: 'var(--ops-muted)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{k}</div><div style={{ fontSize: 20, fontWeight: 700, marginTop: 3 }}>{v}</div>{sub && <div style={{ fontSize: 11.5, color: 'var(--ops-muted)', marginTop: 2 }}>{sub}</div>}</div>;
-  return <Section heading="Performance & profitability" span={3}>
+  return <Section heading="Performance & profitability" full>
     <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12, fontSize: 12.5, color: 'var(--ops-muted)' }}>
       <span>Booked between</span><input type="date" style={{ ...FIELD, width: 150 }} value={from} max={to} onChange={(e) => setFrom(e.target.value)} /><span>and</span><input type="date" style={{ ...FIELD, width: 150 }} value={to} min={from} max={today} onChange={(e) => setTo(e.target.value)} />
     </div>
@@ -219,7 +219,8 @@ export default function AdminSellerProfile({ sellerId }) {
   if (!p) return <div style={{ ...CARD, minHeight: 240, display: 'grid', placeItems: 'center', color: 'var(--ops-muted)' }}>Loading seller profile</div>;
   const owner = p.owner_name ? `${p.owner_name} (${p.owner_email})` : p.owner_email;
   return (
-    <div style={{ padding: '18px 24px 56px', display: 'grid', gap: 16, maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ padding: '18px 24px 56px', display: 'grid', gap: 16, width: '100%', boxSizing: 'border-box' }}>
+      <style>{'.ap-grid{display:grid;gap:16px;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}@media(max-width:1100px){.ap-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:680px){.ap-grid{grid-template-columns:minmax(0,1fr)}}'}</style>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '20px 24px', borderRadius: 14, background: 'var(--ac, #1b9fd6)', color: '#fff' }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 700 }}>{p.legal_name}</div>
@@ -232,7 +233,7 @@ export default function AdminSellerProfile({ sellerId }) {
         <button type="button" onClick={() => router.push('/admin/sellers')} style={{ minHeight: 36, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,.7)', background: 'transparent', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>← All sellers</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+      <div className="ap-grid">
         <Section heading="+ Actions"><div style={{ display: 'grid', gap: 8 }}>
           <Btn onClick={() => setModal('password')}>Update password</Btn>
           <Btn onClick={() => setModal('assign')}>Assign rate card</Btn>
