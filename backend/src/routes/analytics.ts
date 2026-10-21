@@ -109,8 +109,10 @@ export async function analyticsRoutes(app: FastifyInstance) {
       return { rescheduled: r.rowCount ?? 0, message: 'Re-scheduled for tomorrow' };
     });
   });
-  app.get('/v1/admin/analytics/dashboard', { preHandler: requirePlatformAdmin }, async (request) => {
+  app.get('/v1/admin/analytics/dashboard', { preHandler: requirePlatformAdmin }, async (request, reply) => {
     const q = range.parse(request.query);
+    // A custom range needs both dates, in order, at most a year apart (it drives a per-day series).
+    if (!q.from !== !q.to || (q.from && q.to && (q.from > q.to || (Date.parse(q.to) - Date.parse(q.from)) / 864e5 > 365))) return reply.code(400).send({ error: 'INVALID_DATE_RANGE', message: 'Pick a from and to date up to 366 days apart.' });
     const data = await summarize(db, q);
     const explicit = q.from && q.to;
     const pending = `state IN ('booked','pickup_pending','pickup_scheduled')`;

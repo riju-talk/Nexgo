@@ -19,7 +19,7 @@ function CardTitle({ children }) {
   return <div style={{ height: 52, padding: '0 19px', display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--ops-divider)', fontSize: 14, fontWeight: 750, color: 'var(--ops-heading)' }}>{children}</div>;
 }
 const ROW = { width: '100%', display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', padding: '10px 0', border: 0, borderBottom: '1px solid var(--ops-divider)', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: 'var(--ops-text)' };
-const Empty =({ children = 'No data for this period.' }) => <div style={{ padding: '30px 19px', color: 'var(--ops-subtle)', fontSize: 12.5 }}>{children}</div>;
+const Empty = ({ children = 'No data for this period.' }) => <div style={{ padding: '30px 19px', color: 'var(--ops-subtle)', fontSize: 12.5 }}>{children}</div>;
 
 // Solid-colour daily bars. Each series draws side by side; hover shows the exact day figure.
 function DailyBars({ rows, series, format = n }) {
@@ -54,8 +54,9 @@ export default function AdminDashboard({ mobile, phone }) {
   const { nav, theme } = useAppState();
   const dark = theme === 'dark';
   const [days, setDays] = useState(30);
-  const [today] = useState(() => new Date().toISOString().slice(0, 10));
-  const [from, setFrom] = useState(() => new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10)); const [to, setTo] = useState(today);
+  const istDay = (offsetDays = 0) => new Date(Date.now() + 19800000 - offsetDays * 864e5).toISOString().slice(0, 10); // India date, matching the API's day boundaries
+  const [today] = useState(() => istDay());
+  const [from, setFrom] = useState(() => istDay(29)); const [to, setTo] = useState(today);
   const custom = days === 0;
   const [live, setLive] = useState(null); const [failed, setFailed] = useState(false);
   useEffect(() => {
