@@ -255,7 +255,7 @@ export default function AdminSellerProfile({ sellerId }) {
         <Section heading="POC details"><div id="poc-details" /><PocEditor key={p.updated_at} sellerId={sellerId} p={p} onSaved={load} /></Section>
         <Section heading="Address"><div style={{ fontSize: 13, lineHeight: 1.5 }}>{p.registered_address || <span style={{ color: 'var(--ops-muted)' }}>Not submitted</span>}</div></Section>
         <Section heading="Bank details">
-          <Row k="Account holder" v={p.bank_account_holder} /><Row k="Account no." v={p.has_bank_account ? 'On file (encrypted)' : null} /><Row k="IFSC" v={p.bank_ifsc} />
+          <Row k="Bank" v={p.bank_name} /><Row k="Account holder" v={p.bank_account_holder} /><Row k="Account no." v={p.has_bank_account ? 'On file (encrypted)' : null} /><Row k="IFSC" v={p.bank_ifsc} /><Row k="Type" v={p.bank_account_type && title(p.bank_account_type)} />
         </Section>
         <Section heading="Business">
           <Row k="GSTIN" v={p.gst_applicable === false ? 'Not applicable' : p.gstin} /><Row k="PAN" v={p.pan} /><Row k="Entity type" v={p.entity_type && title(p.entity_type)} /><Row k="Brand name" v={p.legal_name} />

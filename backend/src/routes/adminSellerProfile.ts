@@ -89,13 +89,14 @@ export async function adminSellerProfileRoutes(app: FastifyInstance) {
               owner.full_name AS owner_name, owner.email AS owner_email,
               (SELECT w.phone FROM warehouses w WHERE w.seller_id = s.id ORDER BY w.created_at LIMIT 1) AS mobile,
               COALESCE(k.status, 'unsubmitted') AS kyc_status, k.gstin, k.gst_applicable, k.pan, k.pan_holder_name, k.aadhaar_last4, k.entity_type, k.registered_address,
-              k.bank_account_holder, k.bank_ifsc, (k.bank_account_number_encrypted IS NOT NULL) AS has_bank_account, k.submitted_at, k.reviewed_at, rv.full_name AS kyc_reviewed_by,
+              k.bank_account_holder, COALESCE(k.bank_ifsc, ba.ifsc_code) AS bank_ifsc, ba.bank_name, ba.account_type AS bank_account_type, (k.bank_account_number_encrypted IS NOT NULL OR ba.id IS NOT NULL) AS has_bank_account, k.submitted_at, k.reviewed_at, rv.full_name AS kyc_reviewed_by,
               (SELECT ${BALANCE_SQL} FROM wallet_entries e WHERE e.seller_id = s.id) AS wallet_balance_paise,
               (SELECT count(*)::int FROM orders o WHERE o.seller_id = s.id) AS order_count,
               (SELECT count(*)::int FROM shipments sh WHERE sh.seller_id = s.id) AS shipment_count
        FROM sellers s
        LEFT JOIN seller_kyc k ON k.seller_id = s.id
        LEFT JOIN users rv ON rv.id = k.reviewed_by
+       LEFT JOIN LATERAL (SELECT b.id, b.bank_name, b.account_type, b.ifsc_code FROM bank_accounts b WHERE b.seller_id = s.id AND b.is_active ORDER BY b.is_primary DESC, b.created_at LIMIT 1) ba ON true
        LEFT JOIN LATERAL (SELECT u.full_name, u.email FROM seller_memberships m JOIN users u ON u.id = m.user_id WHERE m.seller_id = s.id ORDER BY (m.role = 'owner') DESC, m.created_at LIMIT 1) owner ON true
        WHERE s.id = $1`,
       [sellerId],
