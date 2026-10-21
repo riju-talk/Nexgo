@@ -9,7 +9,9 @@ function seller(request: FastifyRequest) { if (!request.principal) throw Object.
 
 // Reporting day boundaries are India time, whatever the database session timezone is.
 const IST = `AT TIME ZONE 'Asia/Kolkata'`;
-const range = z.object({ days: z.coerce.number().int().min(1).max(365).default(30), from: z.string().date().optional(), to: z.string().date().optional() });
+const range = z.object({ days: z.coerce.number().int().min(1).max(365).default(30), from: z.string().date().optional(), to: z.string().date().optional() })
+  .refine((v) => !v.from === !v.to, { message: 'Send both from and to, or neither' })
+  .refine((v) => !v.from || !v.to || (v.from <= v.to && (Date.parse(v.to) - Date.parse(v.from)) / 864e5 <= 365), { message: 'Pick a from and to date up to 366 days apart, with from on or before to' });
 type Range = z.infer<typeof range>;
 
 // Dashboard stage cards: awaiting-pickup shipments count as "pickup scheduled", every RTO sub-state as RTO.
