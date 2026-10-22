@@ -1,15 +1,18 @@
 'use client';
 
 import Barcode from 'react-barcode';
+import { routingOf } from './exportRows';
 import { joinParts, longDate, rs } from './format';
 
 // 4 × 6 inch thermal shipping label. Black on white, no colour, so it prints cleanly on any label printer.
-// `d` is one entry of GET /v1/shipments/documents.
-export default function LabelSheet({ d }) {
+// `d` is one entry of GET /v1/shipments/documents; `cfg` is the saved Label settings (what the seller chose to hide).
+export default function LabelSheet({ d, cfg = {} }) {
   const cod = d.payment_mode === 'cod';
   const dims = d.package_length_mm ? `${(d.package_length_mm / 10).toFixed(2)} X ${(d.package_width_mm / 10).toFixed(2)} X ${(d.package_height_mm / 10).toFixed(2)}` : '—';
   const items = d.items || [];
   const invoiceNo = d.invoice_seq ? `#${d.invoice_seq}` : d.order_number;
+  const routing = routingOf(d);
+  const showContact = !cfg.hideSellerMobile || (d.warehouse_email && !cfg.hideSellerAddress);
   return (
     <section className="doc-label">
       <div className="lb-to">
@@ -42,20 +45,34 @@ export default function LabelSheet({ d }) {
         </div>
       </div>
 
-      <table className="lb-items">
-        <thead><tr><th style={{ width: '26%' }}>SKU</th><th>Item Name</th><th style={{ width: '12%' }}>Qty.</th></tr></thead>
-        <tbody>{items.map((i, n) => <tr key={n}><td>{i.sku === 'CUSTOM' ? '' : i.sku}</td><td>{i.name}</td><td className="c">{i.quantity}</td></tr>)}</tbody>
-      </table>
+      {routing && <div className="lb-routing"><span>ROUTING</span><b>{routing}</b></div>}
 
-      <div className="lb-block">
-        <b>Pickup and Return Address:</b>
-        <b className="lb-sub">{d.warehouse_name}</b>
-        <span>{joinParts(d.wh_line_1, d.wh_line_2, d.wh_city, d.wh_state)} - {d.wh_pincode}</span>
-      </div>
-      <div className="lb-block">
-        <b>For any query please contact:</b>
-        <span><b>Mobile:</b> {d.warehouse_phone} {d.warehouse_email && <><b>Email:</b> {d.warehouse_email}</>}</span>
-      </div>
+      {!cfg.hideProductDetails && (
+        <table className="lb-items">
+          <thead><tr><th style={{ width: '26%' }}>SKU</th><th>Item Name</th><th style={{ width: '12%' }}>Qty.</th></tr></thead>
+          <tbody>{items.map((i, n) => <tr key={n}><td>{i.sku === 'CUSTOM' ? '' : i.sku}</td><td>{i.name}</td><td className="c">{i.quantity}</td></tr>)}</tbody>
+        </table>
+      )}
+
+      {!cfg.hideSellerAddress && (
+        <div className="lb-block">
+          <b>Pickup and Return Address:</b>
+          {!cfg.hideCompanyName && <b className="lb-sub">{d.warehouse_name}</b>}
+          <span>{joinParts(d.wh_line_1, d.wh_line_2, d.wh_city, d.wh_state)} - {d.wh_pincode}</span>
+        </div>
+      )}
+      {(!cfg.hideCompanyName || (!cfg.hideGst && d.seller_gstin)) && (
+        <div className="lb-block">
+          {!cfg.hideCompanyName && <span><b>Sold by:</b> {d.seller_name}</span>}
+          {!cfg.hideGst && d.seller_gstin && <span><b>GSTIN:</b> {d.seller_gstin}</span>}
+        </div>
+      )}
+      {showContact && (
+        <div className="lb-block">
+          <b>For any query please contact:</b>
+          <span>{!cfg.hideSellerMobile && <><b>Mobile:</b> {d.warehouse_phone} </>}{d.warehouse_email && !cfg.hideSellerAddress && <><b>Email:</b> {d.warehouse_email}</>}</span>
+        </div>
+      )}
       <div className="lb-foot">
         This is computer generated document, hence does not required signature.<br />
         <b>Note:</b> All matters shall be handled as per the Seller&apos;s Agreement and T&amp;C. Goods once sold will only be taken back or exchanged as per the store&apos;s exchange/return policy.

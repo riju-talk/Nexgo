@@ -121,6 +121,21 @@ export async function invoiceRoutes(app: FastifyInstance) {
     }));
   });
 
+  // The shipments an invoice was raised for (same rule the generator uses: not cancelled, booked inside the period), for the Excel / CSV download.
+  app.get('/v1/seller/invoices/:invoiceId/lines', { preHandler: requireSeller }, async (request) => {
+    const p = principal(request);
+    const invoiceId = z.string().uuid().parse((request.params as { invoiceId: string }).invoiceId);
+    return withSellerTransaction(p.sellerId, async (client) => {
+      const invoice = (await client.query('SELECT id, invoice_number, period_start, period_end, subtotal_paise, gst_paise, total_paise, shipment_count, status, issued_at FROM invoices WHERE id=$1 AND seller_id=$2', [invoiceId, p.sellerId])).rows[0];
+      if (!invoice) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
+      const lines = (await client.query(
+        `SELECT s.awb, s.booked_at, o.order_number, o.payment_mode, cp.name AS courier_name, cs.display_name AS service_name, s.chargeable_weight_g, s.shipping_charge_paise
+           FROM shipments s JOIN orders o ON o.id=s.order_id JOIN courier_providers cp ON cp.id=s.provider_id JOIN courier_services cs ON cs.id=s.service_id
+          WHERE s.seller_id=$1 AND s.state <> 'cancelled' AND s.booked_at::date BETWEEN $2 AND $3 ORDER BY s.booked_at, s.awb LIMIT 20000`, [p.sellerId, invoice.period_start, invoice.period_end])).rows;
+      return { invoice, lines };
+    });
+  });
+
   app.get('/v1/seller/invoices/:invoiceId/download', { preHandler: requireSeller }, async (request, reply) => {
     if (!config.STORAGE_ENABLED) return reply.code(501).send({ error: 'FILE_STORAGE_NOT_CONNECTED', message: 'File storage is not connected yet; this will be available soon.' });
     const p = principal(request);

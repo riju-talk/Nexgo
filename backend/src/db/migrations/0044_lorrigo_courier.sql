@@ -3,6 +3,8 @@
 -- until an admin gives that seller access and a rate card for these services, so no real bookings can happen by accident.
 ALTER TABLE courier_services ADD COLUMN external_service_id text;
 ALTER TABLE shipments ADD COLUMN provider_shipment_id text;
+-- The storefront fulfilment created when tracking was pushed (Shopify), so cancelling the shipment can cancel it there too.
+ALTER TABLE shipments ADD COLUMN channel_fulfillment_id text;
 
 -- One Lorrigo pickup address (hub) per NEXGO warehouse, created on the first booking from that warehouse.
 CREATE TABLE courier_pickup_hubs (

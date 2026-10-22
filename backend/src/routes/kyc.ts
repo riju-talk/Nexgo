@@ -18,7 +18,7 @@ const kycBase = z.object({
   panHolderName: z.string().trim().min(2).max(150).optional().or(z.literal('').transform(() => undefined)),
   // The full Aadhaar number is validated here but only its last 4 digits are ever stored.
   aadhaarNumber: z.string().trim().transform((v) => v.replace(/[\s-]/g, '')).pipe(z.string().regex(/^[2-9][0-9]{11}$/, 'Enter a valid 12-digit Aadhaar number')),
-  entityType: z.enum(['proprietorship', 'partnership', 'private_limited', 'llp', 'public_limited']),
+  entityType: z.enum(['individual', 'proprietorship', 'partnership', 'private_limited', 'llp', 'public_limited']),
   registeredAddress: z.string().trim().min(10).max(500),
   bankAccountHolder: z.string().trim().min(2).max(150),
   bankAccountNumber: z.string().trim().regex(/^[0-9]{9,18}$/, 'Enter a valid bank account number'),

@@ -9,7 +9,7 @@ import { storage } from '../lib/storage.js';
 import { requireSeller } from './seller.js';
 
 const IMAGE_ONLY = ['logo', 'signature'];
-const PURPOSES = ['logo', 'signature', 'kyc_pan', 'kyc_aadhaar', 'kyc_gst', 'kyc_bank'] as const;
+const PURPOSES = ['logo', 'signature', 'kyc_pan', 'kyc_aadhaar', 'kyc_aadhaar_front', 'kyc_aadhaar_back', 'kyc_gst', 'kyc_bank'] as const;
 const MAX_BYTES = 3 * 1024 * 1024;
 const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'application/pdf': 'pdf' };
 const SIGNED_URL_SECONDS = 300;

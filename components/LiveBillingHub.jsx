@@ -22,7 +22,40 @@ const CODE_STATUS = { remitted: ['Paid', T.GREEN], approved: ['Approved', '#3877
 const SHIP_STATUS_COLOR = (s) => (s === 'delivered' ? T.GREEN : s === 'cancelled' ? T.RED : s === 'ndr' || s === 'rto' ? T.AMBER : '#3877fc');
 const dash = <span style={{ color: T.TEXT_MUTED }}>–</span>;
 const money = (paise) => (Number(paise) ? inr(paise) : dash);
-const soon = (showToast) => () => showToast('Document download is coming soon. It needs file storage, which is not connected yet.');
+// Statement / invoice downloads: Excel and CSV are built from the API's line data (always available); the PDF copy is used when the server has one.
+const rupee = (paise) => Math.round(Number(paise || 0)) / 100;
+const fileSafe = (v) => String(v || 'document').replace(/[^A-Za-z0-9._-]+/g, '-');
+async function saveInvoice(invoice, format) {
+  const { invoice: inv, lines } = await apiFetch(`/v1/seller/invoices/${invoice.id}/lines`);
+  const rows = [
+    ['Invoice number', inv.invoice_number], ['Period', `${dayText(inv.period_start)} to ${dayText(inv.period_end)}`], ['Status', titleCase(inv.status)], ['Shipments', inv.shipment_count],
+    ['Subtotal (INR)', rupee(inv.subtotal_paise)], ['GST 18% (INR)', rupee(inv.gst_paise)], ['Invoice amount (INR)', rupee(inv.total_paise)], [],
+    ['#', 'AWB', 'Booked on', 'Order', 'Courier', 'Service', 'Payment', 'Weight (kg)', 'Shipping charge excl. GST (INR)'],
+    ...lines.map((l, i) => [i + 1, l.awb, dayText(l.booked_at), l.order_number, l.courier_name, l.service_name, l.payment_mode === 'cod' ? 'COD' : 'Prepaid', Number(l.chargeable_weight_g || 0) / 1000, rupee(l.shipping_charge_paise)]),
+  ];
+  await saveRows(rows, `invoice-${fileSafe(inv.invoice_number)}`, format, 'Invoice');
+}
+async function saveCodStatement(cycle, no, format) {
+  const { cycle: c, lines } = await apiFetch(`/v1/seller/cod-remittances/${cycle.id}/lines`);
+  const rows = [
+    ['Remittance ID', no], ['Cycle', `${dayText(c.cycle_start)} to ${dayText(c.cycle_end)}`], ['Status', titleCase(c.status)], ['Shipments', c.shipment_count],
+    ['COD collected (INR)', rupee(c.cod_collected_paise)], ['Freight deducted (INR)', rupee(c.charges_deducted_paise)], ['Net remittance (INR)', rupee(c.net_remitted_paise)], ['Bank reference', c.bank_reference || ''], [],
+    ['#', 'AWB', 'Delivered on', 'Order', 'Customer', 'Courier', 'COD collected (INR)', 'Freight (INR)'],
+    ...lines.map((l, i) => [i + 1, l.awb, dayText(l.delivered_on), l.order_number, l.customer_name, l.courier_name, rupee(l.cod_amount_paise), rupee(l.shipping_charge_paise)]),
+  ];
+  await saveRows(rows, `cod-statement-${fileSafe(no)}`, format, 'COD statement');
+}
+async function openInvoicePdf(invoice) {
+  const x = await apiFetch(`/v1/seller/invoices/${invoice.id}/download`);
+  if (x?.status === 'ready' && x.downloadUrl) { window.open(x.downloadUrl, '_blank', 'noopener'); return true; }
+  return false;
+}
+// Small Excel / CSV (and optional PDF) download buttons for one row; failures are reported instead of failing silently.
+function RowDownloads({ run, pdf }) {
+  const { showToast } = useAppState(); const [busy, setBusy] = useState('');
+  const go = (what, fn) => async () => { setBusy(what); try { const ok = await fn(); if (ok === false) showToast('The PDF copy is not ready yet. Download the Excel or CSV instead.', 'error'); } catch (e) { showToast(e?.status === 501 ? 'The PDF copy is not available yet. Download the Excel or CSV instead.' : e?.message || 'Download failed', 'error'); } finally { setBusy(''); } };
+  return <span style={{ display: 'inline-flex', gap: 6 }}><Btn small disabled={!!busy} onClick={go('xlsx', () => run('xlsx'))}>{busy === 'xlsx' ? '…' : 'Excel'}</Btn><Btn small disabled={!!busy} onClick={go('csv', () => run('csv'))}>{busy === 'csv' ? '…' : 'CSV'}</Btn>{pdf && <Btn small disabled={!!busy} onClick={go('pdf', pdf)}>{busy === 'pdf' ? '…' : 'PDF'}</Btn>}</span>;
+}
 
 function CodTab() {
   const { showToast } = useAppState();
@@ -34,7 +67,7 @@ function CodTab() {
         { h: 'Status', cell: (r) => { const [l, c] = CODE_STATUS[r.status] || [titleCase(r.status), T.TEXT]; return <Pill color={c}>{l}</Pill>; } },
         { h: 'Due date (D+N)', cell: (r) => dayText(r.due_date) }, { h: 'Payment date', cell: (r) => dayText(r.payment_date) }, { h: 'Freight deductions', cell: (r) => money(r.freight_deduction_paise) },
         { h: 'Wallet adjustment', cell: (r) => (Number(r.wallet_offset_paise) ? <span style={{ color: T.AMBER, fontWeight: 700 }}>−{inr(r.wallet_offset_paise)}</span> : dash) }, { h: 'Remittance amount', cell: (r) => <b>{inr(r.payout_paise ?? r.remittance_paise)}</b> }, { h: 'Payment ref', cell: (r) => r.bank_reference || dash }, { h: 'Remark', cell: (r) => `${r.shipment_count} shipment${r.shipment_count === 1 ? '' : 's'} · ${dayText(r.cycle_start)} – ${dayText(r.cycle_end)}` },
-        { h: 'Download', cell: () => <Btn small onClick={soon(showToast)}>⤓</Btn> },
+        { h: 'Download statement', cell: (r) => <RowDownloads run={(fmt) => saveCodStatement(r, r.remittance_no, fmt)} /> },
       ]}
       exportColumns={[
         { h: 'Remittance ID', value: (r) => r.remittance_no }, { h: 'Cycle start', value: (r) => r.cycle_start?.slice(0, 10) }, { h: 'Cycle end', value: (r) => r.cycle_end?.slice(0, 10) }, { h: 'Shipments', value: (r) => r.shipment_count },
@@ -122,7 +155,7 @@ function InvoiceTab() {
           columns={[
             { h: 'Invoice no. #', cell: (r) => <b style={{ fontFamily: T.MONO }}>{r.invoice_number}</b> }, { h: 'Service type', cell: () => 'Shipment' }, { h: 'Invoice date', cell: (r) => dayText(r.issued_at || r.period_end) },
             { h: 'Invoice period', cell: (r) => period(r) }, { h: 'Shipments', cell: (r) => r.shipment_count }, { h: 'GST', cell: (r) => inr(r.gst_paise) }, { h: 'Invoice amount', cell: (r) => <b>{inr(r.total_paise)}</b> },
-            { h: 'Status', cell: (r) => <Pill color={r.status === 'issued' ? T.GREEN : T.AMBER}>{titleCase(r.status)}</Pill> }, { h: 'Action', cell: () => <Btn small onClick={soon(showToast)}>⤓ PDF</Btn> },
+            { h: 'Status', cell: (r) => <Pill color={r.status === 'issued' ? T.GREEN : T.AMBER}>{titleCase(r.status)}</Pill> }, { h: 'Download', cell: (r) => <RowDownloads run={(fmt) => saveInvoice(r, fmt)} pdf={() => openInvoicePdf(r)} /> },
           ]} />
       </section>
     </div>

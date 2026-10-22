@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, reportsApi, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
+import { AwbLink } from './Kit';
 import { usePincode } from '@/lib/usePincode';
 import * as T from '@/lib/theme';
 import { FORMATS } from '@/lib/exportFile';
@@ -197,7 +198,7 @@ export default function LiveNdr({ mobile }) {
                     return (
                       <tr key={r.id} style={{ background: selected.has(r.id) ? '#3877fc08' : 'transparent' }}>
                         <td style={{ padding: '12px 14px', borderTop: `1px solid ${T.DIVIDER}` }}><input type="checkbox" aria-label={`Select ${r.order_number}`} checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></td>
-                        <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><b style={{ color: '#3877fc', fontSize: 13 }}>{r.order_number}</b><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED, fontSize: 11 }}>{r.nexgo_order_id}</small>{(r.tags || []).length > 0 && <small style={{ display: 'block', color: '#3877fc', fontSize: 11 }}>{r.tags.map((t) => `#${t}`).join(' ')}</small>}<small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED, fontSize: 11.5 }}>{r.awb}</small></td>
+                        <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><b style={{ color: T.TEXT, fontSize: 13 }}>{r.order_number}</b><span style={{ display: 'block' }}><AwbLink awb={r.awb} /></span><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED, fontSize: 11 }}>{r.nexgo_order_id}</small>{(r.tags || []).length > 0 && <small style={{ display: 'block', color: '#3877fc', fontSize: 11 }}>{r.tags.map((t) => `#${t}`).join(' ')}</small>}<small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED, fontSize: 11.5 }}>{r.awb}</small></td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}><b style={{ color: T.TEXT }}>{r.customer_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.customer_phone}</small><small style={{ color: T.TEXT_MUTED }}>{r.customer_city}, {r.customer_pincode}</small></td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}><b style={{ color: T.TEXT }}>{r.courier_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.service_name}</small></td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><Pill color="#9A3412" bg="#F5822018">{REASONS[r.ndr_reason] || r.ndr_reason}</Pill><small style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 11 }}>Attempt {r.attempt_number}/{r.max_attempts}</small></td>

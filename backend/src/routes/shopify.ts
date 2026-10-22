@@ -1,23 +1,36 @@
 import { randomBytes } from 'node:crypto';
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { db, withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
 import { encryptSecret } from '../lib/crypto.js';
-import { exchangeCode, fetchOrder, importOrder, loadChannel, normalizeShop, readState, redirectUri, registerWebhooks, shopOf, shopifyReady, signState, syncChannel, validOauthHmac, validWebhookHmac } from '../lib/shopify.js';
+import { ShopifyError, exchangeCode, fetchOrder, importOrder, loadChannel, normalizeShop, readState, redirectUri, registerWebhooks, shopOf, shopifyReady, signState, syncChannel, validOauthHmac, validWebhookHmac } from '../lib/shopify.js';
 import { requireSeller } from './seller.js';
 
 const NONCE_COOKIE = 'nx_shopify_nonce';
 const COOKIE_PATH = '/v1/channels/shopify';
 const back = (reply: FastifyReply, result: string, reason?: string) => reply.redirect(`${config.FRONTEND_ORIGIN}/channels/shopify?shopify=${result}${reason ? `&reason=${encodeURIComponent(reason)}` : ''}`);
 
+// These two routes are opened by the browser (a redirect to Shopify and back), so a missing session must lead the seller somewhere readable,
+// not to a raw JSON 401 page.
+async function sellerOrRedirect(request: FastifyRequest, reply: FastifyReply) {
+  try { await requireSeller(request); }
+  catch (e) {
+    const code = (e as { statusCode?: number }).statusCode;
+    if (code === 401) return back(reply, 'error', 'Your NEXGO session has ended. Sign in, then connect your store again.');
+    if (code === 403) return back(reply, 'error', (e as Error).message);
+    throw e;
+  }
+}
+
 export async function shopifyRoutes(app: FastifyInstance) {
   // Step 1: the seller types their shop domain; we send the browser to Shopify's consent screen.
-  app.get('/v1/channels/shopify/install', { preHandler: requireSeller }, async (request, reply) => {
-    if (!shopifyReady()) return reply.code(503).send({ error: 'SHOPIFY_NOT_CONFIGURED', message: 'Shopify is not configured on this server.' });
-    const { shop: raw } = z.object({ shop: z.string().trim().min(1).max(200) }).parse(request.query);
-    const shop = normalizeShop(raw); if (!shop) return back(reply, 'error', 'Enter your store address like my-store.myshopify.com');
+  app.get('/v1/channels/shopify/install', { preHandler: sellerOrRedirect }, async (request, reply) => {
+    if (!shopifyReady()) return back(reply, 'error', 'Shopify is not configured on this server yet. Please contact support.');
+    const parsed = z.object({ shop: z.string().trim().min(1).max(200) }).safeParse(request.query);
+    const shop = parsed.success ? normalizeShop(parsed.data.shop) : null;
+    if (!shop) return back(reply, 'error', 'Enter your store address like my-store.myshopify.com (the address ending in .myshopify.com, not your custom domain).');
     const nonce = randomBytes(16).toString('hex');
     reply.setCookie(NONCE_COOKIE, nonce, { httpOnly: true, sameSite: 'lax', secure: config.NODE_ENV === 'production', path: COOKIE_PATH, maxAge: 600 });
     const url = new URL(`https://${shop}/admin/oauth/authorize`);
@@ -26,13 +39,17 @@ export async function shopifyRoutes(app: FastifyInstance) {
   });
 
   // Step 2: Shopify sends the merchant back here with a one-time code, which we exchange for the store's access token.
-  app.get('/v1/channels/shopify/callback', { preHandler: requireSeller }, async (request, reply) => {
+  app.get('/v1/channels/shopify/callback', { preHandler: sellerOrRedirect }, async (request, reply) => {
     const x = request.principal!; const q = request.query as Record<string, string>;
-    reply.clearCookie(NONCE_COOKIE, { path: COOKIE_PATH });
-    if (!shopifyReady()) return back(reply, 'error', 'Shopify is not configured on this server.');
+    const nonce = request.cookies[NONCE_COOKIE]; reply.clearCookie(NONCE_COOKIE, { path: COOKIE_PATH });
+    if (!shopifyReady()) return back(reply, 'error', 'Shopify is not configured on this server yet. Please contact support.');
     if (q.error) return back(reply, 'error', q.error_description || 'Shopify authorisation was declined.');
     const state = readState(q.state ?? ''); const shop = normalizeShop(q.shop ?? '');
-    if (!validOauthHmac(q) || !state || !shop || state.h !== shop || state.s !== x.sellerId || state.n !== request.cookies[NONCE_COOKIE]) return back(reply, 'error', 'The Shopify request could not be verified. Start the connection again.');
+    if (!validOauthHmac(q) || !state || !shop || state.h !== shop || state.s !== x.sellerId) return back(reply, 'error', 'The Shopify request could not be verified, or it expired. Start the connection again.');
+    if (state.n !== nonce) { // signed for this seller and shop but the browser cookie is gone: a double click or a refresh of the callback
+      const done = await db.query("SELECT 1 FROM channel_connections WHERE seller_id=$1 AND provider='shopify' AND lower(store_url)=$2 AND state='connected' AND encrypted_credentials IS NOT NULL", [x.sellerId, `https://${shop}`]);
+      return done.rowCount ? back(reply, 'connected') : back(reply, 'error', 'The Shopify request could not be verified, or it expired. Start the connection again.');
+    }
     try {
       const token = await exchangeCode(shop, q.code); const enc = encryptSecret(token);
       const channelId = await withSellerTransaction(x.sellerId, async (c) => {
@@ -43,8 +60,10 @@ export async function shopifyRoutes(app: FastifyInstance) {
         await audit(c, { sellerId: x.sellerId, actorUserId: x.userId, action: 'channel.shopify_connected', targetType: 'channel', targetId: row.rows[0].id, requestId: request.id, metadata: { shop } });
         return row.rows[0].id;
       });
-      await registerWebhooks(shop, token).catch((e) => console.warn(`Shopify webhook registration failed: ${e.message}`));
-      await syncChannel(channelId, 2).catch((e) => console.warn(`Initial Shopify sync failed: ${e.message}`)); // the error is kept on the connection and shown in the Marketplace table
+      // Neither of these may undo the connection: the token is saved, so failures are recorded on the store row where the seller can see them.
+      const hooks = await registerWebhooks(shop, token).catch((e: Error) => ({ problems: [e.message] }));
+      if ('problems' in hooks && hooks.problems?.length) await db.query('UPDATE channel_connections SET last_error=$2 WHERE id=$1', [channelId, `Live order updates are not active (${hooks.problems[0]}). Use Sync now to import orders.`.slice(0, 500)]);
+      await syncChannel(channelId, 2).catch((e) => console.warn(`Initial Shopify sync failed: ${e.message}`)); // the error is already saved on the connection by syncChannel
       return back(reply, 'connected');
     } catch (e) {
       const clash = (e as { code?: string }).code === '23505';
@@ -53,7 +72,8 @@ export async function shopifyRoutes(app: FastifyInstance) {
   });
 
   // Order + lifecycle webhooks, signed by Shopify (HMAC of the raw body). Compliance topics are registered in the Dev Dashboard.
-  app.post('/v1/webhooks/shopify', { config: { rawBody: true } }, async (request, reply) => {
+  // Shopify removes a webhook subscription after repeated failures, so errors that retrying cannot fix are answered 200 and kept on the store row.
+  app.post('/v1/webhooks/shopify', { config: { rawBody: true, rateLimit: { max: 1200, timeWindow: '1 minute' } } }, async (request, reply) => {
     if (!shopifyReady()) return reply.code(503).send({ error: 'SHOPIFY_NOT_CONFIGURED' });
     if (!request.rawBody) return reply.code(400).send({ error: 'RAW_WEBHOOK_BODY_REQUIRED' });
     const h = request.headers; const header = (n: string) => (typeof h[n] === 'string' ? (h[n] as string) : undefined);
@@ -62,15 +82,24 @@ export async function shopifyRoutes(app: FastifyInstance) {
     if (!shop) return reply.code(400).send({ error: 'UNKNOWN_SHOP' });
     const row = (await db.query<{ id: string; seller_id: string }>("SELECT id,seller_id FROM channel_connections WHERE provider='shopify' AND lower(store_url)=$1", [`https://${shop}`])).rows[0];
     if (!row) return { accepted: true, ignored: 'store not connected' }; // already disconnected on our side: acknowledge so Shopify stops retrying
-    const body = (request.body ?? {}) as { admin_graphql_api_id?: string };
+    const body = (request.body && typeof request.body === 'object' ? request.body : {}) as { admin_graphql_api_id?: string; id?: number | string };
+    const keep = (message: string, auth = false) => db.query("UPDATE channel_connections SET last_error=$2,state=CASE WHEN $3::boolean THEN 'error'::integration_state ELSE state END,updated_at=now() WHERE id=$1", [row.id, message.slice(0, 500), auth]);
 
     if (topic === 'app/uninstalled') {
       await db.query("UPDATE channel_connections SET state='disconnected',encrypted_credentials=NULL,key_reference=NULL,last_error='The store uninstalled the NEXGO app. Connect it again to resume syncing.',updated_at=now() WHERE id=$1", [row.id]);
     } else if (topic === 'shop/redact') {
       await db.query('DELETE FROM channel_connections WHERE id=$1', [row.id]);
-    } else if (topic === 'orders/create' || topic === 'orders/cancelled') {
+    } else if (topic === 'orders/create' || topic === 'orders/cancelled' || topic === 'orders/updated') {
+      const gid = body.admin_graphql_api_id ?? (body.id ? `gid://shopify/Order/${body.id}` : null);
       const ch = await loadChannel(row.id);
-      if (ch && body.admin_graphql_api_id) { const node = await fetchOrder(shopOf(ch), ch.token, body.admin_graphql_api_id); if (node) await importOrder(ch, node); }
+      if (ch && gid) {
+        try { const node = await fetchOrder(shopOf(ch), ch.token, gid); if (node) await importOrder(ch, node); }
+        catch (e) {
+          if (e instanceof ShopifyError && (e.kind === 'auth' || e.kind === 'access')) { await keep(e.message, e.kind === 'auth'); return { accepted: true, error: e.kind }; }
+          if (/warehouse/i.test((e as Error).message)) { await keep((e as Error).message); return { accepted: true, error: 'no warehouse' }; }
+          throw e; // transient (network, database): a non-2xx makes Shopify retry later, and the import is idempotent
+        }
+      }
     } // customers/data_request and customers/redact: nothing is held outside the seller's own order records, so they are acknowledged.
     return { accepted: true };
   });

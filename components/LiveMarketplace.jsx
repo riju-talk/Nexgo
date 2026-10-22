@@ -46,7 +46,7 @@ export default function LiveMarketplace({ id, mobile }) {
     catch (x) { showToast(x instanceof ApiError ? (x.status === 409 || /unique|duplicate/i.test(x.message) ? 'A store with this name is already connected.' : x.message) : 'Could not connect this store', 'error'); }
     finally { setBusy(false); }
   };
-  const sync = async (c) => { setSyncing(c.id); try { const r = await apiFetch(`/v1/channels/${c.id}/sync`, { method: 'POST' }); showToast(r?.synced ? `${c.display_name}: ${r.created} new order${r.created === 1 ? '' : 's'} imported` : `Sync queued for ${c.display_name}.`); load(); } catch (x) { showToast(x.message || 'Sync could not be queued', 'error'); } finally { setSyncing(''); } };
+  const sync = async (c) => { setSyncing(c.id); try { const r = await apiFetch(`/v1/channels/${c.id}/sync`, { method: 'POST' }); showToast(r?.synced ? `${c.display_name}: ${r.created} new order${r.created === 1 ? '' : 's'} imported${r.complete === false ? '. More orders are waiting, press Sync now again.' : ''}${r.failed ? ` (${r.failed} could not be imported, see the store status)` : ''}` : `Sync queued for ${c.display_name}.`); load(); } catch (x) { showToast(x.message || 'Sync could not be queued', 'error'); } finally { setSyncing(''); } };
   const remove = async (c) => { try { await apiFetch(`/v1/channels/${c.id}`, { method: 'DELETE' }); showToast(`${c.display_name} removed`); setConfirm(''); load(); } catch (x) { showToast(x.message || 'Could not remove this store', 'error'); setConfirm(''); } };
 
   const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';

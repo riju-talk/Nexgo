@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
+import { TEMPLATE_COLUMNS, TEMPLATE_HEADERS, TEMPLATE_SAMPLE_ROWS } from '@/lib/bulkTemplate.mjs';
+import { saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
@@ -23,6 +25,8 @@ const ALIASES = {
   quantity: 'quantity', qty: 'quantity', unitprice: 'price', price: 'price', unitpricers: 'price',
   weightg: 'weight', unitweightg: 'weight', weight: 'weight',
   lengthcm: 'length', breadthcm: 'width', widthcm: 'width', heightcm: 'height',
+  pickupwarehouse: 'warehouseName', pickupwarehousename: 'warehouseName', warehouse: 'warehouseName', warehousename: 'warehouseName',
+  pickupwarehouseaddress: 'warehouseAddress', warehouseaddress: 'warehouseAddress', pickupaddress: 'warehouseAddress', pickupwarehousepincode: 'warehouseAddress',
   paymentmode: 'paymentMode', payment: 'paymentMode', codamount: 'codAmount', cod: 'codAmount',
   // SwiftCourier bulk sheet: one row per order, products in sku(1)/product(1)/quantity(1)/per_product_price(1)/total_price(1) ... columns.
   firstname: 'firstName', lastname: 'lastName', address1: 'address', paymenttype: 'paymentMode', codcollectableamount: 'codAmount', weightkg: 'weightKg',
@@ -142,43 +146,44 @@ function validate(order) {
 
 // A re-upload-ready file: the failed orders laid out in the same columns as the NEXGO template, plus an Error column.
 // Fix the cells, delete the Error column (or leave it, it is ignored) and upload the file again.
-const TEMPLATE_HEADERS = ['Order number', 'Customer name', 'Company name', 'Phone', 'Alternate phone', 'Email', 'Address line 1', 'Address line 2', 'Landmark', 'Pincode', 'City', 'State', 'SKU', 'Product name', 'HSN code', 'Quantity', 'Unit price', 'Weight (g)', 'Length (cm)', 'Breadth (cm)', 'Height (cm)', 'Payment mode', 'COD amount'];
 const isFailed = (o) => o.unassigned || (!o.created && (o.errors.length || o.failure || !o.quote));
 const failureReason = (o) => o.failure || (o.errors.length ? o.errors.join(' | ') : 'No courier could be assigned: no serviceable courier for this pincode, weight or payment mode');
+// How each template column is filled from a parsed order (and one of its product lines).
+const CELL = {
+  orderNumber: (o) => o.orderNumber || '', paymentMode: (o) => (o.paymentMode === 'cod' ? 'COD' : 'Prepaid'), codAmount: (o) => o.codAmount || '', customerName: (o) => o.customerName || '', phone: (o) => o.phone || '',
+  alternatePhone: (o) => o.alternatePhone || '', email: (o) => o.email || '', companyName: (o) => o.companyName || '', address: (o) => o.address || '', address2: (o) => o.address2 || '', landmark: (o) => o.landmark || '',
+  pincode: (o) => o.pincode || '', city: (o) => o.city || '', state: (o) => o.state || '', warehouseName: (o) => o.warehouseName || '', warehouseAddress: (o) => o.warehouseAddress || '',
+  sku: (o, i) => (i.sku && i.sku !== 'CUSTOM' ? i.sku : ''), productName: (o, i) => i.name || '', hsn: (o, i) => i.hsn || '', quantity: (o, i) => i.quantity || '', price: (o, i) => (i.pricePaise ? i.pricePaise / 100 : ''),
+  weight: (o, i) => i.weight || '', length: (o) => o.length || '', width: (o) => o.width || '', height: (o) => o.height || '',
+};
 function failedRows(orders) {
   const rows = [];
   for (const o of orders.filter(isFailed)) {
-    o.items.forEach((item, i) => rows.push([
-      o.orderNumber || '', o.customerName || '', o.companyName || '', o.phone || '', o.alternatePhone || '', o.email || '', o.address || '', o.address2 || '', o.landmark || '', o.pincode || '', o.city || '', o.state || '',
-      item.sku && item.sku !== 'CUSTOM' ? item.sku : '', item.name || '', item.hsn || '', item.quantity || '', item.pricePaise ? item.pricePaise / 100 : '', item.weight || '',
-      o.length || '', o.width || '', o.height || '', o.paymentMode || '', o.codAmount || '', i === 0 ? failureReason(o) : '', i === 0 ? o.lines.join(', ') : '',
-    ]));
+    o.items.forEach((item, i) => rows.push([...TEMPLATE_COLUMNS.map((c) => CELL[c.key](o, item)), i === 0 ? failureReason(o) : '', i === 0 ? o.lines.join(', ') : '']));
   }
   return rows;
 }
 // Excel or CSV, same columns as the NEXGO template plus an Error column, so the file can be corrected and uploaded again.
 function downloadFailedOrders(orders, fileName, format = 'xlsx') {
-  const rows = failedRows(orders);
   const base = `${fileName.replace(/\.[^.]+$/, '') || 'bulk-orders'}-failed-orders`;
-  const sheet = XLSX.utils.aoa_to_sheet([[...TEMPLATE_HEADERS, 'Error (fix and re-upload)', 'Row in uploaded file'], ...rows]);
-  sheet['!cols'] = [...TEMPLATE_HEADERS, 'Error', 'Row'].map((h, i) => ({ wch: i === 23 ? 60 : Math.max(12, h.length + 2) }));
-  if (format === 'csv') {
-    const blob = new Blob(['\ufeff', XLSX.utils.sheet_to_csv(sheet)], { type: 'text/csv;charset=utf-8' });
-    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${base}.csv`; link.click(); URL.revokeObjectURL(link.href);
-  } else {
-    const book = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(book, sheet, 'Orders');
-    XLSX.writeFile(book, `${base}.xlsx`);
-  }
+  saveRows([[...TEMPLATE_HEADERS, 'Error (fix and re-upload)', 'Row in uploaded file'], ...failedRows(orders)], base, format, 'Orders');
   return new Set(orders.filter(isFailed).map((o) => o.orderNumber)).size;
 }
 
-function downloadErrorReport(orders, fileName) {
-  const rows = orders.filter(isFailed).map((o) => ({ 'Order number': o.orderNumber || '', 'Sheet rows': o.lines.join(', '), Problem: failureReason(o) }));
-  const sheet = XLSX.utils.json_to_sheet(rows);
-  const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, 'Errors');
-  XLSX.writeFile(book, `${fileName.replace(/\.[^.]+$/, '') || 'bulk-orders'}-errors.xlsx`);
+function downloadErrorReport(orders, fileName, format = 'xlsx') {
+  const rows = orders.filter(isFailed).map((o) => [o.orderNumber || '', o.lines.join(', '), failureReason(o)]);
+  saveRows([['Order number', 'Sheet rows', 'Problem'], ...rows], `${fileName.replace(/\.[^.]+$/, '') || 'bulk-orders'}-errors`, format, 'Errors');
+}
+
+// The pickup warehouse for an order: the one named in the sheet (by name, or by address / pincode), else the one chosen on the page.
+function pickWarehouse(order, list, fallback) {
+  const name = (order.warehouseName || '').trim().toLowerCase(); const addr = (order.warehouseAddress || '').trim().toLowerCase();
+  if (!name && !addr) return { warehouse: fallback };
+  const hay = (w) => [w.name, w.address_line_1, w.address_line_2, w.city, w.state, w.pincode].filter(Boolean).join(' ').toLowerCase();
+  const byName = name && list.find((w) => w.name.trim().toLowerCase() === name);
+  const byAddress = !byName && list.find((w) => { const text = hay(w); const pin = (addr.match(/\d{6}/) || [])[0]; return (addr && (text.includes(addr) || (w.address_line_1 && addr.includes(w.address_line_1.toLowerCase())))) || (!name && pin && w.pincode === pin); });
+  const found = byName || byAddress;
+  return found ? { warehouse: found } : { error: `Pickup warehouse "${order.warehouseName || order.warehouseAddress}" was not found. Use a name or address from Settings > Warehouse, or leave it blank` };
 }
 
 export default function LiveBulkOrderImport({ mobile, embedded = false }) {
@@ -213,7 +218,10 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
       if (!rows) throw new Error('No "Order number" column found. Start from the NEXGO template.');
       if (!rows.length) throw new Error('The sheet has headers but no order rows.');
       if (rows.length > MAX_ROWS) throw new Error(`Import up to ${MAX_ROWS} rows at a time.`);
-      const grouped = groupOrders(rows, productData.items || []).map((o) => ({ ...o, warehouseId: warehouse.id }));
+      const grouped = groupOrders(rows, productData.items || []).map((o) => {
+        const w = pickWarehouse(o, warehouses || [], warehouse);
+        return w.error ? { ...o, warehouseId: warehouse.id, errors: [...o.errors, w.error] } : { ...o, warehouseId: w.warehouse.id, whPincode: w.warehouse.pincode, whName: w.warehouse.name };
+      });
       if (grouped.length > MAX_ORDERS) throw new Error(`Import up to ${MAX_ORDERS} orders at a time.`);
 
       // Resolve city/state from pincode where the sheet left them blank.
@@ -226,7 +234,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
       const quoted = await Promise.all(located.map(async (o) => {
         if (o.errors.length) return o;
         try {
-          const body = { destinationPincode: o.pincode, pickupPincode: warehouse.pincode, orderValue: o.subtotal / 100, weightG: o.weightG, paymentMode: o.paymentMode, ...(o.dims ? { lengthMm: o.dims[0], widthMm: o.dims[1], heightMm: o.dims[2] } : {}) };
+          const body = { destinationPincode: o.pincode, pickupPincode: o.whPincode || warehouse.pincode, orderValue: o.subtotal / 100, weightG: o.weightG, paymentMode: o.paymentMode, ...(o.dims ? { lengthMm: o.dims[0], widthMm: o.dims[1], heightMm: o.dims[2] } : {}) };
           const response = await apiFetch('/v1/shipping/quotes', { method: 'POST', body });
           return { ...o, quote: response.quotes?.[0] || null, quoteCount: response.quotes?.length || 0 };
         } catch { return o; }
@@ -293,7 +301,10 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
             <div style={{ color: T.TEXT, fontSize: 17, fontWeight: 780 }}>Bulk Order Management</div>
             <p style={{ margin: '6px 0 0', maxWidth: 680, color: T.TEXT_SECONDARY, fontSize: 13.5, lineHeight: 1.55 }}>Upload and track NEXGO bulk orders efficiently. Each sheet can include up to {MAX_ORDERS.toLocaleString('en-IN')} orders, with repeated order numbers used for multiple products.</p>
           </div>
-          <a href="/bulk-order-template.xlsx" download="NEXGO bulk upload.xlsx" style={{ minHeight: 36, display: 'inline-flex', alignItems: 'center', padding: '0 13px', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 9, color: T.TEXT, background: T.SURFACE, textDecoration: 'none', fontSize: 12.5, fontWeight: 750 }}>Download NEXGO bulk upload</a>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <a href="/bulk-order-template.xlsx" download="NEXGO bulk upload.xlsx" style={{ minHeight: 36, display: 'inline-flex', alignItems: 'center', padding: '0 13px', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 9, color: T.TEXT, background: T.SURFACE, textDecoration: 'none', fontSize: 12.5, fontWeight: 750 }}>Download template (Excel)</a>
+            <Action onClick={() => saveRows([TEMPLATE_HEADERS, ...TEMPLATE_SAMPLE_ROWS], 'NEXGO bulk upload', 'csv')}>Download template (CSV)</Action>
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4,minmax(0,1fr))', gap: 12, marginTop: 18 }}>
@@ -331,7 +342,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
             </div>
             <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
               {unassignedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => { const n = downloadFailedOrders(orders, fileName, fmt); showToast(`${n} failed order${n === 1 ? '' : 's'} saved as ${fmt === 'xlsx' ? 'Excel' : 'CSV'}. Correct the errors and upload the file again.`); }}>⬇ Failed orders ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
-              {failedCount > 0 && <Action onClick={() => downloadErrorReport(orders, fileName)}>Download error report</Action>}
+              {failedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => downloadErrorReport(orders, fileName, fmt)}>Error report ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
               {result?.created > 0 && <Action onClick={() => nav('orders')}>Go to All orders</Action>}
               <Action primary disabled={!validOrders.length || creating} onClick={createOrders}>{creating ? 'Creating orders…' : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>
             </div>

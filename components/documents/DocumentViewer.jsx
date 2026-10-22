@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
+import { saveRows } from '@/lib/exportFile';
+import { SAMPLE_DOC, invoiceRows, labelRows } from './exportRows';
 import LabelSheet from './LabelSheet';
 import InvoiceSheet from './InvoiceSheet';
 
@@ -10,14 +12,17 @@ import InvoiceSheet from './InvoiceSheet';
 // browser's print dialog, so the output is a real vector PDF with selectable text and scannable barcodes.
 export default function DocumentViewer({ kind }) {
   const params = useSearchParams();
-  const ids = params.get('ids') || '';
+  const sample = params.get('sample') === '1'; // the settings pages preview the design with a sample shipment
+  const ids = params.get('ids') || (sample ? 'sample' : '');
   const [state, setState] = useState({ ids: '', items: [], error: '' });
   const [layout, setLayout] = useState('thermal'); // labels: 4×6 in thermal, 3×5 in thermal, or four per A4 sheet
   const [cfg, setCfg] = useState({});
+  const [labelCfg, setLabelCfg] = useState({}); // saved Label settings: what to hide on the label
   const label = kind === 'label';
 
   useEffect(() => {
     if (!ids) return undefined;
+    if (ids === 'sample') { setState({ ids, items: [SAMPLE_DOC], error: '' }); return undefined; } // eslint-disable-line react-hooks/set-state-in-effect -- static sample, no fetch
     let live = true;
     apiFetch(`/v1/shipments/documents?ids=${encodeURIComponent(ids)}`)
       .then((x) => { if (live) setState({ ids, items: x.items || [], error: '' }); })
@@ -30,6 +35,7 @@ export default function DocumentViewer({ kind }) {
     let live = true;
     Promise.all(['label', 'inv-settings'].map((a) => apiFetch(`/v1/settings/${a}`).then((x) => x.values || {}).catch(() => ({})))).then(([label, invoice]) => {
       if (!live) return;
+      setLabelCfg(label);
       const size = String(label.labelSize || '');
       setLayout(size.includes('3×5') ? 'thermal35' : size.startsWith('A4') ? 'a4' : 'thermal');
       setCfg(invoice);
@@ -45,6 +51,7 @@ export default function DocumentViewer({ kind }) {
   const { items, error } = ids ? state : { items: [], error: 'No shipments selected.' };
   const page = label ? (layout === 'thermal' ? '4in 6in' : layout === 'thermal35' ? '3in 5in' : 'A4') : String(cfg.pageFormat || '').startsWith('Thermal') ? '4in 6in' : 'A4';
 
+  const download = (format) => saveRows(label ? labelRows(items) : invoiceRows(items, cfg), `${label ? 'shipping-labels' : 'tax-invoices'}${sample ? '-sample' : ''}`, format, label ? 'Labels' : 'Invoices');
   return (
     <div className={`doc-root ${label ? `doc-${layout}` : 'doc-a4'}`}>
       <style>{CSS.replace('__PAGE__', page)}</style>
@@ -52,11 +59,13 @@ export default function DocumentViewer({ kind }) {
         <b>{label ? 'Shipping labels' : 'Tax invoices'}{items.length ? ` · ${items.length}` : ''}</b>
         {label && <select value={layout} onChange={(e) => setLayout(e.target.value)} aria-label="Label size"><option value="thermal">4 × 6 in (thermal printer)</option><option value="thermal35">3 × 5 in (thermal printer)</option><option value="a4">A4 sheet (4 labels per page)</option></select>}
         <button type="button" onClick={() => window.print()} disabled={!items.length}>Print / Save as PDF</button>
+        <button type="button" onClick={() => download('xlsx')} disabled={!items.length}>Download Excel</button>
+        <button type="button" onClick={() => download('csv')} disabled={!items.length}>Download CSV</button>
       </header>
       {loading && <p className="doc-msg">Preparing {label ? 'labels' : 'invoices'}…</p>}
       {!loading && error && <p className="doc-msg doc-err">{error}</p>}
       <main className="doc-pages">
-        {!loading && items.map((d) => (label ? <LabelSheet key={d.id} d={d} /> : <InvoiceSheet key={d.id} d={d} cfg={cfg} />))}
+        {!loading && items.map((d) => (label ? <LabelSheet key={d.id} d={d} cfg={labelCfg} /> : <InvoiceSheet key={d.id} d={d} cfg={cfg} />))}
       </main>
     </div>
   );
@@ -91,6 +100,8 @@ const CSS = `
 .lb-awb { flex: 1; text-align: center; }
 .lb-courier { font-weight: 700; font-size: 11px; letter-spacing: .06em; }
 .lb-dims { font-size: 9.5px; margin-top: 2px; }
+.lb-routing { display: flex; align-items: center; gap: 8px; border: 2px solid #000; padding: 3px 7px; font-size: 10px; }
+.lb-routing b { font-size: 15px; letter-spacing: .08em; }
 .lb-items { width: 100%; border-collapse: collapse; font-size: 10px; }
 .lb-items th, .lb-items td { border: 1px solid #000; padding: 3px 5px; text-align: left; }
 .lb-items th { text-align: center; }

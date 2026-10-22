@@ -5,7 +5,7 @@ import { apiFetch } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { BLUE, Btn, CARD, FIELD, Pager, Pill, Stat, Table, dateTime, inr, inr0, isoDay, titleCase } from './Kit';
+import { AwbLink, BLUE, Btn, CARD, FIELD, Pager, Pill, Stat, Table, dateTime, inr, inr0, isoDay, titleCase } from './Kit';
 import ShipmentFilters, { EMPTY_FILTERS, filterParams } from './ShipmentFilters';
 
 const REASONS = { customer_unavailable: 'Customer not available', address_incomplete: 'Incomplete address', address_incorrect: 'Wrong address', refused_delivery: 'Customer refused', payment_not_ready: 'Payment not ready', customer_requested_reschedule: 'Rescheduled by customer', other: 'Other' };
@@ -96,7 +96,7 @@ export default function LiveRto({ mobile }) {
           </div>
           <Table loading={loading} error={data.error} rows={data.items} minWidth={980} empty={anyFilter || stage !== 'all' ? 'No RTO shipments match these filters.' : 'No RTO shipments — every parcel is on its way to the customer.'}
             columns={[
-              { h: 'Order / AWB', cell: (r) => <span><b style={{ color: BLUE }}>{r.order_number}</b><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED }}>{r.awb}</small><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED }}>{r.nexgo_order_id}</small>{(r.tags || []).length > 0 && <small style={{ display: 'block', marginTop: 3, color: BLUE }}>{r.tags.map((t) => `#${t}`).join(' ')}</small>}</span> },
+              { h: 'Order / AWB', cell: (r) => <span><b style={{ color: BLUE }}>{r.order_number}</b><span style={{ display: 'block' }}><AwbLink awb={r.awb} /></span><small style={{ display: 'block', fontFamily: T.MONO, color: T.TEXT_MUTED }}>{r.nexgo_order_id}</small>{(r.tags || []).length > 0 && <small style={{ display: 'block', marginTop: 3, color: BLUE }}>{r.tags.map((t) => `#${t}`).join(' ')}</small>}</span> },
               { h: 'Customer', cell: (r) => <span><b>{r.customer_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.customer_phone}</small><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.customer_city}, {r.customer_pincode}</small></span> },
               { h: 'Courier', cell: (r) => <span><b>{r.courier_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.service_name}</small><small style={{ display: 'block', color: T.TEXT_MUTED }}>To {r.warehouse_name}</small></span> },
               { h: 'RTO reason', cell: (r) => <span><Pill color="#9A3412" bg="#F5822018">{REASONS[r.ndr_reason] || (r.ndr_reason ? titleCase(r.ndr_reason) : 'Courier initiated')}</Pill>{r.attempt_number && <small style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED }}>After attempt {r.attempt_number}</small>}</span> },

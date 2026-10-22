@@ -23,7 +23,7 @@ const isoDay = (v) => new Date(new Date(v).getTime() - new Date(v).getTimezoneOf
 const STAGES = ['booked', 'in_transit', 'out_for_delivery', 'delivered'];
 const PICKUP = ['booked', 'pickup_pending', 'pickup_scheduled'];
 const RTO = ['rto', 'rto_in_transit'];
-const CLOSED = ['delivered', 'cancelled', 'rto'];
+const CLOSED = ['delivered', 'cancelled', 'rto', 'lost'];
 const stageIndex = (state) => (PICKUP.includes(state) ? 0 : STAGES.indexOf(state));
 const isDelayed = (r) => !!r.promised_delivery_at && !CLOSED.includes(r.state) && new Date(r.promised_delivery_at) < new Date();
 
@@ -35,6 +35,7 @@ const TABS = [
   ['ndr', 'NDR', (r) => r.state === 'ndr'],
   ['delivered', 'Delivered', (r) => r.state === 'delivered'],
   ['rto', 'RTO', (r) => RTO.includes(r.state)],
+  ['lost', 'Lost', (r) => r.state === 'lost' || r.rto_status === 'lost'],
   ['cancelled', 'Cancelled', (r) => r.state === 'cancelled'],
   ['failed', 'Failed', (r) => r.state === 'failed'],
 ];
@@ -45,7 +46,7 @@ const WHATSAPP = { not_sent: 'Not sent', sent: 'Sent', delivered: 'Delivered', r
 const waTone = (w) => (w === 'read' || w === 'delivered' ? T.GREEN : w === 'failed' ? T.RED : w === 'sent' ? T.ACCENT : T.TEXT_MUTED);
 const PAGE_SIZES = [10, 25, 50, 100, 500];
 
-const tone = (state) => (state === 'delivered' ? T.GREEN : state === 'ndr' || RTO.includes(state) ? T.AMBER : state === 'cancelled' || state === 'failed' ? T.RED : T.ACCENT);
+const tone = (state) => (state === 'delivered' ? T.GREEN : state === 'ndr' || RTO.includes(state) ? T.AMBER : state === 'cancelled' || state === 'failed' || state === 'lost' ? T.RED : T.ACCENT);
 const label = (state) => (state === 'failed' ? 'Not assigned' : state === 'rto_in_transit' ? 'RTO in transit' : state === 'rto' ? 'RTO' : state === 'ndr' ? 'NDR' : title(state));
 
 function Pill({ state }) {
@@ -325,6 +326,7 @@ export default function LiveTrack({ mobile }) {
           <Btn onClick={load}>Refresh</Btn>
           {canExport && <><select aria-label="Export format" value={exportFormat} onChange={(e) => setExportFormat(e.target.value)} style={{ ...FIELD, height: 32 }}>{FORMATS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select>
           <Btn onClick={exportRows}>{picked.size ? `Export ${picked.size} selected` : 'Export'}</Btn></>}
+          <Btn onClick={() => nav('bulk-track')}>Bulk AWB tracking</Btn>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
           <select aria-label="Courier" value={f.courier} onChange={set('courier')} style={FIELD}><option value="">All couriers</option>{options.couriers.map((c) => <option key={c}>{c}</option>)}</select>

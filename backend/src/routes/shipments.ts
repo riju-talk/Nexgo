@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { db, withSellerTransaction } from '../db/client.js';
-import { pushTracking } from '../lib/shopify.js';
+import { cancelTracking, pushTracking } from '../lib/shopify.js';
 import { loadBookingDetails } from '../lib/bookingDetails.js';
 import { audit } from '../lib/audit.js';
 import { calculateRate, paiseToAmount } from '../lib/money.js';
@@ -21,8 +21,8 @@ type Rate = { provider_id: string; provider_code: string; provider_name: string;
 
 // Best effort: tells Shopify the order shipped (AWB + courier) once the booking has committed. Never fails the booking.
 async function pushTrackingForShipment(sellerId: string, orderId: string, awb: string) {
-  const row = await db.query<{ name: string }>('SELECT cp.name FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.awb=$1 AND s.seller_id=$2', [awb, sellerId]);
-  await pushTracking(sellerId, orderId, awb, row.rows[0]?.name ?? 'NEXGO');
+  const row = await db.query<{ id: string; name: string }>('SELECT s.id, cp.name FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.awb=$1 AND s.seller_id=$2', [awb, sellerId]);
+  await pushTracking(sellerId, orderId, awb, row.rows[0]?.name ?? 'NEXGO', row.rows[0]?.id);
 }
 
 // One booking, inside the caller's seller transaction (wallet-checked, idempotent on the key).
@@ -44,8 +44,8 @@ async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, req
     const details = await loadBookingDetails(client, p.sellerId, input.orderId, selection.service_id);
     const providerBooking = await courierAdapter(selection.provider_code).book({ details, reference: input.orderId, destinationPincode: selection.destination_pincode, weightG: Math.max(selection.total_weight_g, 1), paymentMode: selection.payment_mode, codAmountPaise: selection.payment_mode === 'cod' ? selection.cod_amount_paise : 0 });
     const shipment = await client.query(`INSERT INTO shipments (seller_id,order_id,provider_id,service_id,awb,chargeable_weight_g,shipping_charge_paise,quote_snapshot,idempotency_key,destination_pincode,destination_city,promised_delivery_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,cu.pincode,cu.city,now()+interval '5 days' FROM orders o JOIN customers cu ON cu.id=o.customer_id WHERE o.id=$2 RETURNING *`, [p.sellerId, input.orderId, selection.provider_id, selection.service_id, providerBooking.awb, Math.max(selection.total_weight_g, 1), price.totalPaise, JSON.stringify({ zone, provider: selection.provider_code, providerShipmentId: providerBooking.providerShipmentId, service: selection.service_code, destinationPincode: selection.destination_pincode, paymentMode: selection.payment_mode, price }), key]);
-    await client.query('UPDATE shipments SET provider_shipment_id=$1 WHERE id=$2', [providerBooking.providerShipmentId, shipment.rows[0].id]);
-    if (providerBooking.pickupHubId) await client.query('INSERT INTO courier_pickup_hubs (warehouse_id,provider_id,seller_id,external_hub_id) SELECT o.warehouse_id,$2,$3,$4 FROM orders o WHERE o.id=$1 ON CONFLICT DO NOTHING', [input.orderId, selection.provider_id, p.sellerId, providerBooking.pickupHubId]);
+    await client.query('UPDATE shipments SET provider_shipment_id=$1, routing_code=$3 WHERE id=$2', [providerBooking.providerShipmentId, shipment.rows[0].id, providerBooking.routingCode ?? null]);
+    if (providerBooking.pickupHubId) await client.query('INSERT INTO courier_pickup_hubs (warehouse_id,provider_id,seller_id,external_hub_id) SELECT o.warehouse_id,$2,$3,$4 FROM orders o WHERE o.id=$1 ON CONFLICT (warehouse_id, provider_id) DO UPDATE SET external_hub_id=EXCLUDED.external_hub_id', [input.orderId, selection.provider_id, p.sellerId, providerBooking.pickupHubId]);
     await client.query("UPDATE orders SET state='booked',updated_at=now() WHERE id=$1", [input.orderId]);
     await client.query("INSERT INTO shipment_events (shipment_id,state,occurred_at,description,source) VALUES ($1,'booked',now(),'Shipment booked successfully','booking')", [shipment.rows[0].id]);
     await client.query(`INSERT INTO wallet_entries (seller_id,entry_type,amount_paise,reference_type,reference_id,idempotency_key,description)
@@ -83,6 +83,30 @@ export async function shipmentRoutes(app: FastifyInstance) {
        WHERE o.seller_id=$1 AND o.state IN ('new','ready_to_ship') AND o.order_flow <> 'reverse' AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id=o.id)
        ORDER BY o.created_at DESC LIMIT 500`, [p.sellerId])).rows, p, 'orders.view_customer') }));
   });
+  // Bulk AWB tracking: the current status of up to 500 AWBs in one call, in the order they were given. AWBs that are not this seller's come back
+  // with found: false (never another seller's data), so a pasted list with typos is easy to spot.
+  const TRACK_BULK_MAX = 500;
+  app.post('/v1/shipments/track-bulk', { preHandler: requireSeller }, async (request) => {
+    const p = principal(request);
+    const input = z.object({ awbs: z.array(z.string().max(200)).min(1, 'Add at least one AWB').max(5000) }).parse(request.body);
+    const awbs = [...new Set(input.awbs.map((a) => a.trim()).filter(Boolean))];
+    if (!awbs.length) throw Object.assign(new Error('Add at least one AWB'), { statusCode: 400 });
+    if (awbs.length > TRACK_BULK_MAX) throw Object.assign(new Error(`Track up to ${TRACK_BULK_MAX} AWBs at a time. You sent ${awbs.length}.`), { statusCode: 422 });
+    return withSellerTransaction(p.sellerId, async (client) => {
+      const rows = maskCustomerRows((await client.query(
+        `SELECT s.awb, s.state::text AS state, s.rto_status, s.booked_at, s.delivered_at, s.promised_delivery_at, s.destination_pincode,
+                o.order_number, o.nexgo_order_id, o.payment_mode, o.cod_amount_paise, c.full_name AS customer_name, c.phone AS customer_phone, c.city AS customer_city,
+                cp.name AS courier_name, cs.display_name AS service_name,
+                ev.description AS last_description, ev.location AS last_location, ev.occurred_at AS last_event_at
+           FROM shipments s JOIN orders o ON o.id=s.order_id JOIN customers c ON c.id=o.customer_id
+           JOIN courier_providers cp ON cp.id=s.provider_id JOIN courier_services cs ON cs.id=s.service_id
+           LEFT JOIN LATERAL (SELECT description, location, occurred_at FROM shipment_events WHERE shipment_id=s.id ORDER BY occurred_at DESC LIMIT 1) ev ON true
+          WHERE s.seller_id=$1 AND s.awb = ANY($2::text[])`, [p.sellerId, awbs])).rows, p, 'shipments.view_customer');
+      const byAwb = new Map(rows.map((r) => [r.awb as string, r]));
+      const results = awbs.map((awb) => (byAwb.has(awb) ? { found: true, ...byAwb.get(awb) } : { found: false, awb }));
+      return { requested: awbs.length, found: rows.length, notFound: awbs.length - rows.length, duplicatesIgnored: input.awbs.filter((a) => a.trim()).length - awbs.length, results };
+    });
+  });
   // Everything the printable shipping label and tax invoice need, for up to 100 shipments at once (see /documents/label and /documents/invoice).
   // Assigns the order's invoice number on first use.
   app.get('/v1/shipments/documents', { preHandler: requireSeller }, async (request) => {
@@ -95,7 +119,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
           SELECT o2.id, (SELECT COALESCE(max(invoice_seq), 0) FROM orders WHERE seller_id=$1) + row_number() OVER (ORDER BY o2.created_at, o2.id) AS seq
           FROM orders o2 JOIN shipments s ON s.order_id=o2.id WHERE s.id = ANY($2::uuid[]) AND s.seller_id=$1 AND o2.invoice_seq IS NULL) n WHERE o.id = n.id`, [p.sellerId, shipmentIds]);
       const rows = await client.query(
-        `SELECT s.id, s.awb, s.state, s.booked_at, s.chargeable_weight_g, cp.name AS courier_name, cs.display_name AS service_name,
+        `SELECT s.id, s.awb, s.routing_code, s.state, s.booked_at, s.chargeable_weight_g, cp.name AS courier_name, cs.display_name AS service_name,
                 o.order_number, o.nexgo_order_id, o.created_at AS order_date, o.invoice_seq, o.payment_mode, o.cod_amount_paise, o.subtotal_paise, o.total_paise, o.tax_rate_bps, o.tax_paise,
                 o.shipping_charges_paise, o.transaction_charges_paise, o.gift_wrap_paise, o.other_charges_paise, o.discount_paise, o.total_weight_g,
                 o.package_length_mm, o.package_width_mm, o.package_height_mm,
@@ -183,7 +207,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
   // Cancel before pickup: the courier booking is cancelled and the exact wallet debit taken at booking is credited back (once).
   app.post('/v1/shipments/:shipmentId/cancel', { preHandler: requireSeller }, async (request) => {
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
-    return withSellerTransaction(p.sellerId, async (client) => {
+    const outcome = await withSellerTransaction(p.sellerId, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
       const found = await client.query<{ id: string; awb: string; state: string; order_id: string; code: string; provider_shipment_id: string | null }>(`SELECT s.id, s.awb, s.provider_shipment_id, s.state::text, s.order_id, cp.code FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.id = $1 AND s.seller_id = $2 FOR UPDATE OF s`, [shipmentId, p.sellerId]);
       const row = found.rows[0];
@@ -200,6 +224,8 @@ export async function shipmentRoutes(app: FastifyInstance) {
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'shipment.cancelled', targetType: 'shipment', targetId: row.id, requestId: request.id, metadata: { awb: row.awb, refundedPaise: refund } });
       return { id: row.id, state: 'cancelled', refundedPaise: refund };
     });
+    if (!('replay' in outcome)) await cancelTracking(p.sellerId, shipmentId); // the storefront must not keep showing the order as fulfilled
+    return outcome;
   });
   app.post('/v1/shipments/:shipmentId/label',{ preHandler: requireSeller }, async (request, reply) => {
     if (!config.STORAGE_ENABLED) return reply.code(501).send({ error: 'FILE_STORAGE_NOT_CONNECTED', message: 'File storage is not connected yet; this will be available soon.' });

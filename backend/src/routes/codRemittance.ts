@@ -127,4 +127,19 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
       items: (await client.query('SELECT id, cycle_start, cycle_end, shipment_count, cod_collected_paise, charges_deducted_paise, net_remitted_paise, status, bank_reference, remitted_at FROM cod_remittance_cycles WHERE seller_id=$1 ORDER BY cycle_start DESC LIMIT 100', [p.sellerId])).rows,
     }));
   });
+  // The delivered COD shipments a remittance cycle was cut from (same rule the generator uses), for the statement download.
+  app.get('/v1/seller/cod-remittances/:cycleId/lines', { preHandler: requireSeller }, async (request) => {
+    const p = principal(request);
+    const cycleId = z.string().uuid().parse((request.params as { cycleId: string }).cycleId);
+    return withSellerTransaction(p.sellerId, async (client) => {
+      const cycle = (await client.query('SELECT id, cycle_start, cycle_end, shipment_count, cod_collected_paise, charges_deducted_paise, net_remitted_paise, status, bank_reference, remitted_at FROM cod_remittance_cycles WHERE id=$1 AND seller_id=$2', [cycleId, p.sellerId])).rows[0];
+      if (!cycle) throw Object.assign(new Error('Remittance not found'), { statusCode: 404 });
+      const lines = (await client.query(
+        `SELECT sh.awb, COALESCE(sh.delivered_at, sh.booked_at) AS delivered_on, o.order_number, c.full_name AS customer_name, cp.name AS courier_name, o.cod_amount_paise, sh.shipping_charge_paise
+           FROM shipments sh JOIN orders o ON o.id=sh.order_id JOIN customers c ON c.id=o.customer_id JOIN courier_providers cp ON cp.id=sh.provider_id
+          WHERE sh.seller_id=$1 AND sh.state='delivered' AND o.payment_mode='cod' AND COALESCE(sh.delivered_at, sh.booked_at)::date BETWEEN $2 AND $3
+          ORDER BY COALESCE(sh.delivered_at, sh.booked_at), sh.awb LIMIT 20000`, [p.sellerId, cycle.cycle_start, cycle.cycle_end])).rows;
+      return { cycle, lines };
+    });
+  });
 }

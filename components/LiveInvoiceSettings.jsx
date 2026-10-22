@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
+import { saveRows } from '@/lib/exportFile';
 import { uploadSellerFile } from '@/lib/uploadFile';
 import * as T from '@/lib/theme';
 import { Btn, CARD, FIELD } from './Kit';
+import { SAMPLE_DOC, invoiceRows } from './documents/exportRows';
 
 const A4 = 'A4 (8×11 in) standard printer';
 const THERMAL = 'Thermal printer (4×6 in)';
@@ -53,6 +55,10 @@ export default function LiveInvoiceSettings({ mobile }) {
     try { await apiFetch('/v1/settings/inv-settings', { method: 'PUT', body: { ...v, pageFormat: thermal ? THERMAL : A4, customRows: rows } }); showToast('Invoice settings saved'); }
     catch (e) { showToast(e instanceof ApiError ? e.message : 'Settings could not be saved', 'error'); } finally { setBusy(false); }
   };
+  const latest = async () => {
+    try { const x = await apiFetch('/v1/shipments'); const first = (x.items || [])[0]; if (!first) return showToast('No shipment yet, so there is no invoice to download. Use the sample instead.', 'error'); window.open(`/documents/invoice?ids=${first.id}`, '_blank', 'noopener'); }
+    catch (e) { showToast(e.message || 'Could not open the invoice', 'error'); }
+  };
   return (
     <main style={{ padding: mobile ? '14px 12px 42px' : '18px 28px 48px', maxWidth: 720 }}>
       <h2 style={{ margin: '0 0 14px', color: T.TEXT, fontSize: 21 }}>Invoice Settings</h2>
@@ -90,6 +96,15 @@ export default function LiveInvoiceSettings({ mobile }) {
               {n === rows && rows < MAX_CUSTOM ? <button type="button" aria-label="Add field" disabled={thermal} onClick={() => set('customRows', rows + 1)} style={{ border: 0, borderRadius: 8, background: '#3877fc', color: '#fff', fontSize: 20, cursor: 'pointer' }}>+</button> : <span />}
             </div>
           ))}
+        </div>
+        <hr style={rule} />
+        <h3 style={heading}>Download Invoice</h3>
+        <p style={hint}>Check how your invoice looks with these settings. The PDF preview uses your saved settings, so press Save changes first. Excel and CSV use what is on screen.</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+          <Btn onClick={() => window.open('/documents/invoice?sample=1', '_blank', 'noopener')}>Preview sample invoice (PDF)</Btn>
+          <Btn onClick={() => saveRows(invoiceRows([SAMPLE_DOC], v), 'sample-invoice', 'xlsx', 'Invoice')}>Download sample (Excel)</Btn>
+          <Btn onClick={() => saveRows(invoiceRows([SAMPLE_DOC], v), 'sample-invoice', 'csv')}>Download sample (CSV)</Btn>
+          <Btn onClick={latest}>Download my latest invoice</Btn>
         </div>
         <div style={{ marginTop: 22 }}><Btn primary disabled={busy || !loaded} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</Btn></div>
       </section>

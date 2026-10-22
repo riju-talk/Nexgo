@@ -20,6 +20,7 @@ import LiveAdminReports from './LiveAdminReports';
 import LiveMarketing from './LiveMarketing';
 import LiveSellerSecurity from './LiveSellerSecurity';
 import LiveShipmentDetail from './LiveShipmentDetail';
+import LiveBulkTrack from './LiveBulkTrack';
 import CreateOrder from './CreateOrder';
 import LiveNdr from './LiveNdr';
 import LiveRto from './LiveRto';
@@ -70,6 +71,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
   const isLiveCreateOrder = ['dropship', 'shipnow', 'reverse'].includes(id);
   const isNew = id === 'rto' || id === 'ratecard' || id === 'kyc' || ['shopify', 'woo', 'magento', 'opencart', 'amazon'].includes(id) || ['billing', 'cod', 'wallet', 'charges', 'invoice', 'credit-note', 'tds'].includes(id);
   const isTrack = id === 'shipments';
+  const isBulkTrack = id === 'bulk-track';
   const isComingSoon = id === 'b2b';
   const isLiveMarketing = ['whatsapp', 'email'].includes(id);
   const isLiveSellerSecurity = id === 'password';
@@ -117,6 +119,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isMarketplace && <LiveMarketplace id={id} mobile={mobile} />}
         {isKyc && <LiveKyc mobile={mobile} />}
         {isTrack && <LiveTrack mobile={mobile} />}
+        {isBulkTrack && <LiveBulkTrack mobile={mobile} />}
         {isComingSoon && <ComingSoon mobile={mobile} name="B2B orders" blurb="Business shipments with GST invoicing and multi-box handling are not enabled by the current API contract yet." />}
         {isLiveMarketing && <LiveMarketing channel={id} mobile={mobile} />}
         {isLiveSellerSecurity && <LiveSellerSecurity mobile={mobile} />}

@@ -13,6 +13,8 @@ export type BookingDetails = {
 export type CourierBookingRequest = { reference: string; destinationPincode: string; weightG: number; paymentMode: 'prepaid' | 'cod'; codAmountPaise: number; details?: BookingDetails };
 export type CourierBookingResult = {
   providerShipmentId: string; awb: string; labelAvailable: boolean;
+  /** The courier's sort / routing code for the label, when the courier gives one. */
+  routingCode?: string;
   /** Set when the adapter had to create the pickup address; the caller remembers it for the next booking. */
   pickupHubId?: string;
 };

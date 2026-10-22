@@ -17,6 +17,13 @@ export const dateTime = (v) => (v ? new Date(v).toLocaleString('en-IN', { day: '
 export const titleCase = (v = '') => String(v).replaceAll('_', ' ').replaceAll('-', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 export const isoDay = (offset = 0) => { const d = new Date(Date.now() + offset * 864e5); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 
+// An AWB that opens that shipment on the Track page (detail panel + timeline). Used wherever an AWB is listed.
+export function AwbLink({ awb, style }) {
+  const { setTrackFocus, nav } = useAppState();
+  if (!awb) return <span style={{ color: T.TEXT_MUTED, ...style }}>-</span>;
+  return <button type="button" title="Open tracking" onClick={(e) => { e.stopPropagation(); setTrackFocus(awb); nav('shipments'); }} style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: BLUE, fontFamily: T.MONO, fontSize: 12, textDecoration: 'underline', textUnderlineOffset: 2, ...style }}>{awb}</button>;
+}
+
 export function Btn({ children, onClick, primary, danger, disabled, small, type = 'button', style }) {
   return <button type={type} disabled={disabled} onClick={onClick} style={{ height: small ? 32 : 38, padding: `0 ${small ? 11 : 16}px`, borderRadius: 8, border: `1px solid ${primary ? BLUE : danger ? T.RED : T.BORDER}`, background: primary ? BLUE : danger ? T.RED : T.SURFACE, color: primary || danger ? '#fff' : T.TEXT, fontWeight: 700, fontSize: small ? 12.5 : 13.5, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, whiteSpace: 'nowrap', ...style }}>{children}</button>;
 }

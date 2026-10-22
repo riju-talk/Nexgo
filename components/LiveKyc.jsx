@@ -7,7 +7,7 @@ import { uploadSellerFile } from '@/lib/uploadFile';
 import * as T from '@/lib/theme';
 import { BLUE, Btn, CARD, FIELD, Pill, dateTime, titleCase } from './Kit';
 
-const ENTITY = [['proprietorship', 'Proprietorship'], ['partnership', 'Partnership'], ['private_limited', 'Private Limited'], ['llp', 'LLP'], ['public_limited', 'Public Limited']];
+const ENTITY = [['individual', 'Individual'], ['proprietorship', 'Proprietorship'], ['partnership', 'Partnership'], ['private_limited', 'Private Limited'], ['llp', 'LLP'], ['public_limited', 'Public Limited']];
 const STATUS = { unsubmitted: ['Not submitted', T.TEXT_MUTED], pending_review: ['Under review', T.AMBER], verified: ['Verified', T.GREEN], rejected: ['Needs changes', T.RED] };
 const MAX_BYTES = 3 * 1024 * 1024;
 const RULES = { pan: /^[A-Z]{5}[0-9]{4}[A-Z]$/, aadhaar: /^[2-9][0-9]{11}$/, gstin: /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, ifsc: /^[A-Z]{4}0[A-Z0-9]{6}$/, account: /^[0-9]{9,18}$/ };
@@ -46,13 +46,13 @@ function DocPicker({ label, file, onPick, onClear }) {
 export default function LiveKyc({ mobile }) {
   const { showToast } = useAppState();
   const [current, setCurrent] = useState(null); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
-  const [f, setF] = useState({ pan: '', panHolderName: '', aadhaar: '', gstApplicable: true, gstin: '', entityType: 'proprietorship', registeredAddress: '', bankAccountHolder: '', bankAccountNumber: '', bankIfsc: '' });
-  const [files, setFiles] = useState({ pan: null, aadhaar: null, gst: null, bank: null });
+  const [f, setF] = useState({ pan: '', panHolderName: '', aadhaar: '', gstApplicable: false, gstin: '', entityType: 'proprietorship', registeredAddress: '', bankAccountHolder: '', bankAccountNumber: '', bankIfsc: '' });
+  const [files, setFiles] = useState({ pan: null, aadhaarFront: null, aadhaarBack: null, gst: null, bank: null });
   const [editing, setEditing] = useState(false);
 
   useEffect(() => { let live = true; apiFetch('/v1/seller/kyc').then((x) => { if (live) setCurrent(x); }).catch((e) => { if (live) { setCurrent({ status: 'unsubmitted' }); setError(e.status === 401 ? 'Sign in to submit your KYC.' : e.message || 'KYC status could not be loaded.'); } }); return () => { live = false; }; }, []);
   // A rejected submission starts from what was on file; secrets (full Aadhaar, bank account number) must be re-entered.
-  const startEdit = () => { setF((x) => ({ ...x, pan: current.pan || '', panHolderName: current.pan_holder_name || '', gstApplicable: current.gst_applicable !== false, gstin: current.gstin || '', entityType: current.entity_type || 'proprietorship', registeredAddress: current.registered_address || '', bankAccountHolder: current.bank_account_holder || '', bankIfsc: current.bank_ifsc || '' })); setEditing(true); };
+  const startEdit = () => { setF((x) => ({ ...x, pan: current.pan || '', panHolderName: current.pan_holder_name || '', gstApplicable: current.gst_applicable === true, gstin: current.gstin || '', entityType: current.entity_type || 'proprietorship', registeredAddress: current.registered_address || '', bankAccountHolder: current.bank_account_holder || '', bankIfsc: current.bank_ifsc || '' })); setEditing(true); };
 
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const up = (k) => (e) => setF({ ...f, [k]: e.target.value.toUpperCase() });
@@ -73,11 +73,11 @@ export default function LiveKyc({ mobile }) {
     try {
       const body = { gstApplicable: f.gstApplicable, gstin: f.gstApplicable ? f.gstin : undefined, pan: f.pan, panHolderName: f.panHolderName.trim() || undefined, aadhaarNumber: aadhaarDigits, entityType: f.entityType, registeredAddress: f.registeredAddress.trim(), bankAccountHolder: f.bankAccountHolder.trim(), bankAccountNumber: f.bankAccountNumber, bankIfsc: f.bankIfsc };
       setCurrent(await apiFetch('/v1/seller/kyc', { method: 'POST', body })); setEditing(false); setF((x) => ({ ...x, aadhaar: '', bankAccountNumber: '' }));
-      const uploads = [['pan', 'kyc_pan'], ['aadhaar', 'kyc_aadhaar'], ['gst', 'kyc_gst'], ['bank', 'kyc_bank']].filter(([k]) => files[k]);
+      const uploads = [['pan', 'kyc_pan'], ['aadhaarFront', 'kyc_aadhaar_front'], ['aadhaarBack', 'kyc_aadhaar_back'], ['gst', 'kyc_gst'], ['bank', 'kyc_bank']].filter(([k]) => files[k]);
       const failed = [];
       for (const [k, purpose] of uploads) { try { await uploadSellerFile(purpose, files[k]); } catch (err) { failed.push(`${files[k].name}: ${err.message}`); } }
       if (failed.length) showToast(`KYC submitted, but a document did not upload (${failed[0]}). Upload it again from this page.`, 'error');
-      else { setFiles({ pan: null, aadhaar: null, gst: null, bank: null }); showToast('KYC submitted for verification'); }
+      else { setFiles({ pan: null, aadhaarFront: null, aadhaarBack: null, gst: null, bank: null }); showToast('KYC submitted for verification'); }
     } catch (x) { showToast(x instanceof ApiError ? (x.body?.details?.fieldErrors ? Object.values(x.body.details.fieldErrors).flat()[0] : x.message) : 'KYC could not be submitted', 'error'); }
     finally { setBusy(false); }
   };
@@ -117,12 +117,13 @@ export default function LiveKyc({ mobile }) {
             </div>
           </Section>
           <Section n="2" title="Aadhaar" hint="Only the last 4 digits are stored. The full number is never saved.">
-            <div style={{ display: 'grid', gridTemplateColumns: two, gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3,1fr)', gap: 14 }}>
               <label><Label required>Aadhaar number</Label><input style={{ ...FIELD, width: '100%', height: 42, letterSpacing: '.08em' }} value={aadhaarDigits.replace(/(\d{4})(?=\d)/g, '$1 ')} inputMode="numeric" maxLength={14} onChange={(e) => setF({ ...f, aadhaar: e.target.value.replace(/\D/g, '').slice(0, 12) })} placeholder="XXXX XXXX XXXX" /></label>
-              <DocPicker label="Upload Aadhaar (front and back)" file={files.aadhaar} onPick={(x) => setFiles({ ...files, aadhaar: x })} onClear={() => setFiles({ ...files, aadhaar: null })} />
+              <DocPicker label="Upload Aadhaar: front side" file={files.aadhaarFront} onPick={(x) => setFiles({ ...files, aadhaarFront: x })} onClear={() => setFiles({ ...files, aadhaarFront: null })} />
+              <DocPicker label="Upload Aadhaar: back side" file={files.aadhaarBack} onPick={(x) => setFiles({ ...files, aadhaarBack: x })} onClear={() => setFiles({ ...files, aadhaarBack: null })} />
             </div>
           </Section>
-          <Section n="3" title="GST" hint="Required if your business is GST registered.">
+          <Section n="3" title="GST (optional)" hint="Not mandatory. Add your GSTIN only if your business is GST registered.">
             <label style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer', marginBottom: 12 }}><input type="checkbox" checked={f.gstApplicable} onChange={(e) => setF({ ...f, gstApplicable: e.target.checked, gstin: e.target.checked ? f.gstin : '' })} style={{ width: 18, height: 18, accentColor: BLUE }} /><span style={{ color: T.TEXT, fontSize: 13.5, fontWeight: 650 }}>My business is GST registered</span></label>
             {f.gstApplicable ? (
               <div style={{ display: 'grid', gridTemplateColumns: two, gap: 14 }}>

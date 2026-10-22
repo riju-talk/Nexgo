@@ -8,7 +8,7 @@ import * as T from '@/lib/theme';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-glass-border)', borderRadius: 12, boxShadow: '0 2px 8px rgba(15,31,61,.05)' };
 const KYC_LABEL = { verified: 'VERIFIED', pending_review: 'UNDER REVIEW', rejected: 'REJECTED', unsubmitted: 'KYC NOT SUBMITTED' };
-const DOC_LABELS = { kyc_pan: 'PAN card', kyc_aadhaar: 'Aadhaar', kyc_gst: 'GST certificate', kyc_bank: 'Cancelled cheque / bank statement' };
+const DOC_LABELS = { kyc_pan: 'PAN card', kyc_aadhaar: 'Aadhaar', kyc_aadhaar_front: 'Aadhaar (front)', kyc_aadhaar_back: 'Aadhaar (back)', kyc_gst: 'GST certificate', kyc_bank: 'Cancelled cheque / bank statement' };
 
 // Real KYC + document state for the profile page (no placeholder values).
 function useKycAndFiles() {

@@ -71,7 +71,8 @@ app.setErrorHandler((error, request, reply) => {
   const dbCode = (error as { code?: string }).code;
   if (dbCode === '23505') return reply.code(409).send({ error: 'This record already exists (a duplicate name or reference).' });
   if (dbCode === '23514') return reply.code(400).send({ error: (error as Error).message || 'This value is not allowed.' });
-  if ((error as { statusCode?: number }).statusCode && (error as { statusCode?: number }).statusCode! < 500) {
+  // `expose` marks 5xx errors we raise on purpose with a seller-safe reason (courier / storefront outage, missing configuration).
+  if ((error as { statusCode?: number }).statusCode && ((error as { statusCode?: number }).statusCode! < 500 || (error as { expose?: boolean }).expose)) {
     return reply.code((error as { statusCode: number }).statusCode).send({ error: (error as Error).message });
   }
   request.log.error(error);
