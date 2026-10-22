@@ -92,6 +92,7 @@ export default function CommandPalette({ admin = false }) {
   const [active, setActive] = useState(0);
   const [remote, setRemote] = useState({ q: '', data: null });
   const panelRef = useRef(null);
+  const [anchor, setAnchor] = useState(null); // where the search box is on screen, so the panel opens under it and not under the window centre
   const q = norm(query).trim();
   const help = !q || q === '?' || q === 'help';
   const ai = useMemo(() => adminIntent(query), [query]);
@@ -110,6 +111,19 @@ export default function CommandPalette({ admin = false }) {
     }, 200);
     return () => { live = false; window.clearTimeout(t); };
   }, [admin, paletteOpen, help, query, ai.text]);
+
+  // Measure the search box whenever the panel is open (and when the window or layout moves).
+  useEffect(() => {
+    if (!paletteOpen) return undefined;
+    const measure = () => {
+      const box = document.getElementById('nx-search')?.closest('label')?.getBoundingClientRect();
+      if (box) setAnchor({ left: box.left, width: box.width, bottom: box.bottom, vw: window.innerWidth });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    const t = window.setInterval(measure, 400); // the sidebar can collapse while the panel is open
+    return () => { window.removeEventListener('resize', measure); window.clearInterval(t); };
+  }, [paletteOpen]);
 
   // A click outside the search box and the panel closes it.
   useEffect(() => {
@@ -169,7 +183,7 @@ export default function CommandPalette({ admin = false }) {
     }
 
     if (!admin && help) {
-      out.push({ label: 'Search by (type the prefix, or just paste a number)', items: KINDS.map(([prefix, label, example, hint]) => ({ glyph: '›', label: `${prefix}  ${label}`, sub: `${hint}  ·  e.g. ${example}`, key: '', insert: prefix })) });
+      out.push({ label: 'Search by (type the prefix, or just paste a number)', items: KINDS.map(([prefix, label, example, hint]) => ({ glyph: '›', label: label, sub: `${hint}  ·  e.g. ${example}`, key: prefix, insert: prefix })) });
     }
     const pages = screens.filter((s) => help || [s.title, s.group, s.sub].some((v) => norm(v).includes(q)))
       .slice(0, q && !help ? 6 : 10).map((s) => ({ glyph: '▸', label: s.title, sub: `${s.group} · ${s.sub || ''}`, key: '', run: () => nav(s.id) }));
@@ -216,9 +230,14 @@ export default function CommandPalette({ admin = false }) {
     ...(preview.state === 'ndr' ? [['Go to NDR', () => { finish(); nav('ndr'); }]] : []),
     ['Bulk track', () => { finish(); nav('bulk-track'); }],
   ] : [];
+  // Centre the panel under the search box, then keep it fully on screen.
+  const wanted = preview ? 920 : 640;
+  const place = anchor
+    ? (() => { const width = Math.min(wanted, anchor.vw - 16); const centred = anchor.left + anchor.width / 2 - width / 2; return { width, left: Math.max(8, Math.min(centred, anchor.vw - width - 8)) }; })()
+    : { width: `min(${wanted}px,92vw)`, left: '50%' };
   const starts = groups.out.map((g, gi) => groups.out.slice(0, gi).reduce((n, x) => n + x.items.length, 0)); // row number of each group's first item
   return (
-    <div ref={panelRef} role="listbox" style={{ position: 'fixed', top: admin ? 56 : 64, left: '50%', transform: 'translateX(-50%)', zIndex: 100, width: preview ? 'min(920px,94vw)' : 'min(640px,92vw)', background: T.SURFACE, border: `1px solid ${T.MENU_BORDER}`, borderRadius: 12, boxShadow: '0 24px 60px rgba(11,31,68,.22)', overflow: 'hidden' }}>
+    <div ref={panelRef} role="listbox" style={{ position: 'fixed', top: anchor ? anchor.bottom + 8 : admin ? 56 : 64, left: place.left, transform: place.left === '50%' ? 'translateX(-50%)' : undefined, zIndex: 100, width: place.width, background: T.SURFACE, border: `1px solid ${T.MENU_BORDER}`, borderRadius: 12, boxShadow: '0 24px 60px rgba(11,31,68,.22)', overflow: 'hidden' }}>
       {detected && (
         <div style={{ padding: '7px 16px', fontSize: 12, color: T.TEXT_SECONDARY, background: 'rgba(56,119,252,.08)', borderBottom: `1px solid ${T.DIVIDER}` }}>
           {detected.explicit ? 'Searching' : 'Looks like'} <b style={{ color: T.TEXT }}>{INTENT_LABEL[detected.kind]}</b>{detected.value ? <> · <span style={{ fontFamily: T.MONO }}>{detected.value}</span></> : null}
