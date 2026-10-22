@@ -2,7 +2,8 @@ import { maskCustomerRows } from '../lib/permissions.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
-import { withSellerTransaction } from '../db/client.js';
+import { db, withSellerTransaction } from '../db/client.js';
+import { pushTracking } from '../lib/shopify.js';
 import { audit } from '../lib/audit.js';
 import { calculateRate, paiseToAmount } from '../lib/money.js';
 import { laneZone } from '../lib/zone.js';
@@ -16,6 +17,12 @@ const bookingInput = z.object({ orderId: uuid, providerCode: z.string().regex(/^
 function principal(request: FastifyRequest) { if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 }); return request.principal; }
 
 type Rate = { provider_id: string; provider_code: string; provider_name: string; service_id: string; service_code: string; service_name: string; base_weight_g: number; base_price_paise: number; additional_weight_g: number; additional_price_paise: number; cod_fee_paise: number; fuel_surcharge_bps: number; cod_percent_bps: number; rto_base_price_paise: number | null; rto_additional_price_paise: number | null; payment_mode: 'prepaid' | 'cod'; cod_amount_paise: number; total_weight_g: number; destination_pincode: string };
+
+// Best effort: tells Shopify the order shipped (AWB + courier) once the booking has committed. Never fails the booking.
+async function pushTrackingForShipment(sellerId: string, orderId: string, awb: string) {
+  const row = await db.query<{ name: string }>('SELECT cp.name FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.awb=$1 AND s.seller_id=$2', [awb, sellerId]);
+  await pushTracking(sellerId, orderId, awb, row.rows[0]?.name ?? 'NEXGO');
+}
 
 // One booking, inside the caller's seller transaction (wallet-checked, idempotent on the key).
 async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
@@ -122,6 +129,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
     const input = bookingInput.parse(request.body); const p = principal(request); const key = request.headers['idempotency-key'];
     if (typeof key !== 'string' || key.length < 16 || key.length > 200) throw Object.assign(new Error('A 16-200 character Idempotency-Key header is required'), { statusCode: 400 });
     const result = await withSellerTransaction(p.sellerId, (client) => bookInTx(client, p, request.id, input, key));
+    if (!result.replay) await pushTrackingForShipment(p.sellerId, result.shipment.order_id, result.shipment.awb);
     return reply.code(result.replay ? 200 : 201).send(result);
   });
   // Courier allocation by the seller's priority list (Settings > Courier rules: priority 1, 2, 3 ...). For each order the first courier
@@ -162,6 +170,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
           }
           return { ok: false, error: lastError };
         });
+        if (out.ok && out.awb) await pushTrackingForShipment(p.sellerId, orderId, out.awb);
         results.push({ orderId, ...out });
       } catch (e) { results.push({ orderId, ok: false, error: (e as Error).message || 'Could not assign a courier' }); }
     }

@@ -2,6 +2,7 @@ import { db, withTransaction } from './db/client.js';
 import PDFDocument from 'pdfkit';
 import { storage } from './lib/storage.js';
 import { config } from './config.js';
+import { loadChannel, syncChannel } from './lib/shopify.js';
 
 type Job = { id: string; seller_id: string | null; job_type: string; payload: Record<string, unknown>; attempts: number };
 
@@ -32,10 +33,13 @@ async function fail(job: Job, error: unknown) {
 
 async function execute(job: Job) {
   switch (job.job_type) {
-    case 'channel.sync':
+    case 'channel.sync': {
+      const channelId = String(job.payload.channelId ?? '');
+      if (channelId && await loadChannel(channelId)) { await complete(job, { provider: 'shopify', ...(await syncChannel(channelId)) }); return; }
       // The real provider adapter replaces this deterministic local result.
       await complete(job, { provider: 'mock', synced: 0, message: 'Connection registered; provider credentials are required to sync real orders.' });
       return;
+    }
     case 'shipment.label.generate': {
       const documentId = String(job.payload.documentId ?? '');
       const result = await db.query<{ id: string; storage_key: string; awb: string; order_number: string; courier_name: string; service_name: string }>(`SELECT d.id,d.storage_key,s.awb,o.order_number,cp.name AS courier_name,cs.display_name AS service_name FROM documents d JOIN shipments s ON s.id=d.shipment_id JOIN orders o ON o.id=s.order_id JOIN courier_providers cp ON cp.id=s.provider_id JOIN courier_services cs ON cs.id=s.service_id WHERE d.id=$1`, [documentId]);

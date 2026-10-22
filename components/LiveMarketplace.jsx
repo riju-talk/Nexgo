@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch, ApiError, API_BASE } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 import { BLUE, Btn, CARD, FIELD, Pill, Table, dateTime } from './Kit';
@@ -14,7 +14,7 @@ const PROVIDERS = {
   amazon: { api: 'amazon', name: 'Amazon.in', color: '#FF9900', blurb: 'Bring Amazon seller orders into NEXGO and ship them with your preferred courier.', urlHint: 'https://sellercentral.amazon.in (optional)', nameHint: 'e.g. amazon-in-main' },
 };
 const STATE = { connected: ['Connected', T.GREEN], disconnected: ['Awaiting authorization', T.AMBER], error: ['Needs attention', T.RED], disabled: ['Disabled', T.TEXT_MUTED] };
-const STEPS = [['Connect your store', 'Name it and add the store URL.'], ['Authorize access', 'NEXGO gets read access to orders through the secure provider hand-off.'], ['Orders sync automatically', 'New orders appear in Orders, ready to ship.']];
+const STEPS = [['Connect your store', 'Enter your store address and continue to the provider.'], ['Authorize access', 'NEXGO gets read access to orders through the secure provider hand-off.'], ['Orders sync automatically', 'New orders appear in Orders, ready to ship.']];
 
 export default function LiveMarketplace({ id, mobile }) {
   const { showToast, nav } = useAppState();
@@ -25,6 +25,16 @@ export default function LiveMarketplace({ id, mobile }) {
 
   const load = useCallback(() => apiFetch('/v1/channels').then((x) => { setItems(x.items || []); setError(''); }).catch((e) => { setItems([]); setError(e.status === 401 ? 'Sign in to manage marketplace connections.' : e.message || 'Connections could not be loaded.'); }), []);
   useEffect(() => { load(); }, [load]);
+  // Back from Shopify's consent screen: the API redirects here with ?shopify=connected|error.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search); const r = q.get('shopify'); if (!r) return;
+    showToast(r === 'connected' ? 'Shopify store connected. Orders are being imported.' : (q.get('reason') || 'Shopify connection failed.'), r === 'connected' ? undefined : 'error');
+    window.history.replaceState(null, '', window.location.pathname);
+    load();
+  }, [load, showToast]);
+  // Full-page navigation to the API: the OAuth hand-off must leave the SPA (it redirects to Shopify and back).
+  const shopifyConnect = (e) => { e.preventDefault(); const shop = form.url.trim(); // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- API route, not a Next page
+    if (shop) window.location.assign(`${API_BASE}/v1/channels/shopify/install?shop=${encodeURIComponent(shop)}`); };
 
   const mine = (items || []).filter((c) => c.provider === cfg.api);
   const nameOk = form.name.trim().length >= 2; const urlOk = !form.url.trim() || /^https?:\/\/\S+$/i.test(form.url.trim());
@@ -36,7 +46,7 @@ export default function LiveMarketplace({ id, mobile }) {
     catch (x) { showToast(x instanceof ApiError ? (x.status === 409 || /unique|duplicate/i.test(x.message) ? 'A store with this name is already connected.' : x.message) : 'Could not connect this store', 'error'); }
     finally { setBusy(false); }
   };
-  const sync = async (c) => { setSyncing(c.id); try { await apiFetch(`/v1/channels/${c.id}/sync`, { method: 'POST' }); showToast(`Sync queued for ${c.display_name}.`); load(); } catch (x) { showToast(x.message || 'Sync could not be queued', 'error'); } finally { setSyncing(''); } };
+  const sync = async (c) => { setSyncing(c.id); try { const r = await apiFetch(`/v1/channels/${c.id}/sync`, { method: 'POST' }); showToast(r?.synced ? `${c.display_name}: ${r.created} new order${r.created === 1 ? '' : 's'} imported` : `Sync queued for ${c.display_name}.`); load(); } catch (x) { showToast(x.message || 'Sync could not be queued', 'error'); } finally { setSyncing(''); } };
   const remove = async (c) => { try { await apiFetch(`/v1/channels/${c.id}`, { method: 'DELETE' }); showToast(`${c.display_name} removed`); setConfirm(''); load(); } catch (x) { showToast(x.message || 'Could not remove this store', 'error'); setConfirm(''); } };
 
   const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
@@ -52,7 +62,18 @@ export default function LiveMarketplace({ id, mobile }) {
         {STEPS.map(([t, d], i) => <div key={t} style={{ ...CARD, padding: 14, display: 'flex', gap: 11 }}><span style={{ width: 26, height: 26, borderRadius: 13, background: `${BLUE}1a`, color: BLUE, display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 13, flex: '0 0 26px' }}>{i + 1}</span><span><b style={{ color: T.TEXT, fontSize: 13.5 }}>{t}</b><small style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 12, lineHeight: 1.45 }}>{d}</small></span></div>)}
       </div>
 
-      <form onSubmit={connect} style={{ ...CARD, padding: 18, marginBottom: 14 }}>
+      {cfg.api === 'shopify' && (
+        <form onSubmit={shopifyConnect} style={{ ...CARD, padding: 18, marginBottom: 14 }}>
+          <b style={{ color: T.TEXT, fontSize: 15 }}>Connect a Shopify store</b>
+          <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr auto', gap: 12, alignItems: 'end' }}>
+            <label style={{ fontSize: 12.5, fontWeight: 650, color: T.TEXT_LABEL }}>Shopify store address <span style={{ color: T.RED }}>*</span><input style={{ ...FIELD, width: '100%', height: 42, marginTop: 6 }} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="your-store.myshopify.com" /></label>
+            <Btn primary type="submit" disabled={!form.url.trim()} style={{ height: 42 }}>Connect with Shopify</Btn>
+          </div>
+          <small style={{ display: 'block', marginTop: 10, color: T.TEXT_MUTED }}>You will approve access on Shopify. NEXGO never sees your Shopify password, and you can disconnect at any time.</small>
+        </form>
+      )}
+
+      {cfg.api !== 'shopify' && <form onSubmit={connect} style={{ ...CARD, padding: 18, marginBottom: 14 }}>
         <b style={{ color: T.TEXT, fontSize: 15 }}>Connect a {cfg.name} store</b>
         <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1.4fr auto', gap: 12, alignItems: 'end' }}>
           <label style={{ fontSize: 12.5, fontWeight: 650, color: T.TEXT_LABEL }}>Store name <span style={{ color: T.RED }}>*</span><input style={{ ...FIELD, width: '100%', height: 42, marginTop: 6 }} value={form.name} maxLength={120} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={cfg.nameHint} /></label>
@@ -60,7 +81,7 @@ export default function LiveMarketplace({ id, mobile }) {
           <Btn primary type="submit" disabled={busy || !nameOk || !urlOk} style={{ height: 42 }}>{busy ? 'Connecting…' : 'Connect store'}</Btn>
         </div>
         <small style={{ display: 'block', marginTop: 10, color: T.TEXT_MUTED }}>Your store credentials are never typed here. Authorization happens through the provider&apos;s secure hand-off.</small>
-      </form>
+      </form>}
 
       <section style={{ ...CARD, overflow: 'hidden' }}>
         <div style={{ padding: '14px 16px', borderBottom: `1px solid ${T.DIVIDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><b style={{ color: T.TEXT, fontSize: 15 }}>Connected {cfg.name} stores</b><small style={{ color: T.TEXT_MUTED }}>{mine.length} store{mine.length === 1 ? '' : 's'}</small></div>

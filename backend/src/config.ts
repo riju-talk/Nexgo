@@ -25,6 +25,13 @@ const schema = z.object({
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().default('local-development-razorpay-webhook-secret'),
+  // Shopify Dev Dashboard app. Unset = the Shopify connect flow answers 503 instead of failing.
+  SHOPIFY_CLIENT_ID: z.string().optional(),
+  SHOPIFY_CLIENT_SECRET: z.string().optional(),
+  SHOPIFY_API_VERSION: z.string().default('2026-10'),
+  SHOPIFY_SCOPES: z.string().default('read_orders,write_orders,read_customers,read_products,read_locations,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders'),
+  // Public origin Shopify calls back (OAuth redirect + webhooks). Defaults to the frontend origin, which proxies /v1/*.
+  SHOPIFY_PUBLIC_URL: z.string().url().optional(),
   SMTP_HOST: z.string().default('localhost'),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
 });
