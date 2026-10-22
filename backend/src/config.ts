@@ -32,6 +32,10 @@ const schema = z.object({
   SHOPIFY_SCOPES: z.string().default('read_orders,write_orders,read_customers,read_products,read_locations,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders'),
   // Public origin Shopify calls back (OAuth redirect + webhooks). Defaults to the frontend origin, which proxies /v1/*.
   SHOPIFY_PUBLIC_URL: z.string().url().optional(),
+  // Lorrigo courier aggregator. No key = the provider refuses bookings (never mocks them). The webhook token is what Lorrigo sends in x-api-key.
+  LORRIGO_API_KEY: z.string().optional(),
+  LORRIGO_BASE_URL: z.string().url().default('https://app.lorrigo.com/api/v2'),
+  LORRIGO_WEBHOOK_TOKEN: z.string().min(24).optional(),
   SMTP_HOST: z.string().default('localhost'),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
 });

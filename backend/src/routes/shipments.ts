@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { db, withSellerTransaction } from '../db/client.js';
 import { pushTracking } from '../lib/shopify.js';
+import { loadBookingDetails } from '../lib/bookingDetails.js';
 import { audit } from '../lib/audit.js';
 import { calculateRate, paiseToAmount } from '../lib/money.js';
 import { laneZone } from '../lib/zone.js';
@@ -40,8 +41,11 @@ async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, req
     const balance = await client.query<{ balance_paise: string }>(`SELECT COALESCE(SUM(CASE WHEN entry_type IN ('credit','release') THEN amount_paise WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END),0)::bigint AS balance_paise FROM wallet_entries WHERE seller_id=$1`, [p.sellerId]);
     const debitLimit = Number((await client.query<{ l: string }>('SELECT wallet_debit_limit_paise AS l FROM sellers WHERE id=$1', [p.sellerId])).rows[0]?.l ?? 0);
     if (Number(balance.rows[0].balance_paise) + debitLimit < price.totalPaise) throw Object.assign(new Error('Insufficient wallet balance. Recharge your wallet to book this shipment.'), { statusCode: 402 });
-    const providerBooking = await courierAdapter(selection.provider_code).book({ reference: input.orderId, destinationPincode: selection.destination_pincode, weightG: Math.max(selection.total_weight_g, 1), paymentMode: selection.payment_mode, codAmountPaise: selection.payment_mode === 'cod' ? selection.cod_amount_paise : 0 });
+    const details = await loadBookingDetails(client, p.sellerId, input.orderId, selection.service_id);
+    const providerBooking = await courierAdapter(selection.provider_code).book({ details, reference: input.orderId, destinationPincode: selection.destination_pincode, weightG: Math.max(selection.total_weight_g, 1), paymentMode: selection.payment_mode, codAmountPaise: selection.payment_mode === 'cod' ? selection.cod_amount_paise : 0 });
     const shipment = await client.query(`INSERT INTO shipments (seller_id,order_id,provider_id,service_id,awb,chargeable_weight_g,shipping_charge_paise,quote_snapshot,idempotency_key,destination_pincode,destination_city,promised_delivery_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,cu.pincode,cu.city,now()+interval '5 days' FROM orders o JOIN customers cu ON cu.id=o.customer_id WHERE o.id=$2 RETURNING *`, [p.sellerId, input.orderId, selection.provider_id, selection.service_id, providerBooking.awb, Math.max(selection.total_weight_g, 1), price.totalPaise, JSON.stringify({ zone, provider: selection.provider_code, providerShipmentId: providerBooking.providerShipmentId, service: selection.service_code, destinationPincode: selection.destination_pincode, paymentMode: selection.payment_mode, price }), key]);
+    await client.query('UPDATE shipments SET provider_shipment_id=$1 WHERE id=$2', [providerBooking.providerShipmentId, shipment.rows[0].id]);
+    if (providerBooking.pickupHubId) await client.query('INSERT INTO courier_pickup_hubs (warehouse_id,provider_id,seller_id,external_hub_id) SELECT o.warehouse_id,$2,$3,$4 FROM orders o WHERE o.id=$1 ON CONFLICT DO NOTHING', [input.orderId, selection.provider_id, p.sellerId, providerBooking.pickupHubId]);
     await client.query("UPDATE orders SET state='booked',updated_at=now() WHERE id=$1", [input.orderId]);
     await client.query("INSERT INTO shipment_events (shipment_id,state,occurred_at,description,source) VALUES ($1,'booked',now(),'Shipment booked successfully','booking')", [shipment.rows[0].id]);
     await client.query(`INSERT INTO wallet_entries (seller_id,entry_type,amount_paise,reference_type,reference_id,idempotency_key,description)
@@ -181,12 +185,12 @@ export async function shipmentRoutes(app: FastifyInstance) {
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
     return withSellerTransaction(p.sellerId, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
-      const found = await client.query<{ id: string; awb: string; state: string; order_id: string; code: string }>(`SELECT s.id, s.awb, s.state::text, s.order_id, cp.code FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.id = $1 AND s.seller_id = $2 FOR UPDATE OF s`, [shipmentId, p.sellerId]);
+      const found = await client.query<{ id: string; awb: string; state: string; order_id: string; code: string; provider_shipment_id: string | null }>(`SELECT s.id, s.awb, s.provider_shipment_id, s.state::text, s.order_id, cp.code FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.id = $1 AND s.seller_id = $2 FOR UPDATE OF s`, [shipmentId, p.sellerId]);
       const row = found.rows[0];
       if (!row) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 });
       if (row.state === 'cancelled') return { id: row.id, state: 'cancelled', refundedPaise: 0, replay: true };
       if (!['booked', 'pickup_pending', 'pickup_scheduled'].includes(row.state)) throw Object.assign(new Error('Only shipments that have not been picked up can be cancelled'), { statusCode: 409 });
-      await courierAdapter(row.code).cancel(row.awb);
+      await courierAdapter(row.code).cancel(row.provider_shipment_id ?? row.awb);
       await client.query(`UPDATE shipments SET state = 'cancelled', cancelled_at = now(), updated_at = now() WHERE id = $1`, [row.id]);
       await client.query(`UPDATE orders SET state = 'cancelled', updated_at = now() WHERE id = $1`, [row.order_id]);
       await client.query(`INSERT INTO shipment_events (shipment_id, state, occurred_at, description, source) VALUES ($1, 'cancelled', now(), 'Shipment cancelled by seller', 'manual')`, [row.id]);

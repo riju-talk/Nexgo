@@ -22,7 +22,7 @@ export function rtoSubStatus(value: string) { return RTO_SUB[value.trim().toLowe
 export function isProgressionAllowed(from: CanonicalShipmentState, to: CanonicalShipmentState) {
   const allowed: Record<CanonicalShipmentState, CanonicalShipmentState[]> = {
     booked: ['in_transit', 'cancelled'], in_transit: ['out_for_delivery', 'ndr', 'rto', 'delivered'],
-    out_for_delivery: ['delivered', 'ndr', 'rto'], ndr: ['in_transit', 'out_for_delivery', 'rto'],
+    out_for_delivery: ['delivered', 'ndr', 'rto'], ndr: ['in_transit', 'out_for_delivery', 'rto', 'delivered'],
     rto: ['in_transit', 'delivered'], delivered: [], cancelled: [],
   };
   return from === to || allowed[from].includes(to);
