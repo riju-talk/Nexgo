@@ -101,7 +101,7 @@ export default function AdminShell({ children }) {
         <header style={{ height: 58, padding: mobile ? '0 14px' : '0 20px', display: 'flex', alignItems: 'center', gap: 16, position: 'sticky', top: 0, zIndex: 40, background: 'var(--nx-chrome-bg)', borderBottom: '1px solid var(--nx-chrome-border)' }}>
           {mobile && <motion.button onClick={() => setNavOpen(!navOpen)} whileTap={{ scale: .93 }} style={{ width: 34, height: 34, border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 18, cursor: 'pointer' }}>☰</motion.button>}
           {!mobile && pageTitle && <b style={{ flex: '0 0 auto', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--nx-chrome-text)', fontSize: 15, letterSpacing: '-.015em' }}>{pageTitle}</b>}
-          <SearchBox height={34} radius={8} placeholder="Search order, AWB, seller, courier…" />
+          <SearchBox height={34} radius={8} placeholder="Search seller:, awb:, order: or paste a number…" />
           {mobile && <motion.button onClick={toggleTheme} whileTap={{ scale: .93 }} title="Toggle colour mode" style={{ width: 34, height: 34, border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: T.ACCENT, cursor: 'pointer', fontSize: 16 }}>{dark ? '☾' : '☀'}</motion.button>}
           {!mobile && <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ display: 'flex', padding: 3, gap: 2, background: 'var(--ops-surface-soft)', border: '1px solid var(--ops-border)', borderRadius: 8 }}>

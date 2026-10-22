@@ -45,7 +45,7 @@ export default function TopBar({ activeId, mobile }) {
             <div style={{ width: 14, height: 1.6, background: light ? '#32465E' : '#DCE4EF' }} />
             <div style={{ width: 14, height: 1.6, background: light ? '#32465E' : '#DCE4EF' }} />
           </motion.div>
-          <SearchBox compact height={36} radius={9} placeholder="Search AWB, order or screen" />
+          <SearchBox compact height={36} radius={9} placeholder="awb: phone: pin: status: ... or ?" />
           <motion.div onClick={() => nav('wallet')} whileTap={TAP} transition={TAP_TRANSITION} title={`Wallet ${balance}`} style={{ width: 36, height: 36, flex: '0 0 36px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: 'var(--nx-side-wallet-text)', background: 'var(--nx-side-wallet)', border: '1px solid rgba(56,119,252,.26)', borderRadius: 9, fontSize: 15, fontWeight: 750 }}>₹</motion.div>
         </>
       ) : (
@@ -59,7 +59,7 @@ export default function TopBar({ activeId, mobile }) {
               <div style={{ marginTop: 4, fontSize: 15, fontWeight: 700, color: 'var(--nx-chrome-text)', letterSpacing: '-.015em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pageTitle}</div>
             </div>
           </div>
-          <SearchBox placeholder="Run a command, jump to a screen, or paste an AWB" />
+          <SearchBox placeholder="Paste an AWB, phone, order or pincode, or type awb: status: inv: ... (? for all)" />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto' }}>
             <motion.div onClick={() => nav('wallet')} whileTap={TAP} transition={TAP_TRANSITION} title="Open wallet" style={{ height: 38, display: 'flex', alignItems: 'center', gap: 9, padding: '0 12px 0 6px', cursor: 'pointer', borderRadius: 10, background: 'var(--nx-chrome-search)', border: '1px solid var(--nx-chrome-border)' }}>
               <div style={{ width: 27, height: 27, display: 'grid', placeItems: 'center', borderRadius: 8, color: T.ACCENT, background: 'rgba(56,119,252,.12)', fontSize: 14, fontWeight: 750 }}>₹</div>

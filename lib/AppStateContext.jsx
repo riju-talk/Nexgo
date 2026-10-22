@@ -45,6 +45,7 @@ export function AppStateProvider({ children }) {
   const [stage, setStage] = useState('NDR');
   const [queueTab, setQueueTab] = useState('All');
   const [trackFocus, setTrackFocus] = useState(''); // AWB the Track page should open (set by the command palette)
+  const [trackHandoff, setTrackHandoff] = useState(null); // { q, tab, tag } the Track page should apply once (set by the search box)
   const [dashRange, setDashRange] = useState({ from: '', to: '' }); // used when dashDays === 0 (custom range)
   const [dashDays, setDashDays] = useState(30); // dashboard date range in days (header filter + cards share it)
   const [resolution, setResolution] = useState(0);
@@ -137,10 +138,10 @@ export function AppStateProvider({ children }) {
   const clearToast = useCallback(() => setToast(null), []);
 
   const value = useMemo(() => ({
-    kpis, kpiOpen, paletteOpen, paletteQuery, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, dashRange, trackFocus, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast,
-    setDashRange, setKpiOpen, setPaletteOpen, setPaletteQuery, setDrawerOpen, setStage, setQueueTab, setDashDays, setTrackFocus, setResolution, setNavOpen,
+    kpis, kpiOpen, paletteOpen, paletteQuery, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, dashRange, trackFocus, trackHandoff, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast,
+    setDashRange, setKpiOpen, setPaletteOpen, setPaletteQuery, setDrawerOpen, setStage, setQueueTab, setDashDays, setTrackFocus, setTrackHandoff, setResolution, setNavOpen,
     toggleKpi, resetKpi, toggleGroup, setTab, toggleExpanded, toggleSidebar, nav, closeTransient, setTheme, toggleTheme, showToast, clearToast,
-  }), [kpis, kpiOpen, paletteOpen, paletteQuery, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, dashRange, trackFocus, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast, toggleKpi, resetKpi, toggleGroup, setTab, toggleExpanded, toggleSidebar, nav, closeTransient, setTheme, toggleTheme, showToast, clearToast]);
+  }), [kpis, kpiOpen, paletteOpen, paletteQuery, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, dashRange, trackFocus, trackHandoff, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast, toggleKpi, resetKpi, toggleGroup, setTab, toggleExpanded, toggleSidebar, nav, closeTransient, setTheme, toggleTheme, showToast, clearToast]);
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }

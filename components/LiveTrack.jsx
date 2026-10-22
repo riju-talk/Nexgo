@@ -171,7 +171,7 @@ export default function LiveTrack({ mobile }) {
   const allowed = (key) => !me?.permissions || me.role === 'owner' || me.permissions.includes(key);
   const canExport = allowed('shipments.export');
   const canExportCustomer = allowed('shipments.export_customer');
-  const { nav, showToast, trackFocus, setTrackFocus } = useAppState();
+  const { nav, showToast, trackFocus, setTrackFocus, trackHandoff, setTrackHandoff } = useAppState();
   const [rows, setRows] = useState(null);
   const [failed, setFailed] = useState([]);
   const [error, setError] = useState(null);
@@ -194,6 +194,17 @@ export default function LiveTrack({ mobile }) {
     if (hit) setSelectedId(hit.id);
     setTrackFocus('');
   }, [trackFocus, rows, setTrackFocus]);
+  // Opened from the search box with more than an AWB: apply a tab, a tag and / or a text filter once.
+  useEffect(() => {
+    if (!trackHandoff || !rows) return;
+    const { q = '', tab: wanted, tag = '' } = trackHandoff;
+    if (wanted && TABS.some(([k]) => k === wanted)) setTab(wanted); // eslint-disable-line react-hooks/set-state-in-effect -- one-shot hand-off from the search box
+    setF((x) => ({ ...x, q, tag }));
+    setPage(1);
+    const hit = q && rows.find((r) => r.awb === q);
+    if (hit) setSelectedId(hit.id);
+    setTrackHandoff(null);
+  }, [trackHandoff, rows, setTrackHandoff]);
   const [picked, setPicked] = useState(() => new Set());
   const set = (k) => (e) => { setF((x) => ({ ...x, [k]: e.target.value })); setPage(1); };
 
