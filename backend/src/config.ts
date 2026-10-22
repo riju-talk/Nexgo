@@ -8,7 +8,7 @@ const schema = z.object({
   DATABASE_URL: z.string().url().default('postgresql://neondb_owner:npg_VmdTLxel69oI@ep-noisy-waterfall-b436g5m8.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'),
   DB_POOL_MAX: z.coerce.number().int().min(1).max(50).default(process.env.VERCEL ? 3 : 12),
   STRICT_SECRETS: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
-  FRONTEND_ORIGIN: z.string().url().default(process.env.VERCEL ? 'https://nexgo-beta.vercel.app' : 'http://localhost:3021'),
+  FRONTEND_ORIGIN: z.string().url().default(process.env.VERCEL ? 'https://nexgo-beta.vercel.app' : 'http://localhost:3021').transform((v) => new URL(v).origin), // origin only: a stray path ("/login") in the env var would break every redirect and e-mail link
   SESSION_TTL_DAYS: z.coerce.number().int().positive().max(30).default(7),
   COURIER_WEBHOOK_SECRET: z.string().min(32).optional(),
   // Label/invoice PDFs need an S3-compatible bucket. Until one is connected the file endpoints answer 501 instead of failing.
