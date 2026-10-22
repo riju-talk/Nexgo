@@ -149,7 +149,7 @@ export default function TablePage({ activeId, mobile, phone }) {
                   style={{ position: 'relative', padding: '13px 12px 11px', color: on ? (admin ? 'var(--ops-heading)' : T.TEXT) : (admin ? 'var(--ops-muted)' : T.TEXT_SECONDARY), fontSize: 13.5, fontWeight: on ? 600 : 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}
                 >
                   {label}
-                  <div style={{ fontSize: 11.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', background: on ? 'rgba(27,159,214,.18)' : (admin ? 'var(--ops-divider)' : T.DIVIDER), color: on ? '#14527f' : (admin ? 'var(--ops-subtle)' : '#6B6659'), padding: '1px 6px', borderRadius: 10 }}>{count}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, fontVariantNumeric: 'tabular-nums', background: on ? 'rgba(56,119,252,.18)' : (admin ? 'var(--ops-divider)' : T.DIVIDER), color: on ? '#14527f' : (admin ? 'var(--ops-subtle)' : '#6B6659'), padding: '1px 6px', borderRadius: 10 }}>{count}</div>
                   {on && (
                     <motion.div
                       layoutId={`tab-underline-${activeId}`}
@@ -242,10 +242,10 @@ export default function TablePage({ activeId, mobile, phone }) {
       </div>
       <style jsx>{`
         .nxc-btn { transition: background 100ms ease-out, border-color 100ms ease-out; }
-        .nxc-btn:hover { background: ${admin ? 'var(--ops-surface)' : 'var(--nx-surface-soft)'}; border-color: ${admin ? 'rgba(27,159,214,.3)' : 'var(--nx-menu-border)'}; }
+        .nxc-btn:hover { background: ${admin ? 'var(--ops-surface)' : 'var(--nx-surface-soft)'}; border-color: ${admin ? 'rgba(56,119,252,.3)' : 'var(--nx-menu-border)'}; }
         .nxc-tab:hover { color: ${admin ? 'var(--ops-heading)' : 'var(--nx-text)'}; }
         .nxc-row { transition: background 100ms ease-out; }
-        .nxc-row:hover { background: rgba(27,159,214,.09); }
+        .nxc-row:hover { background: rgba(56,119,252,.09); }
       `}</style>
     </div>
   );

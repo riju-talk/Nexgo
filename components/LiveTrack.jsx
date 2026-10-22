@@ -364,7 +364,7 @@ export default function LiveTrack({ mobile }) {
       )}
 
       {picked.size > 0 && (
-        <div style={{ ...CARD, padding: '9px 12px', marginBottom: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', background: 'rgba(27,159,214,.08)', boxShadow: 'none' }}>
+        <div style={{ ...CARD, padding: '9px 12px', marginBottom: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', background: 'rgba(56,119,252,.08)', boxShadow: 'none' }}>
           <b style={{ fontSize: 13, color: T.TEXT }}>{picked.size} selected</b>
           <Btn small onClick={() => copyText(visible.filter((r) => picked.has(r.id)).map((r) => r.awb).join('\n'), showToast, 'AWBs copied')}>Copy AWBs</Btn>
           {visible.some((r) => picked.has(r.id) && r.state === 'failed') && <Btn small primary onClick={() => assignCouriers(visible.filter((r) => picked.has(r.id) && r.state === 'failed').map((r) => r.id), showToast, async () => { await load(); setPicked(new Set()); })}>Assign couriers</Btn>}
@@ -379,7 +379,7 @@ export default function LiveTrack({ mobile }) {
       )}
 
       {!all.length ? (
-        <section style={{ ...CARD, minHeight: 220, padding: 42, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}><div style={{ width: 42, height: 42, borderRadius: 12, display: 'grid', placeItems: 'center', background: 'rgba(27,159,214,.12)', color: T.ACCENT, fontSize: 20 }}>✈</div><b style={{ marginTop: 14, color: T.TEXT, fontSize: 16 }}>No shipments yet</b><span style={{ marginTop: 5, color: T.TEXT_MUTED, fontSize: 13 }}>Book an order with a courier and its live tracking will appear here.</span></section>
+        <section style={{ ...CARD, minHeight: 220, padding: 42, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}><div style={{ width: 42, height: 42, borderRadius: 12, display: 'grid', placeItems: 'center', background: 'rgba(56,119,252,.12)', color: T.ACCENT, fontSize: 20 }}>✈</div><b style={{ marginTop: 14, color: T.TEXT, fontSize: 16 }}>No shipments yet</b><span style={{ marginTop: 5, color: T.TEXT_MUTED, fontSize: 13 }}>Book an order with a courier and its live tracking will appear here.</span></section>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: selected && !mobile ? 'minmax(0,1fr) 400px' : '1fr', gap: 14, alignItems: 'start' }}>
           <section style={{ ...CARD, overflow: 'hidden' }}>
@@ -395,7 +395,7 @@ export default function LiveTrack({ mobile }) {
                       {pageRows.map((r) => {
                         const late = isDelayed(r);
                         return (
-                          <tr key={r.id} onClick={() => setSelectedId(r.id === selectedId ? null : r.id)} style={{ cursor: 'pointer', background: r.id === selectedId ? 'rgba(27,159,214,.09)' : undefined }}>
+                          <tr key={r.id} onClick={() => setSelectedId(r.id === selectedId ? null : r.id)} style={{ cursor: 'pointer', background: r.id === selectedId ? 'rgba(56,119,252,.09)' : undefined }}>
                             <td style={CELL} onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Select ${r.order_number}`} checked={picked.has(r.id)} onChange={() => toggleOne(r.id)} /></td>
                             <td style={{ ...CELL, whiteSpace: 'nowrap' }}>{channelName(r.channel)}</td>
                             <td style={CELL}><b>{r.order_number}</b>{(r.tags || []).length > 0 && <small style={{ ...SUB, color: T.ACCENT }}>{r.tags.map((t) => `#${t}`).join(' ')}</small>}</td>

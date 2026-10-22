@@ -9,6 +9,8 @@ import { pathFor, idForPath } from '@/lib/routes';
 import { PAGES } from '@/lib/data';
 import * as T from '@/lib/theme';
 import { adminApi } from '@/lib/api';
+import SearchBox from './SearchBox';
+import CommandPalette from './CommandPalette';
 
 const GROUPS = [
   ['Overview', [['Dashboard', 'a-overview', '▦']]],
@@ -33,7 +35,7 @@ function AdminNav({ mobile }) {
       style={{ width: 272, flex: '0 0 272px', position: mobile ? 'fixed' : 'sticky', left: 0, top: 0, height: '100vh', zIndex: 70, overflowY: 'auto', background: 'var(--nx-side-grad)', color: 'var(--nx-side-text)', borderRight: mobile ? 'none' : '1px solid var(--nx-side-edge)', boxShadow: mobile && visible ? '0 20px 54px rgba(8,20,40,.35)' : 'none' }}
     >
       <Link href={pathFor('a-overview')} onClick={() => mobile && setNavOpen(false)} style={{ height: 68, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--nx-side-edge)', textDecoration: 'none', color: 'var(--nx-side-text)' }}>
-        <div style={{ width: 31, height: 31, borderRadius: 9, display: 'grid', placeItems: 'center', background: T.ACCENT, color: '#06212C', fontWeight: 850, fontSize: 13, clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
+        <div style={{ width: 31, height: 31, borderRadius: 9, display: 'grid', placeItems: 'center', background: T.ACCENT, color: '#FFFFFF', fontWeight: 850, fontSize: 13, clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
         <div><div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '.13em', lineHeight: 1 }}>NEXGO</div><div style={{ marginTop: 4, fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nx-side-label)' }}>Operations</div></div>
       </Link>
       <nav style={{ padding: '14px 8px 12px' }}>
@@ -41,7 +43,7 @@ function AdminNav({ mobile }) {
           <div style={{ padding: '0 10px 7px', fontSize: 10.5, fontWeight: 800, letterSpacing: '.11em', textTransform: 'uppercase', color: 'var(--nx-side-label)' }}>{group}</div>
           {items.map(([label, id, icon]) => {
             const active = pathname === pathFor(id);
-            return <Link className="admin-nav-link" key={label} href={pathFor(id)} onClick={() => mobile && setNavOpen(false)} style={{ position: 'relative', height: 38, padding: '0 10px', margin: '2px 0', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: active ? 'var(--nx-side-active-text)' : 'var(--nx-side-text)', background: active ? 'var(--nx-side-active)' : 'transparent', border: active ? '1px solid rgba(27,159,214,.22)' : '1px solid transparent', fontSize: 13.5, fontWeight: active ? 700 : 600 }}>
+            return <Link className="admin-nav-link" key={label} href={pathFor(id)} onClick={() => mobile && setNavOpen(false)} style={{ position: 'relative', height: 38, padding: '0 10px', margin: '2px 0', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: active ? 'var(--nx-side-active-text)' : 'var(--nx-side-text)', background: active ? 'var(--nx-side-active)' : 'transparent', border: active ? '1px solid rgba(56,119,252,.22)' : '1px solid transparent', fontSize: 13.5, fontWeight: active ? 700 : 600 }}>
               {active && <motion.span layoutId="admin-active-rail" transition={{ type: 'spring', bounce: .12, duration: .34 }} style={{ position: 'absolute', left: -3, width: 3, height: 18, borderRadius: 99, background: T.ACCENT }} />}
               <span style={{ width: 15, textAlign: 'center', color: active ? T.ACCENT : 'var(--nx-side-sub)', fontSize: 13 }}>{icon}</span>{label}
             </Link>;
@@ -49,7 +51,7 @@ function AdminNav({ mobile }) {
         </div>)}
       </nav>
       <Link href={pathFor('a-system')} className="admin-system-health" style={{ margin: '0 8px 12px', padding: '11px 10px', display: 'flex', alignItems: 'center', gap: 9, border: '1px solid var(--nx-side-edge)', borderRadius: 10, textDecoration: 'none', background: 'var(--nx-side-soft)' }}>
-        <span style={{ position: 'relative', width: 8, height: 8, borderRadius: '50%', background: T.ACCENT, boxShadow: '0 0 0 4px rgba(27,159,214,.12)' }} />
+        <span style={{ position: 'relative', width: 8, height: 8, borderRadius: '50%', background: T.ACCENT, boxShadow: '0 0 0 4px rgba(56,119,252,.12)' }} />
         <span><b style={{ display: 'block', color: 'var(--nx-side-text)', fontSize: 11.5, lineHeight: 1.2 }}>Platform healthy</b><span style={{ display: 'block', marginTop: 3, color: 'var(--nx-side-sub)', fontSize: 10.5 }}>99.4% API availability</span></span>
       </Link>
       <div style={{ margin: '0 8px 16px', paddingTop: 12, borderTop: '1px solid var(--nx-side-edge)' }}>
@@ -61,7 +63,7 @@ function AdminNav({ mobile }) {
         .admin-nav-link { transition: background .16s ease, border-color .16s ease, transform .16s ease; }
         .admin-nav-link:hover { background: var(--nx-side-soft) !important; border-color: var(--nx-side-edge) !important; transform: translateX(1px); }
         .admin-system-health { transition: transform .16s ease, border-color .16s ease; }
-        .admin-system-health:hover { transform: translateY(-1px); border-color: rgba(27,159,214,.32) !important; }
+        .admin-system-health:hover { transform: translateY(-1px); border-color: rgba(56,119,252,.32) !important; }
       `}</style>
     </motion.aside>
   );
@@ -71,7 +73,7 @@ export default function AdminShell({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const pageTitle = (PAGES[idForPath(pathname)] || [])[1] || '';
-  const { vw, navOpen, setNavOpen, setPaletteOpen, theme, toggleTheme, showToast } = useAppState();
+  const { vw, navOpen, setNavOpen, theme, toggleTheme, showToast } = useAppState();
   const [sessionReady, setSessionReady] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [admin, setAdmin] = useState(null);
@@ -99,7 +101,7 @@ export default function AdminShell({ children }) {
         <header style={{ height: 58, padding: mobile ? '0 14px' : '0 20px', display: 'flex', alignItems: 'center', gap: 16, position: 'sticky', top: 0, zIndex: 40, background: 'var(--nx-chrome-bg)', borderBottom: '1px solid var(--nx-chrome-border)' }}>
           {mobile && <motion.button onClick={() => setNavOpen(!navOpen)} whileTap={{ scale: .93 }} style={{ width: 34, height: 34, border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 18, cursor: 'pointer' }}>☰</motion.button>}
           {!mobile && pageTitle && <b style={{ flex: '0 0 auto', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--nx-chrome-text)', fontSize: 15, letterSpacing: '-.015em' }}>{pageTitle}</b>}
-          <motion.div onClick={() => setPaletteOpen(true)} whileTap={{ scale: .985 }} style={{ height: 32, width: mobile ? 'auto' : 520, flex: mobile ? 1 : '0 1 520px', margin: mobile ? 0 : '0 auto', padding: '0 11px', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--nx-chrome-search)', border: '1px solid var(--nx-chrome-border)', borderRadius: 8, color: 'var(--nx-chrome-muted)', fontSize: 13, cursor: 'pointer' }}><span style={{ color: T.ACCENT, fontSize: 17 }}>⌕</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search order, AWB, seller, courier…</span><span style={{ marginLeft: 'auto', color: 'var(--nx-chrome-muted)', fontFamily: T.MONO, fontSize: 11 }}>⌘K</span></motion.div>
+          <SearchBox height={34} radius={8} placeholder="Search order, AWB, seller, courier…" />
           {mobile && <motion.button onClick={toggleTheme} whileTap={{ scale: .93 }} title="Toggle colour mode" style={{ width: 34, height: 34, border: '1px solid var(--ops-border)', borderRadius: 9, background: 'var(--ops-surface)', color: T.ACCENT, cursor: 'pointer', fontSize: 16 }}>{dark ? '☾' : '☀'}</motion.button>}
           {!mobile && <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ display: 'flex', padding: 3, gap: 2, background: 'var(--ops-surface-soft)', border: '1px solid var(--ops-border)', borderRadius: 8 }}>
@@ -115,6 +117,7 @@ export default function AdminShell({ children }) {
         </header>
         {children}
       </main>
+      <CommandPalette admin />
     </div>
   );
 }

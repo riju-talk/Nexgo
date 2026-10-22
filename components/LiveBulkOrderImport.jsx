@@ -297,7 +297,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4,minmax(0,1fr))', gap: 12, marginTop: 18 }}>
-          <SummaryCard label="Total uploads" value={fileName ? 1 : 0} tone="#1b9fd6" icon="⇧" />
+          <SummaryCard label="Total uploads" value={fileName ? 1 : 0} tone="#3877fc" icon="⇧" />
           <SummaryCard label="Total orders" value={orders.length} tone="#3B82F6" icon="□" />
           <SummaryCard label="Successful orders" value={result?.created ?? orders.filter((o) => o.created && !o.unassigned).length} tone="#22C55E" icon="✓" />
           <SummaryCard label="Failed orders" value={failedCount} tone="#EF4444" icon="×" />
@@ -312,7 +312,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
-          style={{ marginTop: 18, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(27,159,214,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
+          style={{ marginTop: 18, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(56,119,252,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
         >
           <b style={{ display: 'block', color: T.TEXT, fontSize: 14 }}>{loading ? 'Reading and validating…' : 'Drop your order file here, or click to browse'}</b>
           <span style={{ display: 'block', marginTop: 5, color: T.TEXT_MUTED, fontSize: 12.5 }}>{fileName && !loading ? fileName : '.xlsx, .xls or .csv · up to 5 MB · NEXGO bulk upload format'}</span>

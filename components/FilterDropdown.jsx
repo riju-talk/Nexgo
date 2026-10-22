@@ -46,7 +46,7 @@ export default function FilterDropdown({ label, options, className, style, align
                     key={opt}
                     onClick={() => { setSelected(opt); setOpen(false); onSelect?.(opt); }}
                     className="nxc-filter-opt"
-                    style={{ padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: on ? '#14527f' : T.TEXT, fontWeight: on ? 600 : 500, background: on ? 'rgba(27,159,214,.08)' : 'transparent', whiteSpace: 'nowrap' }}
+                    style={{ padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: on ? '#14527f' : T.TEXT, fontWeight: on ? 600 : 500, background: on ? 'rgba(56,119,252,.08)' : 'transparent', whiteSpace: 'nowrap' }}
                   >
                     {opt}
                   </div>

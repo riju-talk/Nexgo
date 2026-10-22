@@ -4,6 +4,8 @@ import { db } from '../db/client.js';
 import { requireAccountAdmin, requireCommercialAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
 
 const uuid = z.string().uuid();
+// Escape LIKE wildcards so a search for "50%" matches literally.
+const escLike = (v: string) => v.replace(/[\\%_]/g, '\\$&');
 const sellerState = z.enum(['onboarding', 'active', 'suspended']);
 const pageQuery = z.object({
   state: sellerState.optional(),
@@ -29,13 +31,16 @@ const zoneInput = z.object({
 
 export async function adminOperationsRoutes(app: FastifyInstance) {
   // --- Seller lifecycle -----------------------------------------------
-  app.get('/v1/admin/wallets', { preHandler: requirePlatformAdmin }, async () => {
+  app.get('/v1/admin/wallets', { preHandler: requirePlatformAdmin }, async (request) => {
+    const q = z.object({ search: z.string().trim().max(120).optional() }).parse(request.query);
     const result = await db.query(
-      `SELECT s.id, s.legal_name, s.state,
+      `SELECT s.id, s.legal_name, s.nexgo_code, s.state,
         COALESCE(SUM(CASE WHEN w.entry_type IN ('credit','release') THEN w.amount_paise WHEN w.entry_type IN ('debit','hold') THEN -w.amount_paise ELSE w.amount_paise END), 0)::bigint AS balance_paise,
         COUNT(w.id)::int AS entry_count, MAX(w.created_at) AS last_activity_at
        FROM sellers s LEFT JOIN wallet_entries w ON w.seller_id=s.id
+       WHERE ($1::text IS NULL OR s.legal_name ILIKE '%' || $1 || '%' OR s.nexgo_code ILIKE '%' || $1 || '%')
        GROUP BY s.id ORDER BY balance_paise ASC, s.legal_name LIMIT 200`,
+      [q.search ? escLike(q.search) : null],
     );
     return { items: result.rows };
   });
@@ -51,14 +56,15 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
   });
 
   app.get('/v1/admin/orders', { preHandler: requirePlatformAdmin }, async (request) => {
-    const q = z.object({ state: z.enum(['new', 'ready_to_ship', 'booked', 'cancelled']).optional(), orderFlow: z.enum(['forward', 'reverse', 'dropship', 'ship_now']).optional(), sellerId: uuid.optional(), limit: z.coerce.number().int().min(1).max(200).default(100) }).parse(request.query);
+    const q = z.object({ state: z.enum(['new', 'ready_to_ship', 'booked', 'cancelled']).optional(), orderFlow: z.enum(['forward', 'reverse', 'dropship', 'ship_now']).optional(), sellerId: uuid.optional(), q: z.string().trim().max(120).optional(), limit: z.coerce.number().int().min(1).max(200).default(100) }).parse(request.query);
     const result = await db.query(
       `SELECT o.id, o.order_number, o.order_flow, o.notes, o.state, o.payment_mode, o.subtotal_paise, o.total_weight_g, o.created_at,
               s.legal_name AS seller_name, c.full_name AS customer_name, c.city AS customer_city, c.pincode AS customer_pincode
        FROM orders o JOIN sellers s ON s.id = o.seller_id JOIN customers c ON c.id = o.customer_id
        WHERE ($1::order_state IS NULL OR o.state = $1) AND ($2::text IS NULL OR o.order_flow = $2) AND ($3::uuid IS NULL OR o.seller_id = $3)
+         AND ($5::text IS NULL OR o.order_number ILIKE '%' || $5 || '%' OR c.full_name ILIKE '%' || $5 || '%' OR c.phone ILIKE '%' || $5 || '%')
        ORDER BY o.created_at DESC LIMIT $4`,
-      [q.state ?? null, q.orderFlow ?? null, q.sellerId ?? null, q.limit],
+      [q.state ?? null, q.orderFlow ?? null, q.sellerId ?? null, q.limit, q.q ? escLike(q.q) : null],
     );
     return { items: result.rows };
   });
@@ -160,17 +166,61 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
     const q = z.object({
       state: z.enum(['booked', 'in_transit', 'out_for_delivery', 'delivered', 'ndr', 'rto', 'cancelled']).optional(),
       sellerId: uuid.optional(),
-      limit: z.coerce.number().int().min(1).max(200).default(50),
+      providerId: uuid.optional(),
+      q: z.string().trim().max(120).optional(),
+      limit: z.coerce.number().int().min(1).max(200).default(100),
     }).parse(request.query);
     const result = await db.query(
-      `SELECT sh.id, sh.awb, sh.state, sh.chargeable_weight_g, sh.shipping_charge_paise, sh.booked_at,
+      `SELECT sh.id, sh.awb, sh.state, sh.chargeable_weight_g, sh.shipping_charge_paise, sh.booked_at, sh.provider_id,
+              cp.name AS courier_name, cs.display_name AS service_name,
               s.legal_name AS seller_name, o.order_number
        FROM shipments sh JOIN sellers s ON s.id = sh.seller_id JOIN orders o ON o.id = sh.order_id
+       JOIN courier_providers cp ON cp.id = sh.provider_id JOIN courier_services cs ON cs.id = sh.service_id
        WHERE ($1::shipment_state IS NULL OR sh.state = $1) AND ($2::uuid IS NULL OR sh.seller_id = $2)
+         AND ($4::uuid IS NULL OR sh.provider_id = $4)
+         AND ($5::text IS NULL OR sh.awb ILIKE '%' || $5 || '%' OR o.order_number ILIKE '%' || $5 || '%')
        ORDER BY sh.booked_at DESC LIMIT $3`,
-      [q.state ?? null, q.sellerId ?? null, q.limit],
+      [q.state ?? null, q.sellerId ?? null, q.limit, q.providerId ?? null, q.q ? escLike(q.q) : null],
     );
     return { items: result.rows };
+  });
+
+  // --- Global search box (top bar): sellers, AWBs and orders in one call ----
+  app.get('/v1/admin/search', { preHandler: requirePlatformAdmin }, async (request) => {
+    const { q } = z.object({ q: z.string().trim().min(1).max(120) }).parse(request.query);
+    const like = escLike(q);
+    const [sellers, shipments, orders] = await Promise.all([
+      db.query(`SELECT id, legal_name, nexgo_code FROM sellers WHERE legal_name ILIKE '%' || $1 || '%' OR nexgo_code ILIKE '%' || $1 || '%' ORDER BY legal_name LIMIT 5`, [like]),
+      db.query(`SELECT sh.id, sh.awb, sh.state, s.legal_name AS seller_name, cp.name AS courier_name FROM shipments sh JOIN sellers s ON s.id = sh.seller_id JOIN courier_providers cp ON cp.id = sh.provider_id WHERE sh.awb ILIKE '%' || $1 || '%' ORDER BY sh.booked_at DESC LIMIT 5`, [like]),
+      db.query(`SELECT o.id, o.order_number, o.state, s.legal_name AS seller_name, c.full_name AS customer_name FROM orders o JOIN sellers s ON s.id = o.seller_id JOIN customers c ON c.id = o.customer_id WHERE o.order_number ILIKE '%' || $1 || '%' OR c.full_name ILIKE '%' || $1 || '%' OR c.phone ILIKE '%' || $1 || '%' ORDER BY o.created_at DESC LIMIT 5`, [like]),
+    ]);
+    return { sellers: sellers.rows, shipments: shipments.rows, orders: orders.rows };
+  });
+
+  // --- Platform-wide pincode blocks: blocked here = blocked for every seller; opened = open for all ----
+  app.get('/v1/admin/pincode-blocks', { preHandler: requirePlatformAdmin }, async () => {
+    const result = await db.query(
+      `SELECT b.pincode, b.note, b.created_at, p.city, p.state FROM platform_pincode_blocks b LEFT JOIN pincodes p ON p.pincode = b.pincode ORDER BY b.created_at DESC, b.pincode LIMIT 5000`);
+    return { items: result.rows };
+  });
+
+  const pincodeList = z.array(z.string().regex(/^\d{6}$/)).min(1).max(5000);
+  app.post('/v1/admin/pincode-blocks', { preHandler: [requirePlatformAdmin, requireCommercialAdmin] }, async (request) => {
+    const input = z.object({ pincodes: pincodeList, note: z.string().trim().max(200).optional() }).parse(request.body);
+    const pins = [...new Set(input.pincodes)];
+    const result = await db.query(
+      `INSERT INTO platform_pincode_blocks (pincode, note, created_by) SELECT p, $1, $2 FROM unnest($3::text[]) AS p ON CONFLICT DO NOTHING RETURNING pincode`,
+      [input.note ?? null, request.adminPrincipal!.userId, pins]);
+    await db.query(`INSERT INTO audit_events (actor_user_id,action,target_type,target_id,request_id,metadata) VALUES ($1,'platform.pincodes_blocked','pincode','platform',$2,$3)`, [request.adminPrincipal!.userId, request.id, JSON.stringify({ requested: pins.length, added: result.rowCount })]);
+    return { added: result.rowCount, requested: pins.length };
+  });
+
+  app.post('/v1/admin/pincode-blocks/open', { preHandler: [requirePlatformAdmin, requireCommercialAdmin] }, async (request) => {
+    const input = z.object({ pincodes: pincodeList }).parse(request.body);
+    const pins = [...new Set(input.pincodes)];
+    const result = await db.query(`DELETE FROM platform_pincode_blocks WHERE pincode = ANY($1::text[])`, [pins]);
+    await db.query(`INSERT INTO audit_events (actor_user_id,action,target_type,target_id,request_id,metadata) VALUES ($1,'platform.pincodes_opened','pincode','platform',$2,$3)`, [request.adminPrincipal!.userId, request.id, JSON.stringify({ requested: pins.length, removed: result.rowCount })]);
+    return { removed: result.rowCount, requested: pins.length };
   });
 
   app.get('/v1/admin/ndr', { preHandler: requirePlatformAdmin }, async (request) => {

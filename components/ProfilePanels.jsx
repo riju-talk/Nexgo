@@ -28,7 +28,7 @@ export function ProfileStatus({ identity, mobile }) {
   const since = identity?.created_at ? new Date(identity.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : null;
   return (
     <section style={{ ...CARD, padding: 0, marginBottom: 13, overflow: 'hidden' }}>
-      <div style={{ padding: '18px 20px', background: '#0c3459', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ padding: '18px 20px', background: '#0b1f44', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 800 }}>Account Status</div>
           <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
@@ -64,7 +64,7 @@ export function ProfileDocuments({ mobile }) {
           <article key={f.id} style={{ border: `1px solid ${T.BORDER}`, borderRadius: 9, padding: 11, background: T.SURFACE_SOFT }}>
             <b style={{ display: 'block', color: T.TEXT, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.filename}</b>
             <small style={{ display: 'block', marginTop: 4, color: T.TEXT_MUTED }}>{DOC_LABELS[f.purpose]}</small>
-            <button type="button" onClick={() => view(f.id)} style={{ marginTop: 10, width: '100%', height: 30, border: 0, borderRadius: 7, color: '#fff', background: '#1b9fd6', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>View Document</button>
+            <button type="button" onClick={() => view(f.id)} style={{ marginTop: 10, width: '100%', height: 30, border: 0, borderRadius: 7, color: '#fff', background: '#3877fc', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>View Document</button>
           </article>
         ))}
       </div>

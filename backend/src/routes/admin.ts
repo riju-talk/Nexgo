@@ -19,6 +19,7 @@ const courierInput = z.object({
     code: z.string().regex(/^[a-z0-9-]{2,64}$/),
     displayName: z.string().min(2).max(120),
     serviceType: z.enum(['surface', 'express', 'air', 'reverse']),
+    serviceProvider: z.string().trim().max(80).optional(),
   })).min(1).max(20),
 });
 
@@ -102,7 +103,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/v1/admin/couriers', { preHandler: requirePlatformAdmin }, async () => {
     const result = await db.query(
       `SELECT cp.id, cp.code, cp.name, cp.integration_state, cp.supports_cod, cp.supports_reverse,
-              COALESCE(json_agg(json_build_object('id', cs.id, 'code', cs.code, 'name', cs.display_name, 'type', cs.service_type))
+              COALESCE(json_agg(json_build_object('id', cs.id, 'code', cs.code, 'name', cs.display_name, 'type', cs.service_type, 'serviceProvider', cs.service_provider))
                 FILTER (WHERE cs.id IS NOT NULL), '[]') AS services
        FROM courier_providers cp
        LEFT JOIN courier_services cs ON cs.provider_id = cp.id
@@ -139,8 +140,8 @@ export async function adminRoutes(app: FastifyInstance) {
     const providerId = provider.rows[0].id;
     for (const service of input.services) {
       await db.query(
-        'INSERT INTO courier_services (provider_id, code, display_name, service_type) VALUES ($1, $2, $3, $4)',
-        [providerId, service.code, service.displayName, service.serviceType],
+        'INSERT INTO courier_services (provider_id, code, display_name, service_type, service_provider) VALUES ($1, $2, $3, $4, $5)',
+        [providerId, service.code, service.displayName, service.serviceType, service.serviceProvider ?? null],
       );
     }
     await db.query(

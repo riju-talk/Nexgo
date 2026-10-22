@@ -291,7 +291,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
               <div style={{ padding: 18 }}>
                 <div style={{ display: 'flex', height: 34, border: `1px solid ${T.BORDER}` }}>
                   <div style={{ width: '62%', background: T.NAVY, color: '#fff', display: 'flex', alignItems: 'center', padding: '0 10px', fontVariantNumeric: 'tabular-nums', fontSize: 12.5, fontWeight: 600 }}>62% COD</div>
-                  <div style={{ width: '38%', background: T.ACCENT, color: '#06212C', display: 'flex', alignItems: 'center', padding: '0 10px', fontVariantNumeric: 'tabular-nums', fontSize: 12.5, fontWeight: 600 }}>38%</div>
+                  <div style={{ width: '38%', background: T.ACCENT, color: '#FFFFFF', display: 'flex', alignItems: 'center', padding: '0 10px', fontVariantNumeric: 'tabular-nums', fontSize: 12.5, fontWeight: 600 }}>38%</div>
                 </div>
                 <div style={{ marginTop: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${T.PAPER}`, fontSize: 12 }}><div style={{ color: T.TEXT_SECONDARY }}>COD orders</div><div style={{ fontFamily: T.MONO }}>7,738</div></div>

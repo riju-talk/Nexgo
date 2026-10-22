@@ -56,7 +56,7 @@ export default function LiveCodConfirmation({ mobile }) {
           <fieldset style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 8 }}>
             <legend style={{ ...label, padding: 0, marginBottom: 8 }}>Select channels to activate this service</legend>
             {CHANNELS.map(([k, name]) => (
-              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 8, background: channels[k] ? 'rgba(27,159,214,.10)' : T.SURFACE_SOFT, color: T.TEXT_LABEL, fontSize: 13, cursor: 'pointer' }}>
+              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 8, background: channels[k] ? 'rgba(56,119,252,.10)' : T.SURFACE_SOFT, color: T.TEXT_LABEL, fontSize: 13, cursor: 'pointer' }}>
                 <input type="checkbox" checked={!!channels[k]} onChange={(e) => setChannels((c) => ({ ...c, [k]: e.target.checked }))} style={{ accentColor: T.ACCENT }} />{name}
               </label>
             ))}

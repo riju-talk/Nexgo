@@ -43,7 +43,7 @@ async function loadOptions(client: PoolClient, sellerId: string, destination: st
     `SELECT cp.code AS provider_code, cp.name AS provider_name, cp.supports_cod, cs.code AS service_code, cs.display_name AS service_name, cs.service_type,
             cs.typical_delivery_days, cs.max_delivery_days, cs.serves_oda, cs.delivery_tagline, sca.account_mode, sca.cod_enabled,
             rcr.base_weight_g, rcr.base_price_paise, rcr.additional_weight_g, rcr.additional_price_paise, rcr.cod_fee_paise, rcr.fuel_surcharge_bps, rcr.cod_percent_bps, rcr.rto_base_price_paise, rcr.rto_additional_price_paise,
-            (EXISTS (SELECT 1 FROM courier_pincode_rules r WHERE r.service_id = cs.id AND r.rule_type = 'blocked' AND $4 LIKE r.destination_prefix || '%') OR EXISTS (SELECT 1 FROM seller_pincode_blocks sb WHERE sb.seller_id = sca.seller_id AND (sb.service_id IS NULL OR sb.service_id = cs.id) AND sb.pincode = $4)) AS blocked,
+            (EXISTS (SELECT 1 FROM courier_pincode_rules r WHERE r.service_id = cs.id AND r.rule_type = 'blocked' AND $4 LIKE r.destination_prefix || '%') OR EXISTS (SELECT 1 FROM seller_pincode_blocks sb WHERE sb.seller_id = sca.seller_id AND (sb.service_id IS NULL OR sb.service_id = cs.id) AND sb.pincode = $4) OR EXISTS (SELECT 1 FROM platform_pincode_blocks pb WHERE pb.pincode = $4)) AS blocked,
             EXISTS (SELECT 1 FROM courier_pincode_rules r WHERE r.service_id = cs.id AND r.rule_type = 'allowed') AS has_allow,
             EXISTS (SELECT 1 FROM courier_pincode_rules r WHERE r.service_id = cs.id AND r.rule_type = 'allowed' AND $4 LIKE r.destination_prefix || '%') AS allow_match
      FROM seller_courier_access sca

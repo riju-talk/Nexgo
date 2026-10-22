@@ -38,6 +38,7 @@ export function AppStateProvider({ children }) {
   const [kpis, setKpis] = useState(DEFAULTS.slice());
   const [kpiOpen, setKpiOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState(''); // text typed in the top-bar search box
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [expanded, setExpanded] = useState('ndr');
   const [openGroups, setOpenGroups] = useState({});
@@ -75,7 +76,9 @@ export function AppStateProvider({ children }) {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setPaletteOpen((p) => !p);
+        const box = document.getElementById('nx-search');
+        if (box) { box.focus(); box.select(); }
+        setPaletteOpen(true);
       }
       if (e.key === 'Escape') {
         setPaletteOpen(false);
@@ -134,10 +137,10 @@ export function AppStateProvider({ children }) {
   const clearToast = useCallback(() => setToast(null), []);
 
   const value = useMemo(() => ({
-    kpis, kpiOpen, paletteOpen, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, dashRange, trackFocus, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast,
-    setDashRange, setKpiOpen, setPaletteOpen, setDrawerOpen, setStage, setQueueTab, setDashDays, setTrackFocus, setResolution, setNavOpen,
+    kpis, kpiOpen, paletteOpen, paletteQuery, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, dashRange, trackFocus, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast,
+    setDashRange, setKpiOpen, setPaletteOpen, setPaletteQuery, setDrawerOpen, setStage, setQueueTab, setDashDays, setTrackFocus, setResolution, setNavOpen,
     toggleKpi, resetKpi, toggleGroup, setTab, toggleExpanded, toggleSidebar, nav, closeTransient, setTheme, toggleTheme, showToast, clearToast,
-  }), [kpis, kpiOpen, paletteOpen, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, dashRange, trackFocus, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast, toggleKpi, resetKpi, toggleGroup, setTab, toggleExpanded, toggleSidebar, nav, closeTransient, setTheme, toggleTheme, showToast, clearToast]);
+  }), [kpis, kpiOpen, paletteOpen, paletteQuery, drawerOpen, expanded, openGroups, stage, queueTab, dashDays, dashRange, trackFocus, resolution, navOpen, sidebarCollapsed, tab, vw, theme, toast, toggleKpi, resetKpi, toggleGroup, setTab, toggleExpanded, toggleSidebar, nav, closeTransient, setTheme, toggleTheme, showToast, clearToast]);
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }

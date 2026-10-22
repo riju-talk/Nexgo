@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminApi, apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
@@ -17,16 +17,16 @@ const errText = (e, fallback) => (e instanceof ApiError ? e.message : fallback);
 
 function Btn({ children, onClick, disabled, tone, type = 'button' }) {
   const solid = tone === 'primary';
-  return <button type={type} disabled={disabled} onClick={onClick} style={{ minHeight: 36, padding: '0 14px', borderRadius: 8, border: solid ? '1px solid var(--ac, #1b9fd6)' : '1px solid var(--ops-border)', background: solid ? 'var(--ac, #1b9fd6)' : 'var(--ops-surface)', color: solid ? '#fff' : tone === 'danger' ? '#B23A2B' : 'var(--ops-text)', fontSize: 13, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? .55 : 1, textAlign: 'left' }}>{children}</button>;
+  return <button type={type} disabled={disabled} onClick={onClick} style={{ minHeight: 36, padding: '0 14px', borderRadius: 8, border: solid ? '1px solid var(--ac, #3877fc)' : '1px solid var(--ops-border)', background: solid ? 'var(--ac, #3877fc)' : 'var(--ops-surface)', color: solid ? '#fff' : tone === 'danger' ? '#B23A2B' : 'var(--ops-text)', fontSize: 13, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? .55 : 1, textAlign: 'left' }}>{children}</button>;
 }
 const Row = ({ k, v }) => <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '7px 0', fontSize: 13 }}><span style={{ color: 'var(--ops-muted)', flexShrink: 0 }}>{k}</span><b style={{ textAlign: 'right', wordBreak: 'break-word', fontWeight: 600 }}>{v ?? '—'}</b></div>;
 const Section = ({ heading, children, full }) => <section style={{ ...CARD, gridColumn: full ? '1 / -1' : undefined, minWidth: 0 }}><h3 style={{ margin: '0 0 8px', fontSize: 13.5, fontWeight: 700, color: 'var(--ops-heading)' }}>{heading}</h3>{children}</section>;
 const Label = ({ children, hint }) => <label style={{ display: 'grid', gap: 5, fontSize: 12, color: 'var(--ops-muted)' }}><span>{children}</span>{hint}</label>;
 
-function Modal({ heading, onClose, children, wide }) {
+function Modal({ heading, onClose, children, wide, xl }) {
   return (
     <div role="dialog" aria-label={heading} onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'grid', placeItems: 'center', background: 'rgba(15,30,45,.45)', padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ ...CARD, width: `min(${wide ? 860 : 460}px, 100%)`, maxHeight: '90vh', overflowY: 'auto', color: 'var(--ops-text)' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...CARD, width: `min(${xl ? 1280 : wide ? 860 : 460}px, 100%)`, maxHeight: '90vh', overflowY: 'auto', color: 'var(--ops-text)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}><b style={{ fontSize: 15 }}>{heading}</b><Btn onClick={onClose}>Close</Btn></div>
         {children}
       </div>
@@ -74,6 +74,73 @@ function WalletModal({ sellerId, balance, onClose, onDone }) {
   </form></Modal>;
 }
 
+// Zones A–E in the order couriers publish them (`rate_card_rates.zone_code`); same layout as the seller's Rate Card page.
+const ZONES = [['within_city', 'Zone A', 'Within city'], ['within_state', 'Zone B', 'Within state'], ['metro_to_metro', 'Zone C', 'Metro to metro'], ['rest_of_india', 'Zone D', 'Rest of India'], ['ne_jk', 'Zone E', 'Special zones']];
+const grams = (g) => (g >= 1000 ? `${g / 1000} kg` : `${g} g`);
+const rs = (paise) => (paise == null ? '—' : `₹${(Number(paise) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+const isAir = (name = '') => /air|express/i.test(name);
+
+const Pill = ({ children, tone }) => <span style={{ display: 'inline-block', border: tone ? 0 : '1px solid var(--ops-border)', background: tone ? '#E8EEFB' : 'var(--ops-surface)', color: tone ? '#1B3A8A' : 'var(--ops-heading)', borderRadius: 8, padding: tone ? '3px 8px' : '6px 12px', fontSize: tone ? 10.5 : 13, fontWeight: 700, letterSpacing: tone ? '.04em' : 0, textTransform: tone ? 'uppercase' : 'none' }}>{children}</span>;
+const Seg = ({ on, onClick, children }) => <button type="button" aria-pressed={on} onClick={onClick} style={{ padding: '8px 22px', border: 0, borderRadius: 99, background: on ? '#1B3A8A' : 'transparent', color: on ? '#fff' : 'var(--ops-text)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>{children}</button>;
+
+// Rate chart: one row per courier service and weight slab, one price per zone. Forward / RTO toggle and GST switch like the seller's rate chart.
+function RateMatrix({ rates }) {
+  const [weight, setWeight] = useState(''); const [mode, setMode] = useState(''); const [courier, setCourier] = useState('');
+  const [dir, setDir] = useState('fwd'); const [gst, setGst] = useState(false); const [open, setOpen] = useState({});
+  const rows = useMemo(() => {
+    const map = new Map();
+    for (const r of rates) {
+      const key = `${r.provider_name}|${r.service_name}|${r.min_weight_g}`;
+      if (!map.has(key)) map.set(key, { key, provider: r.provider_name, service: r.service_name, from: r.min_weight_g, rows: [] });
+      map.get(key).rows.push(r);
+    }
+    return [...map.values()].sort((a, b) => a.from - b.from || a.provider.localeCompare(b.provider));
+  }, [rates]);
+  const weights = [...new Set(rows.map((r) => r.from))].sort((a, b) => a - b);
+  const couriers = [...new Set(rows.map((r) => r.provider))].sort();
+  const shown = rows.filter((r) => (!weight || r.from === Number(weight)) && (!mode || (isAir(r.service) ? 'Air' : 'Surface') === mode) && (!courier || r.provider === courier));
+  const rateFor = (row, zone) => row.rows.find((r) => r.zone_code === zone) || row.rows.find((r) => r.zone_code === 'national') || null;
+  const price = (paise) => (paise == null ? '—' : rs(gst ? Math.round(Number(paise) * 1.18) : paise));
+  const base = (r) => (dir === 'fwd' ? r?.base_price_paise : r?.rto_base_price_paise);
+  const extra = (r) => (dir === 'fwd' ? r?.additional_price_paise : r?.rto_additional_price_paise);
+  const codOf = (row) => { const r = rateFor(row, 'within_city') || row.rows[0]; if (!r || (!r.cod_fee_paise && !r.cod_percent_bps)) return '—'; const pct = `${((r.cod_percent_bps || 0) / 100).toFixed((r.cod_percent_bps || 0) % 100 ? 1 : 0)}%`; return `${rs(r.cod_fee_paise)} or ${pct}`; };
+  const sel = { ...FIELD, width: 'auto', minWidth: 150, height: 40, borderRadius: 10 };
+  return <div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <select aria-label="Weight" style={sel} value={weight} onChange={(e) => setWeight(e.target.value)}><option value="">All weights</option>{weights.map((g) => <option key={g} value={g}>From {grams(g)}</option>)}</select>
+        <select aria-label="Mode" style={sel} value={mode} onChange={(e) => setMode(e.target.value)}><option value="">All modes</option><option value="Surface">Surface</option><option value="Air">Air</option></select>
+        <select aria-label="Courier" style={sel} value={courier} onChange={(e) => setCourier(e.target.value)}><option value="">All couriers</option>{couriers.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+      </div>
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}><input type="checkbox" checked={gst} onChange={(e) => setGst(e.target.checked)} />Include GST (18%)</label>
+        <div role="group" aria-label="Direction" style={{ display: 'flex', padding: 3, borderRadius: 99, background: 'var(--ops-surface-soft)', border: '1px solid var(--ops-border)' }}><Seg on={dir === 'fwd'} onClick={() => setDir('fwd')}>Forward</Seg><Seg on={dir === 'rto'} onClick={() => setDir('rto')}>RTO</Seg></div>
+      </div>
+    </div>
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', minWidth: 980, borderCollapse: 'separate', borderSpacing: '0 8px' }}>
+        <thead><tr>{['Courier partner', 'Weight', ...ZONES.map(([, l]) => l), 'COD'].map((h, i) => <th key={h} style={{ padding: '14px 12px', textAlign: i === 0 ? 'left' : 'center', fontSize: 11.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ops-muted)', background: 'var(--ops-surface-soft)', borderRadius: i === 0 ? '10px 0 0 10px' : i === 7 ? '0 10px 10px 0' : 0 }}>{h}{i >= 2 && i <= 6 && <small title={ZONES[i - 2][2]} style={{ display: 'block', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>{ZONES[i - 2][2]}</small>}</th>)}</tr></thead>
+        <tbody>{!shown.length ? <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--ops-muted)' }}>No rates match these filters.</td></tr> : shown.flatMap((row) => {
+          const first = rateFor(row, 'within_city') || row.rows[0]; const isOpen = !!open[row.key];
+          const cell = { padding: '14px 12px', textAlign: 'center', borderTop: '1px solid var(--ops-border)', borderBottom: '1px solid var(--ops-border)', background: 'var(--ops-surface)' };
+          const out = [<tr key={row.key}>
+            <td style={{ ...cell, textAlign: 'left', borderLeft: '1px solid var(--ops-border)', borderRadius: '10px 0 0 10px' }}><div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><Pill>{row.provider} {row.service}</Pill><Pill tone>{isAir(row.service) ? 'Air' : 'Surface'}</Pill></div></td>
+            <td style={cell}><button type="button" aria-expanded={isOpen} aria-label={`Details for ${row.provider} ${row.service}`} onClick={() => setOpen((o) => ({ ...o, [row.key]: !o[row.key] }))} style={{ border: 0, background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ops-text)' }}>{isOpen ? '▾' : '▸'} &nbsp;{grams(row.from)}</button></td>
+            {ZONES.map(([code]) => <td key={code} style={{ ...cell, fontWeight: 700, color: '#1B3A8A', fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{price(base(rateFor(row, code)))}</td>)}
+            <td style={{ ...cell, borderRight: '1px solid var(--ops-border)', borderRadius: '0 10px 10px 0', color: 'var(--ops-muted)', fontSize: 12.5 }}>{codOf(row)}</td>
+          </tr>];
+          if (isOpen) out.push(<tr key={`${row.key}-d`}>
+            <td colSpan={2} style={{ padding: '4px 14px 10px', fontSize: 12.5, color: 'var(--ops-muted)' }}>First {grams(first.base_weight_g)} is the price shown. Every extra {grams(first.additional_weight_g)} adds:</td>
+            {ZONES.map(([code]) => <td key={code} style={{ padding: '4px 12px 10px', textAlign: 'center', fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>+ {price(extra(rateFor(row, code)))}</td>)}
+            <td />
+          </tr>);
+          return out;
+        })}</tbody>
+      </table>
+    </div>
+  </div>;
+}
+
 function RateCardModal({ sellerId, assign, onClose, onDone }) {
   const { showToast } = useAppState();
   const [view, setView] = useState(null); const [cards, setCards] = useState([]); const [pick, setPick] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
@@ -86,26 +153,26 @@ function RateCardModal({ sellerId, assign, onClose, onDone }) {
     try { await apiFetch(`/v1/admin/sellers/${sellerId}/assign-rate-card`, { method: 'POST', body: { sourceRateCardId: pick } }); showToast('Rate card assigned. New bookings use it; shipments already booked keep their price.'); onDone(); onClose(); }
     catch (e) { setError(errText(e, 'Rate card could not be assigned')); } finally { setBusy(false); }
   };
-  return <Modal heading={assign ? 'Assign rate card' : 'Rate card'} onClose={onClose} wide>
-    {assign && <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-      <select style={{ ...FIELD, flex: 1, minWidth: 220 }} value={pick} onChange={(e) => setPick(e.target.value)}><option value="">Copy the active rate card of…</option>{cards.map((c) => <option key={c.id} value={c.id}>{c.seller_name} ({c.nexgo_code}) — {c.name}</option>)}</select>
-      <Btn tone="primary" disabled={!pick || busy} onClick={apply}>{busy ? 'Assigning…' : 'Assign'}</Btn>
+  return <Modal heading={assign ? 'Assign rate card' : 'Rate card'} onClose={onClose} xl>
+    {assign && <div style={{ ...CARD, background: 'var(--ops-surface-soft)', boxShadow: 'none', marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Copy another seller&apos;s rate card onto this seller</div>
+      <div style={{ fontSize: 12.5, color: 'var(--ops-muted)', marginBottom: 10 }}>New bookings use the copied rates. Shipments already booked keep their price. The table below is this seller&apos;s current card.</div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <select style={{ ...FIELD, flex: 1, minWidth: 240 }} value={pick} onChange={(e) => setPick(e.target.value)}><option value="">Select a seller&apos;s rate card…</option>{cards.map((c) => <option key={c.id} value={c.id}>{c.seller_name} ({c.nexgo_code}) — {c.name}</option>)}</select>
+        <Btn tone="primary" disabled={!pick || busy} onClick={apply}>{busy ? 'Assigning…' : 'Assign to this seller'}</Btn>
+      </div>
     </div>}
     {error && <div role="alert" style={{ color: '#B23A2B', fontSize: 12.5, marginBottom: 10 }}>{error}</div>}
     {!view ? <div style={{ color: 'var(--ops-muted)', padding: 16 }}>Loading…</div> : !view.card ? <div style={{ color: 'var(--ops-muted)', padding: 16 }}>No active rate card for this seller.</div> : <>
-      <div style={{ fontSize: 13, marginBottom: 8 }}><b>{view.card.name}</b> · effective {dateOnly(view.card.effective_from)}</div>
-      <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-        <thead><tr>{['Courier', 'Zone', 'From (g)', 'Base (g)', 'Base ₹', 'Add. (g)', 'Add. ₹', 'COD ₹', 'COD %', 'RTO ₹'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '8px 8px', color: 'var(--ops-muted)', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.06em', background: 'var(--ops-surface-soft)' }}>{h}</th>)}</tr></thead>
-        <tbody>{view.rates.map((r, i) => <tr key={i}>
-          {[`${r.provider_name} ${r.service_name}`, title(r.zone_code), r.min_weight_g, r.base_weight_g, money(r.base_price_paise), r.additional_weight_g, money(r.additional_price_paise), money(r.cod_fee_paise), `${(r.cod_percent_bps || 0) / 100}%`, r.rto_base_price_paise == null ? '—' : money(r.rto_base_price_paise)].map((c, j) => <td key={j} style={{ padding: '8px 8px', borderTop: '1px solid var(--ops-divider)' }}>{c}</td>)}
-        </tr>)}</tbody>
-      </table></div></>}
+      <div style={{ fontSize: 13, marginBottom: 10 }}><b>{view.card.name}</b> · effective {dateOnly(view.card.effective_from)} · prices are before 18% GST</div>
+      <RateMatrix rates={view.rates} />
+    </>}
   </Modal>;
 }
 
 function PincodeModal({ sellerId, onClose, onDone }) {
   const { showToast } = useAppState();
-  const [items, setItems] = useState(null); const [text, setText] = useState(''); const [serviceId, setServiceId] = useState(''); const [services, setServices] = useState([]);
+  const [items, setItems] = useState(null); const [search, setSearch] = useState(''); const [text, setText] = useState(''); const [serviceId, setServiceId] = useState(''); const [services, setServices] = useState([]);
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const load = useCallback(() => apiFetch(`/v1/admin/sellers/${sellerId}/pincode-blocks`).then((d) => setItems(d.items)).catch((e) => setError(errText(e, 'Blocked pincodes could not be loaded'))), [sellerId]);
   useEffect(() => { load(); adminApi.couriers().then((d) => setServices((d.items || []).flatMap((c) => (c.services || []).map((s) => ({ id: s.id, label: `${c.name} ${s.name}` }))))).catch(() => {}); }, [load]);
@@ -125,10 +192,27 @@ function PincodeModal({ sellerId, onClose, onDone }) {
       {bad.length > 0 && <div role="alert" style={{ color: '#B23A2B', fontSize: 12.5 }}>Not a 6-digit pincode: {bad.slice(0, 6).join(', ')}{bad.length > 6 ? '…' : ''}</div>}
       {error && <div role="alert" style={{ color: '#B23A2B', fontSize: 12.5 }}>{error}</div>}
     </div>
-    <div style={{ marginTop: 14, fontSize: 12.5, color: 'var(--ops-muted)' }}>{items ? `${items.length} blocked` : 'Loading…'}</div>
-    {!!items?.length && <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 190, overflowY: 'auto' }}>
-      {items.slice(0, 600).map((b) => <span key={b.id} title={b.provider_name ? `${b.provider_name} ${b.service_name}` : 'All couriers'} style={{ fontFamily: T.MONO, fontSize: 12, padding: '3px 8px', borderRadius: 6, background: 'var(--ops-surface-soft)', border: '1px solid var(--ops-border)' }}>{b.pincode}{b.provider_name ? ` · ${b.provider_name}` : ''}</span>)}
-    </div>}
+    {(() => {
+      // One row per pincode (a pincode can be blocked for several couriers); unblocking a row clears all of them.
+      const byPin = new Map();
+      for (const b of items || []) byPin.set(b.pincode, [...(byPin.get(b.pincode) || []), b.provider_name ? `${b.provider_name} ${b.service_name}` : 'All couriers']);
+      const q = search.trim();
+      const list = [...byPin.entries()].filter(([pin]) => !q || pin.includes(q));
+      return <div style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+          <b style={{ fontSize: 13 }}>{items ? `${byPin.size} blocked pincode${byPin.size === 1 ? '' : 's'}` : 'Loading…'}</b>
+          <input aria-label="Search blocked pincodes" placeholder="Search a pincode" inputMode="numeric" style={{ ...FIELD, width: 200 }} value={search} onChange={(e) => setSearch(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+        </div>
+        {items && !list.length && <div style={{ color: 'var(--ops-muted)', fontSize: 13, padding: '10px 0' }}>{q ? 'No blocked pincode matches this search.' : 'No pincodes are blocked for this seller.'}</div>}
+        {!!list.length && <div style={{ border: '1px solid var(--ops-border)', borderRadius: 10, maxHeight: 280, overflowY: 'auto' }}>
+          {list.slice(0, 300).map(([pin, scopes], i) => <div key={pin} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '8px 12px', borderTop: i ? '1px solid var(--ops-divider)' : 0 }}>
+            <span style={{ minWidth: 0 }}><b style={{ fontFamily: T.MONO, fontSize: 13 }}>{pin}</b><small style={{ marginLeft: 10, color: 'var(--ops-muted)' }}>{scopes.join(', ')}</small></span>
+            <Btn disabled={busy} onClick={() => run(() => apiFetch(`/v1/admin/sellers/${sellerId}/pincode-blocks/remove`, { method: 'POST', body: { pincodes: [pin] } }), () => `${pin} unblocked`)}>Unblock</Btn>
+          </div>)}
+        </div>}
+        {list.length > 300 && <div style={{ fontSize: 12, color: 'var(--ops-muted)', marginTop: 6 }}>Showing the first 300. Search a pincode to find the rest.</div>}
+      </div>;
+    })()}
   </Modal>;
 }
 
@@ -205,69 +289,145 @@ function Reports({ sellerId }) {
   </Section>;
 }
 
+const STATE_TONE = { active: ['#E6F6EE', '#1C7C4D'], suspended: ['#FDECEA', '#B23A2B'] };
+const TABS = [['overview', 'Overview'], ['account', 'Account & wallet'], ['documents', 'Documents'], ['performance', 'Performance']];
+
+function StateBadge({ state }) {
+  const [bg, fg] = STATE_TONE[state] || ['#FFF4DB', '#8A5A00'];
+  return <span style={{ background: bg, color: fg, borderRadius: 99, padding: '3px 10px', fontSize: 12, fontWeight: 600 }}>● {title(state)}</span>;
+}
+
+function Kpi({ label, value, sub }) {
+  return <div style={{ border: '1px solid var(--ops-border)', borderRadius: 12, padding: '12px 14px', background: 'var(--ops-surface)', minWidth: 0 }}>
+    <div style={{ fontSize: 12, color: 'var(--ops-muted)' }}>{label}</div>
+    <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4, color: 'var(--ops-heading)' }}>{value}</div>
+    <div style={{ fontSize: 11.5, color: 'var(--ops-muted)', marginTop: 2 }}>{sub}</div>
+  </div>;
+}
+
+function MoreActions({ items }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = () => setOpen(false);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [open]);
+  return <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+    <Btn onClick={() => setOpen((o) => !o)}>⋮ More actions</Btn>
+    {open && <div role="menu" style={{ position: 'absolute', right: 0, top: 42, zIndex: 40, minWidth: 250, padding: 6, ...CARD, borderRadius: 10 }}>
+      {items.map((it, i) => it.divider ? <div key={i} style={{ height: 1, background: 'var(--ops-divider)', margin: '6px 0' }} /> :
+        <button key={it.label} role="menuitem" type="button" disabled={it.disabled} onClick={() => { setOpen(false); it.onClick(); }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 10px', border: 0, borderRadius: 7, background: 'transparent', fontSize: 13, color: it.danger ? '#B23A2B' : 'var(--ops-text)', cursor: it.disabled ? 'not-allowed' : 'pointer', opacity: it.disabled ? .5 : 1 }}>{it.label}</button>)}
+    </div>}
+  </div>;
+}
+
 export default function AdminSellerProfile({ sellerId }) {
   const router = useRouter();
   const { showToast } = useAppState();
   const [p, setP] = useState(null); const [error, setError] = useState(''); const [modal, setModal] = useState(null); const [busy, setBusy] = useState('');
+  const [tab, setTab] = useState('overview'); const [kpi, setKpi] = useState(null);
   const load = useCallback(() => apiFetch(`/v1/admin/sellers/${sellerId}/profile`).then((d) => { setP(d); setError(''); }).catch((e) => setError(e instanceof ApiError && e.status === 404 ? 'Seller not found.' : errText(e, 'Seller profile could not be loaded'))), [sellerId]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const to = new Date().toISOString().slice(0, 10); const from = new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10);
+    apiFetch(`/v1/admin/sellers/${sellerId}/performance?from=${from}&to=${to}`).then(setKpi).catch(() => setKpi(null));
+  }, [sellerId]);
 
   const setState = async (state) => { setBusy('state'); try { await adminApi.setSellerState(sellerId, state, 'Updated from seller profile'); showToast(`Seller is now ${state}`); await load(); } catch (e) { showToast(errText(e, 'Seller state could not be changed'), 'error'); } finally { setBusy(''); } };
   const viewAs = async () => { setBusy('imp'); try { await apiFetch(`/v1/admin/sellers/${sellerId}/impersonate`, { method: 'POST' }); router.push('/dashboard'); } catch (e) { showToast(errText(e, 'Could not open the seller panel'), 'error'); setBusy(''); } };
 
   if (error) return <div style={{ ...CARD, padding: 40, textAlign: 'center', color: 'var(--ops-muted)' }}>{error}<div style={{ marginTop: 14 }}><Btn onClick={() => router.push('/admin/sellers')}>Back to sellers</Btn></div></div>;
   if (!p) return <div style={{ ...CARD, minHeight: 240, display: 'grid', placeItems: 'center', color: 'var(--ops-muted)' }}>Loading seller profile</div>;
-  const owner = p.owner_name ? `${p.owner_name} (${p.owner_email})` : p.owner_email;
+  const menu = [
+    { label: 'Update password', onClick: () => setModal('password') },
+    { label: 'Manage wallet (credit / debit note)', onClick: () => setModal('wallet') },
+    { label: 'View rate card', onClick: () => setModal('rate') },
+    { label: 'Assign rate card', onClick: () => setModal('assign') },
+    { label: `Pincode access${p.blockedPincodeCount ? ` (${p.blockedPincodeCount} blocked)` : ''}`, onClick: () => setModal('pincodes') },
+    { divider: true },
+    p.state === 'suspended' ? { label: 'Restore seller', disabled: busy === 'state', onClick: () => setState('active') } : { label: 'Suspend seller', danger: true, disabled: busy === 'state' || p.state !== 'active', onClick: () => setState('suspended') },
+  ];
   return (
     <div style={{ padding: '18px 24px 56px', display: 'grid', gap: 16, width: '100%', boxSizing: 'border-box' }}>
-      <style>{'.ap-grid{display:grid;gap:16px;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}@media(max-width:1100px){.ap-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:680px){.ap-grid{grid-template-columns:minmax(0,1fr)}}'}</style>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '20px 24px', borderRadius: 14, background: 'var(--ac, #1b9fd6)', color: '#fff' }}>
+      <style>{'.ap-two{display:grid;gap:16px;grid-template-columns:minmax(0,3fr) minmax(0,2fr);align-items:start}.ap-id{display:grid;gap:18px;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);align-items:center}.ap-kpis{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}@media(max-width:1000px){.ap-two,.ap-id{grid-template-columns:minmax(0,1fr)}}'}</style>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>{p.legal_name}</div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-            <span style={{ background: 'rgba(0,0,0,.32)', borderRadius: 99, padding: '4px 11px', fontSize: 12, fontFamily: T.MONO }}>NEXGO Code: {p.nexgo_code}</span>
-            <span style={{ background: 'rgba(0,0,0,.32)', borderRadius: 99, padding: '4px 11px', fontSize: 12 }}>Joined: {dateOnly(p.created_at)}</span>
-            <span style={{ background: 'rgba(0,0,0,.32)', borderRadius: 99, padding: '4px 11px', fontSize: 12 }}>{title(p.state)}</span>
+          <button type="button" onClick={() => router.push('/admin/sellers')} style={{ border: 0, background: 'none', padding: 0, color: 'var(--ac, #3877fc)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>← All sellers</button>
+          <div style={{ fontSize: 12.5, color: 'var(--ops-muted)', marginTop: 4 }}>Manage profile, shipping activity and account settings</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <MoreActions items={menu} />
+          <Btn tone="primary" disabled={busy === 'imp' || p.state === 'suspended'} onClick={viewAs}>{busy === 'imp' ? 'Opening…' : 'View as seller'}</Btn>
+        </div>
+      </div>
+
+      <div className="ap-id" style={CARD}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', minWidth: 0 }}>
+          <div aria-hidden style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--ac, #3877fc)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 26, fontWeight: 700, flexShrink: 0 }}>{(p.legal_name || '?').trim().charAt(0).toUpperCase()}</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ops-heading)', wordBreak: 'break-word' }}>{p.legal_name}</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
+              <span style={{ fontFamily: T.MONO, fontSize: 12, color: 'var(--ops-muted)' }}>{p.nexgo_code}</span><StateBadge state={p.state} />
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--ops-muted)', marginTop: 8, display: 'grid', gap: 2 }}>
+              <span>Joined {dateOnly(p.created_at)}</span><span>{p.owner_email}</span>{p.mobile && <span>{p.mobile}</span>}
+            </div>
           </div>
         </div>
-        <button type="button" onClick={() => router.push('/admin/sellers')} style={{ minHeight: 36, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,.7)', background: 'transparent', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>← All sellers</button>
+        <div className="ap-kpis">
+          <Kpi label="Packets" value={kpi ? kpi.packets : '…'} sub="last 30 days" />
+          <Kpi label="Delivered" value={kpi ? kpi.delivered : '…'} sub={kpi ? `${kpi.deliveryPercent}% delivery` : 'last 30 days'} />
+          <Kpi label="In transit" value={kpi ? kpi.in_transit : '…'} sub={kpi ? `${kpi.ndr} NDR` : 'last 30 days'} />
+          <Kpi label="RTO" value={kpi ? kpi.rto : '…'} sub="last 30 days" />
+        </div>
       </div>
 
-      <div className="ap-grid">
-        <Section heading="+ Actions"><div style={{ display: 'grid', gap: 8 }}>
-          <Btn onClick={() => setModal('password')}>Update password</Btn>
-          <Btn onClick={() => setModal('assign')}>Assign rate card</Btn>
-          <Btn onClick={() => setModal('rate')}>View rate card</Btn>
-          <Btn onClick={() => setModal('wallet')}>Manage wallet (credit / debit note)</Btn>
-          <Btn onClick={() => document.getElementById('poc-details')?.scrollIntoView({ behavior: 'smooth' })}>Debit limit: {money(p.wallet_debit_limit_paise)}</Btn>
-          <Btn onClick={() => setModal('pincodes')}>Pincode access{p.blockedPincodeCount ? ` (${p.blockedPincodeCount} blocked)` : ''}</Btn>
-          <Btn tone="primary" disabled={busy === 'imp' || p.state === 'suspended'} onClick={viewAs}>{busy === 'imp' ? 'Opening…' : 'View as seller (edit on their behalf)'}</Btn>
-          {p.state === 'active' && <Btn tone="danger" disabled={busy === 'state'} onClick={() => setState('suspended')}>Suspend seller</Btn>}
-          {p.state === 'suspended' && <Btn disabled={busy === 'state'} onClick={() => setState('active')}>Restore seller</Btn>}
-        </div></Section>
-        <Section heading="Contact & Role">
-          <Row k="User name" v={p.owner_name} /><Row k="Email ID" v={p.owner_email} /><Row k="Mobile" v={p.mobile} /><Row k="Role" v="Owner" />
-        </Section>
-        <Section heading="Account & Balance">
-          <Row k="KAM name" v={p.kam_name} /><Row k="KYC approved by" v={p.kyc_status === 'verified' ? p.kyc_reviewed_by || 'Verified' : '—'} />
-          <Row k="Wallet" v={money(p.wallet_balance_paise)} /><Row k="Debit limit" v={money(p.wallet_debit_limit_paise)} /><Row k="Orders / shipments" v={`${p.order_count} / ${p.shipment_count}`} />
-        </Section>
-        <Section heading="POC details"><div id="poc-details" /><PocEditor key={p.updated_at} sellerId={sellerId} p={p} onSaved={load} /></Section>
-        <Section heading="Address"><div style={{ fontSize: 13, lineHeight: 1.5 }}>{p.registered_address || <span style={{ color: 'var(--ops-muted)' }}>Not submitted</span>}</div></Section>
-        <Section heading="Bank details">
-          <Row k="Bank" v={p.bank_name} /><Row k="Account holder" v={p.bank_account_holder} /><Row k="Account no." v={p.has_bank_account ? 'On file (encrypted)' : null} /><Row k="IFSC" v={p.bank_ifsc} /><Row k="Type" v={p.bank_account_type && title(p.bank_account_type)} />
-        </Section>
-        <Section heading="Business">
-          <Row k="GSTIN" v={p.gst_applicable === false ? 'Not applicable' : p.gstin} /><Row k="PAN" v={p.pan} /><Row k="Entity type" v={p.entity_type && title(p.entity_type)} /><Row k="Brand name" v={p.legal_name} />
-        </Section>
-        <Section heading="System info">
-          <Row k="Admin" v={p.account_opened_by} /><Row k="Created" v={dateTime(p.created_at)} /><Row k="Updated" v={dateTime(p.updated_at)} />
-        </Section>
-        <Section heading="COD remittance"><Row k="Cycle" v={`D+${p.remittance_days}`} /><div style={{ fontSize: 12, color: 'var(--ops-muted)', marginTop: 4 }}>D is the delivery date. Negative wallet balance is recovered from the COD before payout.</div></Section>
-        <Documents sellerId={sellerId} />
+      <div role="tablist" style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--ops-border)', overflowX: 'auto' }}>
+        {TABS.map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} type="button" onClick={() => setTab(id)} style={{ padding: '10px 16px', border: 0, borderBottom: tab === id ? '2px solid var(--ac, #3877fc)' : '2px solid transparent', background: 'none', color: tab === id ? 'var(--ac, #3877fc)' : 'var(--ops-muted)', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}</button>)}
       </div>
 
-      <Reports sellerId={sellerId} />
+      {tab === 'overview' && <div className="ap-two">
+        <div style={{ display: 'grid', gap: 16 }}>
+          <Section heading="Business information">
+            <Row k="Brand name" v={p.legal_name} /><Row k="GSTIN" v={p.gst_applicable === false ? 'Not applicable' : p.gstin} /><Row k="PAN" v={p.pan} /><Row k="Entity type" v={p.entity_type && title(p.entity_type)} />
+            <Row k="Registered address" v={p.registered_address || 'Not submitted'} />
+          </Section>
+          <Section heading="Bank details">
+            <Row k="Bank" v={p.bank_name} /><Row k="Account holder" v={p.bank_account_holder} /><Row k="Account no." v={p.has_bank_account ? 'On file (encrypted)' : null} /><Row k="IFSC" v={p.bank_ifsc} /><Row k="Type" v={p.bank_account_type && title(p.bank_account_type)} />
+          </Section>
+        </div>
+        <div style={{ display: 'grid', gap: 16 }}>
+          <Section heading="Account & shipping">
+            <Row k="Wallet balance" v={money(p.wallet_balance_paise)} /><Row k="Debit limit" v={money(p.wallet_debit_limit_paise)} /><Row k="COD remittance" v={`D+${p.remittance_days}`} />
+            <Row k="Blocked pincodes" v={p.blockedPincodeCount || 0} /><Row k="Orders / shipments" v={`${p.order_count} / ${p.shipment_count}`} />
+          </Section>
+          <Section heading="Contact">
+            <Row k="Name" v={p.owner_name} /><Row k="Email" v={p.owner_email} /><Row k="Mobile" v={p.mobile} /><Row k="Role" v="Owner" /><Row k="KAM" v={p.kam_name} />
+          </Section>
+        </div>
+      </div>}
+
+      {tab === 'account' && <div className="ap-two">
+        <Section heading="POC & wallet settings"><PocEditor key={p.updated_at} sellerId={sellerId} p={p} onSaved={load} /></Section>
+        <div style={{ display: 'grid', gap: 16 }}>
+          <Section heading="Quick actions"><div style={{ display: 'grid', gap: 8 }}>
+            <Btn onClick={() => setModal('wallet')}>Manage wallet (credit / debit note)</Btn>
+            <Btn onClick={() => setModal('assign')}>Assign rate card</Btn>
+            <Btn onClick={() => setModal('rate')}>View rate card</Btn>
+            <Btn onClick={() => setModal('pincodes')}>Pincode access{p.blockedPincodeCount ? ` (${p.blockedPincodeCount} blocked)` : ''}</Btn>
+            <Btn onClick={() => setModal('password')}>Update password</Btn>
+          </div></Section>
+          <Section heading="System info">
+            <Row k="Opened by" v={p.account_opened_by} /><Row k="KYC approved by" v={p.kyc_status === 'verified' ? p.kyc_reviewed_by || 'Verified' : '—'} /><Row k="Created" v={dateTime(p.created_at)} /><Row k="Updated" v={dateTime(p.updated_at)} />
+            <div style={{ fontSize: 12, color: 'var(--ops-muted)', marginTop: 6 }}>D in D+N is the delivery date. A negative wallet balance is recovered from the COD before payout.</div>
+          </Section>
+        </div>
+      </div>}
+
+      {tab === 'documents' && <Documents sellerId={sellerId} />}
+      {tab === 'performance' && <Reports sellerId={sellerId} />}
 
       {modal === 'password' && <PasswordModal sellerId={sellerId} owner={p.owner_email} onClose={() => setModal(null)} />}
       {modal === 'wallet' && <WalletModal sellerId={sellerId} balance={p.wallet_balance_paise} onClose={() => setModal(null)} onDone={load} />}

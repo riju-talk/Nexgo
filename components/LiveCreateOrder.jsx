@@ -339,7 +339,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
                 {offer.quotes.map((q) => {
                   const key = `${q.provider.code}:${q.service.code}`; const on = pick === key;
                   return (
-                    <label key={key} style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '9px 10px', borderRadius: 9, cursor: 'pointer', border: `1px solid ${on ? T.NAVY : T.BORDER}`, background: on ? 'rgba(27,159,214,.09)' : T.SURFACE }}>
+                    <label key={key} style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '9px 10px', borderRadius: 9, cursor: 'pointer', border: `1px solid ${on ? T.NAVY : T.BORDER}`, background: on ? 'rgba(56,119,252,.09)' : T.SURFACE }}>
                       <input type="radio" name="courier" checked={on} onChange={() => setPick(key)} />
                       <span style={{ flex: 1, minWidth: 0 }}>
                         <b style={{ display: 'block', fontSize: 13, color: T.TEXT }}>{q.provider.name} <span style={{ fontWeight: 500, color: T.TEXT_SECONDARY }}>{q.service.name.replace(new RegExp(`^${q.provider.name}\s*`, 'i'), '') || 'Standard'}</span></b>

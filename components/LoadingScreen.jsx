@@ -21,10 +21,10 @@ const LIGHT_PALETTE = {
   stars: 'rgba(27,59,99,', mesh: '#56BDB6', glow: 'rgba(0,169,156,', scan: '#F8FCFD', solidLeft: '#0F3158', solidMid: '#1581bd', solidRight: '#147A9D', shadow: 'rgba(0,169,156,.22)',
 };
 const DARK_PALETTE = {
-  bright: ['#1b9fd6', '#3FD1C4', '#8BEFE4', '#FFFFFF'],
+  bright: ['#3877fc', '#3FD1C4', '#8BEFE4', '#FFFFFF'],
   mid: ['#14527f', '#5F9E97', '#8298B8'],
   dim: ['#5F779C', '#7189AE', '#3A5178'],
-  stars: 'rgba(211,220,233,', mesh: '#6fd6ec', glow: 'rgba(27,159,214,', scan: '#FFFFFF', solidLeft: '#6fd6ec', solidMid: '#FFFFFF', solidRight: '#6fd6ec', shadow: 'rgba(95,235,217,.55)',
+  stars: 'rgba(211,220,233,', mesh: '#6fd6ec', glow: 'rgba(56,119,252,', scan: '#FFFFFF', solidLeft: '#6fd6ec', solidMid: '#FFFFFF', solidRight: '#6fd6ec', shadow: 'rgba(95,235,217,.55)',
 };
 
 const TARGET_COUNT = 1700;

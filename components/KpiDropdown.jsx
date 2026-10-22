@@ -66,7 +66,7 @@ export default function KpiDropdown({ mobile }) {
                         className={`nxc-kpi-row${on ? ' is-on' : ''}`}
                         style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 14px', borderBottom: `1px solid ${T.PAPER}`, cursor: 'pointer' }}
                       >
-                        <div style={{ width: 14, height: 14, flex: '0 0 14px', border: `1.5px solid ${on ? T.ACCENT : T.MENU_BORDER}`, background: on ? T.ACCENT : T.SURFACE, color: '#06212C', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{on ? '✓' : ''}</div>
+                        <div style={{ width: 14, height: 14, flex: '0 0 14px', border: `1.5px solid ${on ? T.ACCENT : T.MENU_BORDER}`, background: on ? T.ACCENT : T.SURFACE, color: '#FFFFFF', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{on ? '✓' : ''}</div>
                         <div style={{ fontSize: 12.5, fontWeight: 500, flex: 1 }}>{m[1]}</div>
                         <div style={{ fontFamily: T.MONO, fontSize: 10.5, color: T.TEXT_SECONDARY }}>{m[4]}</div>
                         <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: T.TEXT_FAINT, width: 42, textAlign: 'right' }}>{m[2]}</div>
@@ -84,8 +84,8 @@ export default function KpiDropdown({ mobile }) {
             <style jsx>{`
               .nxc-kpi-row { background: var(--nx-surface); transition: background 100ms ease-out; }
               .nxc-kpi-row:hover { background: var(--nx-surface-soft); }
-              .nxc-kpi-row.is-on { background: rgba(27,159,214,.1); }
-              .nxc-kpi-row.is-on:hover { background: rgba(27,159,214,.16); }
+              .nxc-kpi-row.is-on { background: rgba(56,119,252,.1); }
+              .nxc-kpi-row.is-on:hover { background: rgba(56,119,252,.16); }
             `}</style>
           </motion.div>
         )}

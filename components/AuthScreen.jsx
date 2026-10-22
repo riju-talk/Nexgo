@@ -94,7 +94,7 @@ export default function AuthScreen({ mode }) {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 26 }}>
               {['Delhivery', 'Blue Dart', 'Ekart', 'XpressBees', 'Shadowfax'].map((c) => (
                 <div key={c} style={{ fontSize: 11.5, fontWeight: 600, color: '#C7D2E2', border: '1px solid rgba(255,255,255,.16)', borderRadius: 20, padding: '5px 11px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 5, height: 5, borderRadius: 3, background: '#1b9fd6' }} />{c}
+                  <span style={{ width: 5, height: 5, borderRadius: 3, background: '#3877fc' }} />{c}
                 </div>
               ))}
             </div>
@@ -124,8 +124,8 @@ export default function AuthScreen({ mode }) {
               <div style={{ 
                 marginTop: 16, 
                 padding: '11px 13px', 
-                background: 'rgba(27,159,214,.08)', 
-                border: '1px solid rgba(27,159,214,.25)',
+                background: 'rgba(56,119,252,.08)', 
+                border: '1px solid rgba(56,119,252,.25)',
                 borderRadius: 9,
                 display: 'flex',
                 alignItems: 'flex-start',
@@ -146,9 +146,9 @@ export default function AuthScreen({ mode }) {
                     style={{ 
                       height: 26, 
                       padding: '0 10px', 
-                      border: '1px solid rgba(27,159,214,.4)', 
+                      border: '1px solid rgba(56,119,252,.4)', 
                       borderRadius: 6, 
-                      background: 'rgba(27,159,214,.12)', 
+                      background: 'rgba(56,119,252,.12)', 
                       color: AUTH_LINK, 
                       fontSize: 11, 
                       fontWeight: 700, 

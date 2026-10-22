@@ -9,7 +9,7 @@ import * as T from '@/lib/theme';
 const SPRING = { type: 'spring', bounce: 0, duration: 0.28 };
 const n = (v) => Number(v || 0).toLocaleString('en-IN');
 const rupees = (paise) => `₹${(Number(paise || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-const STATUS_COLORS = { delivered: '#14724F', in_transit: '#3C6094', out_for_delivery: '#1b9fd6', pickup_scheduled: '#8A5A00', ndr: '#B23A2B', rto: '#7A4B9C', cancelled: '#8C8778' };
+const STATUS_COLORS = { delivered: '#14724F', in_transit: '#3C6094', out_for_delivery: '#3877fc', pickup_scheduled: '#8A5A00', ndr: '#B23A2B', rto: '#7A4B9C', cancelled: '#8C8778' };
 const statusName = (k) => k.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function Card({ children, style = {} }) {

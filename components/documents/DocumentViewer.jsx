@@ -68,7 +68,7 @@ const CSS = `
 .doc-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: #fff; border-bottom: 1px solid #d5dce4; }
 .doc-bar b { margin-right: auto; font-size: 15px; }
 .doc-bar select, .doc-bar button { height: 36px; border-radius: 8px; border: 1px solid #c6d1da; background: #fff; padding: 0 12px; font-size: 13px; }
-.doc-bar button { background: #1b9fd6; border-color: #1b9fd6; color: #fff; font-weight: 700; cursor: pointer; }
+.doc-bar button { background: #3877fc; border-color: #3877fc; color: #fff; font-weight: 700; cursor: pointer; }
 .doc-bar button:disabled { opacity: .5; cursor: not-allowed; }
 .doc-msg { text-align: center; padding: 40px; font-size: 14px; color: #52677a; }
 .doc-err { color: #b23a2b; }
