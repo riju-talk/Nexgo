@@ -73,7 +73,8 @@ async function processItem(item: Item, rawBody: string, log: { warn: (o: object,
 
 export async function lorrigoWebhookRoutes(app: FastifyInstance) {
   // A long shipment history is large (the samples are ~12 KB each), and a batch can hold several, so the default 1 MB limit is raised.
-  app.post('/v1/webhooks/lorrigo', { bodyLimit: 5_000_000, config: { rawBody: true, rateLimit: { max: 1200, timeWindow: '1 minute' } } }, async (request, reply) => {
+  // Canonical URL is /v2 (matches Lorrigo's API version); /v1 stays so a webhook already pointed at it keeps working.
+  for (const path of ['/v2/webhooks/lorrigo', '/v1/webhooks/lorrigo']) app.post(path, { bodyLimit: 5_000_000, config: { rawBody: true, rateLimit: { max: 1200, timeWindow: '1 minute' } } }, async (request, reply) => {
     if (!config.LORRIGO_WEBHOOK_TOKEN) return reply.code(503).send({ error: 'LORRIGO_WEBHOOKS_NOT_CONFIGURED' });
     const token = request.headers['x-api-key'];
     if (typeof token !== 'string' || !safeEqual(token, config.LORRIGO_WEBHOOK_TOKEN)) return reply.code(401).send({ error: 'INVALID_WEBHOOK_TOKEN' });
