@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { volumetricWeightG } from '../lib/money.js';
-import type { BookingDetails, CourierAdapter, CourierBookingRequest, CourierBookingResult } from './types.js';
+import type { BookingDetails, CourierAdapter, CourierBookingRequest, CourierBookingResult, NdrCourierAction } from './types.js';
 
 // Lorrigo (app.lorrigo.com/api/v2), Bearer API key. Booking, verified against the live API:
 //   POST /pickup-address (once per warehouse)  ->  POST /orders  ->  GET /shipments/:orderId/rates  ->  POST /shipments {order_id, courier_id}
@@ -199,6 +199,13 @@ export class LorrigoAdapter implements CourierAdapter {
     const awb = after.awb ?? firstString(shipment, ['awb', 'awb_number', 'awbNumber', 'shipment.awb', 'data.awb', 'data.shipment.awb']) ?? findByKey(shipment, /^(awb|awb_?number|waybill|tracking_?(number|id))$/i);
     if (!awb) throw new LorrigoError('Lorrigo did not return an AWB for this shipment. Check the shipment in the Lorrigo dashboard before booking again.', 502);
     return result(awb, after.id ?? firstString(shipment, ['shipment.id', 'shipment_id', 'shipmentId', 'data.shipment.id']), after.routing);
+  }
+
+  // POST /ndr/action, verified live by validation errors: body { ndrId, actionType, comment }; ndrId is the AWB (a wrong one answers "Shipment not found for AWB"),
+  // actionType is one of reattempt | return | cancel. The success response could not be observed (no NDR exists on the account), so only a failure is read.
+  async ndrAction(awb: string, action: NdrCourierAction, comment: string): Promise<void> {
+    const res = await this.call('POST', '/ndr/action', { ndrId: awb, actionType: action, comment: comment.slice(0, 500) || 'Seller action from NEXGO' });
+    if (isObj(res) && res.success === false) throw new LorrigoError(typeof res.message === 'string' ? res.message : 'Lorrigo did not accept the NDR action.', 502);
   }
 
   async cancel(providerShipmentId: string): Promise<void> {

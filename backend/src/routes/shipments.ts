@@ -205,8 +205,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
     return { results, assigned: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };
   });
   // Cancel before pickup: the courier booking is cancelled and the exact wallet debit taken at booking is credited back (once).
-  app.post('/v1/shipments/:shipmentId/cancel', { preHandler: requireSeller }, async (request) => {
-    const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
+  const cancelShipment = async (p: ReturnType<typeof principal>, shipmentId: string, requestId: string) => {
     const outcome = await withSellerTransaction(p.sellerId, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
       const found = await client.query<{ id: string; awb: string; state: string; order_id: string; code: string; provider_shipment_id: string | null }>(`SELECT s.id, s.awb, s.provider_shipment_id, s.state::text, s.order_id, cp.code FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.id = $1 AND s.seller_id = $2 FOR UPDATE OF s`, [shipmentId, p.sellerId]);
@@ -221,11 +220,25 @@ export async function shipmentRoutes(app: FastifyInstance) {
       const debit = await client.query<{ amount_paise: string }>(`SELECT COALESCE(SUM(amount_paise), 0)::bigint AS amount_paise FROM wallet_entries WHERE seller_id = $1 AND reference_type = 'shipment' AND reference_id = $2 AND entry_type = 'debit'`, [p.sellerId, row.id]);
       const refund = Number(debit.rows[0].amount_paise);
       if (refund > 0) await client.query(`INSERT INTO wallet_entries (seller_id, entry_type, amount_paise, reference_type, reference_id, idempotency_key, description) VALUES ($1, 'credit', $2, 'shipment_cancel', $3, $4, $5) ON CONFLICT DO NOTHING`, [p.sellerId, refund, row.id, `shipment-cancel:${row.id}`, `Refund for cancelled shipment ${row.awb}`]);
-      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'shipment.cancelled', targetType: 'shipment', targetId: row.id, requestId: request.id, metadata: { awb: row.awb, refundedPaise: refund } });
+      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'shipment.cancelled', targetType: 'shipment', targetId: row.id, requestId, metadata: { awb: row.awb, refundedPaise: refund } });
       return { id: row.id, state: 'cancelled', refundedPaise: refund };
     });
     if (!('replay' in outcome)) await cancelTracking(p.sellerId, shipmentId); // the storefront must not keep showing the order as fulfilled
     return outcome;
+  };
+  app.post('/v1/shipments/:shipmentId/cancel', { preHandler: requireSeller }, async (request) => cancelShipment(principal(request), uuid.parse((request.params as { shipmentId: string }).shipmentId), request.id));
+  // Up to 50 at once. Each cancel is its own transaction (a courier refusing one never undoes the others) and they run one after another because the
+  // wallet lock serialises them anyway; a 22 s budget keeps it inside the 30 s function limit, and whatever is left is reported so it can be retried.
+  app.post('/v1/shipments/bulk-cancel', { preHandler: requireSeller }, async (request) => {
+    const p = principal(request); const { shipmentIds } = z.object({ shipmentIds: z.array(uuid).min(1).max(50) }).parse(request.body);
+    const ids = [...new Set(shipmentIds)]; const started = Date.now();
+    const results: { shipmentId: string; ok: boolean; refundedPaise?: number; error?: string }[] = [];
+    for (const shipmentId of ids) {
+      if (Date.now() - started > 22_000) { results.push({ shipmentId, ok: false, error: 'Not processed in time. Select it again to retry.' }); continue; }
+      try { const r = await cancelShipment(p, shipmentId, request.id); results.push({ shipmentId, ok: true, refundedPaise: r.refundedPaise }); }
+      catch (e) { results.push({ shipmentId, ok: false, error: (e as Error).message || 'Could not cancel' }); }
+    }
+    return { results, cancelled: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, refundedPaise: results.reduce((t, r) => t + (r.refundedPaise ?? 0), 0) };
   });
   app.post('/v1/shipments/:shipmentId/label',{ preHandler: requireSeller }, async (request, reply) => {
     if (!config.STORAGE_ENABLED) return reply.code(501).send({ error: 'FILE_STORAGE_NOT_CONNECTED', message: 'File storage is not connected yet; this will be available soon.' });

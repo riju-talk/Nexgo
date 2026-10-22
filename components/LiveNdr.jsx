@@ -43,8 +43,10 @@ function CaseDialog({ row, initialAction, onClose, onDone }) {
       const body = { resolutionAction: action, resolutionNotes: notes.trim() || undefined };
       if (action === 'delivery_rescheduled') body.scheduledDeliveryDate = new Date(`${date}T10:00:00`).toISOString();
       if (action === 'address_update') body.newAddress = { addressLine1: addr.line1.trim(), addressLine2: addr.line2.trim() || undefined, city: city.trim(), pincode: addr.pincode, landmark: addr.landmark.trim() || undefined };
-      await apiFetch(`/v1/ndr/cases/${row.id}/resolve`, { method: 'POST', body });
-      showToast('NDR action submitted'); onDone();
+      const r = await apiFetch(`/v1/ndr/cases/${row.id}/resolve`, { method: 'POST', body });
+      if (r?.courier?.status === 'failed') showToast(`Saved, but the courier was not told: ${r.courier.message}. Please tell them from their portal.`, 'error');
+      else showToast(r?.courier?.status === 'sent' ? 'NDR action sent to the courier' : 'NDR action submitted');
+      onDone();
     } catch (e) { showToast(e instanceof ApiError ? (e.body?.details ? 'Check the details entered' : e.message) : 'Action failed', 'error'); setBusy(false); }
   };
   const addrOk = action !== 'address_update' || (addr.line1.trim().length >= 3 && /^\d{6}$/.test(addr.pincode) && city.trim().length >= 2);
@@ -144,7 +146,8 @@ export default function LiveNdr({ mobile }) {
     setBusy(true);
     try {
       const r = await apiFetch('/v1/ndr/cases/bulk-resolve', { method: 'POST', body: { caseIds: openSelected.map((x) => x.id), resolutionAction: action } });
-      showToast(`${label}: ${r.summary.succeeded} updated${r.summary.failed ? `, ${r.summary.failed} skipped` : ''}`, r.summary.failed ? 'error' : 'success'); refresh();
+      const unsent = r.summary.courierNotNotified ?? 0;
+      showToast(`${label}: ${r.summary.succeeded} updated${r.summary.failed ? `, ${r.summary.failed} skipped` : ''}${unsent ? `, ${unsent} saved but the courier was not told` : ''}`, r.summary.failed || unsent ? 'error' : 'success'); refresh();
     } catch (e) { showToast(e.message || 'Bulk action failed', 'error'); } finally { setBusy(false); }
   };
   const exportReport = async () => {

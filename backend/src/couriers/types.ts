@@ -22,4 +22,7 @@ export type CourierAdapter = {
   providerCode: string;
   book(request: CourierBookingRequest): Promise<CourierBookingResult>;
   cancel(providerShipmentId: string): Promise<void>;
+  /** Tell the courier what to do with an undelivered parcel. Optional: only couriers with an NDR API implement it. */
+  ndrAction?(awb: string, action: NdrCourierAction, comment: string): Promise<void>;
 };
+export type NdrCourierAction = 'reattempt' | 'return' | 'cancel';

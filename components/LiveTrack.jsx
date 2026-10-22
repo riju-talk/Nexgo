@@ -314,6 +314,21 @@ export default function LiveTrack({ mobile }) {
     if (ids.length > 100) return showToast('Print up to 100 shipments at a time.', 'error');
     openDocs(kind, ids);
   };
+  // Only shipments the courier has not picked up can be cancelled; the rest are left alone and counted so nothing is silently skipped.
+  const cancelSelected = async () => {
+    const chosen = visible.filter((r) => picked.has(r.id) && r.state !== 'failed');
+    const ids = chosen.filter((r) => ['booked', 'pickup_pending', 'pickup_scheduled'].includes(r.state)).map((r) => r.id);
+    if (!ids.length) return showToast('None of the selected shipments can be cancelled. Only shipments that are not yet picked up can.', 'error');
+    if (ids.length > 50) return showToast('Cancel up to 50 shipments at a time.', 'error');
+    const skipped = chosen.length - ids.length;
+    if (!window.confirm(`Cancel ${ids.length} shipment${ids.length === 1 ? '' : 's'}? The shipping charges are credited back to your wallet.${skipped ? ` ${skipped} selected shipment${skipped === 1 ? ' is' : 's are'} already picked up and will be left as they are.` : ''}`)) return;
+    try {
+      const r = await apiFetch('/v1/shipments/bulk-cancel', { method: 'POST', body: { shipmentIds: ids } });
+      const bad = r.results.find((x) => !x.ok);
+      showToast(`${r.cancelled} cancelled${r.refundedPaise ? ` · ₹${(r.refundedPaise / 100).toLocaleString('en-IN')} refunded to your wallet` : ''}${r.failed ? ` · ${r.failed} could not be cancelled: ${bad?.error}` : ''}`, r.failed ? 'error' : 'success');
+      setPicked(new Set()); await load();
+    } catch (e) { showToast(e instanceof ApiError ? e.message : 'Shipments could not be cancelled', 'error'); }
+  };
   const allOnPage = pageRows.length > 0 && pageRows.every((r) => picked.has(r.id));
   const togglePage = () => setPicked((s) => { const n = new Set(s); pageRows.forEach((r) => (allOnPage ? n.delete(r.id) : n.add(r.id))); return n; });
   const toggleOne = (id) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -372,6 +387,7 @@ export default function LiveTrack({ mobile }) {
           {visible.some((r) => picked.has(r.id) && r.state === 'failed') && <Btn small primary onClick={() => assignCouriers(visible.filter((r) => picked.has(r.id) && r.state === 'failed').map((r) => r.id), showToast, async () => { await load(); setPicked(new Set()); })}>Assign couriers</Btn>}
           <Btn small onClick={() => printSelected('label')}>Print labels</Btn>
           <Btn small onClick={() => printSelected('invoice')}>Print invoices</Btn>
+          <Btn small onClick={cancelSelected}>Cancel shipments</Btn>
           {canExport && <Btn small onClick={exportRows}>Export selected</Btn>}
           <input aria-label="Tag name" value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="Tag name" maxLength={30} style={{ ...FIELD, height: 28, width: 130 }} />
           <Btn small disabled={!tagInput.trim()} onClick={() => tagSelected('add')}>Add tag</Btn>

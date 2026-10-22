@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
+import { pushNdrToCourier } from '../lib/ndrCourier.js';
 import { requireSeller } from './seller.js';
 
 const uuid = z.string().uuid();
@@ -135,7 +136,7 @@ export async function ndrRoutes(app: FastifyInstance) {
     const caseId = uuid.parse((request.params as { caseId: string }).caseId);
     const input = resolveInput.parse(request.body);
 
-    return withSellerTransaction(p.sellerId, async (client) => {
+    const saved = await withSellerTransaction(p.sellerId, async (client) => {
       const current = await client.query<{ 
         shipment_id: string; 
         state: string; 
@@ -255,8 +256,11 @@ export async function ndrRoutes(app: FastifyInstance) {
         metadata: { action: input.resolutionAction },
       });
 
-      return result.rows[0];
+      return { row: result.rows[0], shipmentId: current.rows[0].shipment_id };
     });
+    const address = input.newAddress ? ` New address: ${[input.newAddress.addressLine1, input.newAddress.addressLine2, input.newAddress.city, input.newAddress.pincode].filter(Boolean).join(', ')}.` : '';
+    const courier = await pushNdrToCourier({ sellerId: p.sellerId, userId: p.userId, shipmentId: saved.shipmentId, caseId, resolution: input.resolutionAction, comment: `${input.resolutionNotes ?? `Seller requested ${input.resolutionAction}`}${address}`, requestId: request.id });
+    return { ...saved.row, courier };
   });
 
   // Bulk resolve NDR cases
@@ -264,8 +268,9 @@ export async function ndrRoutes(app: FastifyInstance) {
     const p = principal(request);
     const input = bulkResolveInput.parse(request.body);
 
-    return withSellerTransaction(p.sellerId, async (client) => {
-      const results = [];
+    const shipmentOf = new Map<string, string>();
+    const outcome = await withSellerTransaction(p.sellerId, async (client) => {
+      const results: { caseId: string; success: boolean; error?: string; courier?: unknown }[] = [];
 
       for (const caseId of input.caseIds) {
         try {
@@ -306,6 +311,7 @@ export async function ndrRoutes(app: FastifyInstance) {
             WHERE id = $2
           `, [shipmentState, current.rows[0].shipment_id]);
 
+          shipmentOf.set(caseId, current.rows[0].shipment_id);
           results.push({ caseId, success: true });
         } catch (error) {
           results.push({ caseId, success: false, error: (error as Error).message });
@@ -322,15 +328,26 @@ export async function ndrRoutes(app: FastifyInstance) {
         metadata: { count: input.caseIds.length, action: input.resolutionAction },
       });
 
-      return { 
-        results,
-        summary: {
-          total: input.caseIds.length,
-          succeeded: results.filter(r => r.success).length,
-          failed: results.filter(r => !r.success).length,
-        },
-      };
+      return results;
     });
+    // Tell the courier after everything is saved, one case at a time (a slow courier must not hold the database transaction open).
+    // Batches of 10 in parallel inside a 20 s budget (the function is capped at 30 s); cases left over are reported, not dropped.
+    const comment = input.resolutionNotes ?? `Seller requested ${input.resolutionAction}`; const started = Date.now();
+    const todo = outcome.filter((r) => r.success && shipmentOf.has(r.caseId));
+    for (let i = 0; i < todo.length; i += 10) {
+      const batch = todo.slice(i, i + 10);
+      if (Date.now() - started > 20_000) { for (const r of batch) r.courier = { status: 'failed', message: 'Not sent in time. Saved here; tell the courier from its own portal.' }; continue; }
+      await Promise.all(batch.map(async (r) => { r.courier = await pushNdrToCourier({ sellerId: p.sellerId, userId: p.userId, shipmentId: shipmentOf.get(r.caseId)!, caseId: r.caseId, resolution: input.resolutionAction, comment, requestId: request.id }); }));
+    }
+    return {
+      results: outcome,
+      summary: {
+        total: input.caseIds.length,
+        succeeded: outcome.filter((r) => r.success).length,
+        failed: outcome.filter((r) => !r.success).length,
+        courierNotNotified: outcome.filter((r) => (r.courier as { status?: string } | undefined)?.status === 'failed').length,
+      },
+    };
   });
 
   // Get NDR statistics
