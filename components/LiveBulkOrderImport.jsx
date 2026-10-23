@@ -300,9 +300,9 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           items: o.items.map((i) => ({ productId: i.productId, sku: i.sku, name: i.name, hsnCode: i.hsn || undefined, quantity: i.quantity, unitPricePaise: i.pricePaise, weightG: Math.round(i.weight) })),
           package: { weightG: o.weightG, ...(o.dims ? { lengthMm: o.dims[0], widthMm: o.dims[1], heightMm: o.dims[2] } : {}) },
         });
-    // 25 orders per request, 4 requests at a time: on the hosted database one order takes ~150 ms, so one-after-another would take ~12 minutes for 5,000.
+    // 50 orders per request (the server saves a whole request in one set-based transaction), 4 requests at a time: 5,000 orders = 100 requests, a few seconds.
     // Re-uploading the same file is safe: an order number that already exists comes back as { existing: true } and is counted as already in NEXGO.
-    const chunks = []; for (let i = 0; i < validOrders.length; i += 25) chunks.push(validOrders.slice(i, i + 25));
+    const chunks = []; for (let i = 0; i < validOrders.length; i += 50) chunks.push(validOrders.slice(i, i + 50));
     let existing = 0; let finished = 0;
     const createWorker = async () => {
       while (chunks.length) {

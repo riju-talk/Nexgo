@@ -167,6 +167,61 @@ export async function operationsRoutes(app: FastifyInstance) {
       for (const item of input.items) await client.query('INSERT INTO order_items (order_id,product_id,sku,name,quantity,unit_price_paise,weight_g,hsn_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [result.rows[0].id, item.productId ?? null, item.sku, item.name, item.quantity, item.unitPricePaise, item.weightG, item.hsnCode ?? null]);
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.created', targetType: 'order', targetId: result.rows[0].id, requestId: requestId, metadata: { orderNumber: input.orderNumber, itemCount: input.items.length } }); return result.rows[0];
   });
+  // Set-based creation of many orders in ONE transaction: about a dozen statements for 50 orders instead of ~10 round trips per order (hosted Postgres
+  // is ~150 ms away, so one order at a time made big sheets trickle in). Returns one entry per input, in order. Anything unusual (a rejected row, a
+  // duplicate inside the batch, an order-number clash that is not a plain repeat) throws, and the caller falls back to the one-by-one path, which
+  // reports each order's own error: the fast path can never change what a seller gets, only how quickly.
+  const FALLBACK = Object.assign(new Error('batch fallback'), { fallback: true });
+  const createOrdersBatch = (p: ReturnType<typeof getPrincipal>, requestId: string, inputs: z.infer<typeof orderInput>[]) => withSellerTransaction(p.sellerId, async (client) => {
+    const numbers = inputs.map((i) => i.orderNumber); const refs = inputs.map((i) => i.externalReference ?? i.orderNumber);
+    if (new Set(numbers).size !== numbers.length || new Set(refs).size !== refs.length) throw FALLBACK;
+    const whIds = [...new Set(inputs.map((i) => i.warehouseId))];
+    const wh = await client.query('SELECT id FROM warehouses WHERE seller_id=$1 AND is_active AND id = ANY($2::uuid[])', [p.sellerId, whIds]);
+    if (wh.rowCount !== whIds.length) throw FALLBACK;
+    const clash = await client.query<{ id: string; order_number: string; external_reference: string | null; state: string }>('SELECT id, order_number, external_reference, state FROM orders WHERE seller_id=$1 AND (order_number = ANY($2::text[]) OR external_reference = ANY($3::text[]))', [p.sellerId, numbers, refs]);
+    const existingByNumber = new Map<string, string>(); const cancelled: string[] = [];
+    for (const r of clash.rows) {
+      if (r.state === 'cancelled') cancelled.push(r.id);
+      else if (numbers.includes(r.order_number) && refs[numbers.indexOf(r.order_number)] === (r.external_reference ?? r.order_number)) existingByNumber.set(r.order_number, r.id);
+      else throw FALLBACK;
+    }
+    if (cancelled.length) await client.query(`UPDATE orders SET order_number = order_number || '-CXL-' || left(id::text, 6), external_reference = CASE WHEN external_reference IS NULL THEN NULL ELSE external_reference || '-CXL-' || left(id::text, 6) END, updated_at = now() WHERE id = ANY($1::uuid[])`, [cancelled]);
+    const fresh = inputs.filter((i) => !existingByNumber.has(i.orderNumber));
+    const out = new Map<string, { id: string; existing: boolean }>();
+    for (const [n, id] of existingByNumber) out.set(n, { id, existing: true });
+    if (fresh.length) {
+      const key = (phone: string, pin: string) => `${phone}|${pin}`;
+      const distinct = new Map(fresh.map((i) => [key(i.customer.phone, i.customer.pincode), i.customer]));
+      const customerIds = new Map<string, string>();
+      const have = await client.query<{ id: string; phone: string; pincode: string }>('SELECT c.id, c.phone, c.pincode FROM customers c JOIN unnest($2::text[], $3::text[]) AS k(phone, pincode) ON c.phone = k.phone AND c.pincode = k.pincode WHERE c.seller_id = $1 ORDER BY c.created_at', [p.sellerId, [...distinct.values()].map((c) => c.phone), [...distinct.values()].map((c) => c.pincode)]);
+      for (const r of have.rows) if (!customerIds.has(key(r.phone, r.pincode))) customerIds.set(key(r.phone, r.pincode), r.id);
+      const missing = [...distinct.entries()].filter(([k]) => !customerIds.has(k)).map(([, c]) => ({ full_name: c.fullName, email: c.email ?? null, phone: c.phone, address_line_1: c.addressLine1, address_line_2: c.addressLine2 ?? null, city: c.city, state: c.state, pincode: c.pincode, company_name: c.companyName ?? null, alternate_phone: c.alternatePhone ?? null, landmark: c.landmark ?? null }));
+      if (missing.length) {
+        const made = await client.query<{ id: string; phone: string; pincode: string }>(`INSERT INTO customers (seller_id,full_name,email,phone,address_line_1,address_line_2,city,state,pincode,company_name,alternate_phone,landmark)
+          SELECT $1, x.full_name, x.email, x.phone, x.address_line_1, x.address_line_2, x.city, x.state, x.pincode, x.company_name, x.alternate_phone, x.landmark
+          FROM jsonb_to_recordset($2::jsonb) AS x(full_name text, email text, phone text, address_line_1 text, address_line_2 text, city text, state text, pincode text, company_name text, alternate_phone text, landmark text) RETURNING id, phone, pincode`, [p.sellerId, JSON.stringify(missing)]);
+        for (const r of made.rows) customerIds.set(key(r.phone, r.pincode), r.id);
+      }
+      const rows = fresh.map((i) => {
+        const t = orderTotals(i); const ch = i.charges; const pk = i.package;
+        return { warehouse_id: i.warehouseId, customer_id: customerIds.get(key(i.customer.phone, i.customer.pincode)), order_number: i.orderNumber, external_reference: i.externalReference ?? i.orderNumber, order_flow: i.orderFlow, payment_mode: i.paymentMode, cod_amount_paise: i.codAmountPaise, subtotal_paise: t.subtotal, total_weight_g: t.deadWeight, notes: i.notes ?? null, channel: i.channel, pl: pk.lengthMm ?? null, pw: pk.widthMm ?? null, ph: pk.heightMm ?? null, vol: t.volumetric, ship: ch.shippingPaise, gift: ch.giftWrapPaise, txn: ch.transactionPaise, other: ch.otherPaise, disc: ch.discountPaise, tax_bps: ch.taxRateBps, tax: t.tax, total: t.total };
+      });
+      const created = await client.query<{ id: string; order_number: string }>(`INSERT INTO orders (seller_id,warehouse_id,customer_id,order_number,external_reference,order_flow,payment_mode,cod_amount_paise,subtotal_paise,total_weight_g,notes,state,channel,package_length_mm,package_width_mm,package_height_mm,volumetric_weight_g,shipping_charges_paise,gift_wrap_paise,transaction_charges_paise,other_charges_paise,discount_paise,tax_rate_bps,tax_paise,total_paise)
+        SELECT $1, x.warehouse_id, x.customer_id, x.order_number, x.external_reference, x.order_flow, x.payment_mode::payment_mode, x.cod_amount_paise, x.subtotal_paise, x.total_weight_g, x.notes, 'new'::order_state, x.channel, x.pl, x.pw, x.ph, x.vol, x.ship, x.gift, x.txn, x.other, x.disc, x.tax_bps, x.tax, x.total
+        FROM jsonb_to_recordset($2::jsonb) AS x(warehouse_id uuid, customer_id uuid, order_number text, external_reference text, order_flow text, payment_mode text, cod_amount_paise int, subtotal_paise int, total_weight_g int, notes text, channel text, pl int, pw int, ph int, vol int, ship int, gift int, txn int, other int, disc int, tax_bps int, tax int, total int) RETURNING id, order_number`, [p.sellerId, JSON.stringify(rows)]);
+      if (created.rowCount !== fresh.length) throw FALLBACK;
+      const idOf = new Map(created.rows.map((r) => [r.order_number, r.id]));
+      const items = fresh.flatMap((i) => i.items.map((it) => ({ order_id: idOf.get(i.orderNumber), product_id: it.productId ?? null, sku: it.sku, name: it.name, quantity: it.quantity, unit_price_paise: it.unitPricePaise, weight_g: it.weightG, hsn_code: it.hsnCode ?? null })));
+      await client.query(`INSERT INTO order_items (order_id,product_id,sku,name,quantity,unit_price_paise,weight_g,hsn_code)
+        SELECT x.order_id, x.product_id, x.sku, x.name, x.quantity, x.unit_price_paise, x.weight_g, x.hsn_code FROM jsonb_to_recordset($1::jsonb) AS x(order_id uuid, product_id uuid, sku text, name text, quantity int, unit_price_paise int, weight_g int, hsn_code text)`, [JSON.stringify(items)]);
+      if (fresh.some((i) => i.paymentMode === 'cod')) for (const i of fresh) await queueCodConfirmation(client, { sellerId: p.sellerId, orderId: idOf.get(i.orderNumber)!, paymentMode: i.paymentMode, channel: i.channel, customerName: i.customer.fullName, orderNumber: i.orderNumber });
+      await client.query(`INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id, metadata)
+        SELECT $1, $2, 'order.created', 'order', x.id, $3, jsonb_build_object('orderNumber', x.order_number, 'itemCount', x.item_count) FROM jsonb_to_recordset($4::jsonb) AS x(id text, order_number text, item_count int)`,
+        [p.sellerId, p.userId, requestId, JSON.stringify(fresh.map((i) => ({ id: idOf.get(i.orderNumber), order_number: i.orderNumber, item_count: i.items.length })))]);
+      for (const i of fresh) out.set(i.orderNumber, { id: idOf.get(i.orderNumber)!, existing: false });
+    }
+    return inputs.map((i) => out.get(i.orderNumber)!);
+  });
   app.post('/v1/orders', { preHandler: requireSeller }, async (request, reply) => {
     const input = orderInput.parse(request.body);
     return reply.code(201).send(await createOrder(getPrincipal(request), request.id, input));
@@ -177,6 +232,16 @@ export async function operationsRoutes(app: FastifyInstance) {
     const { orders } = z.object({ orders: z.array(z.unknown()).min(1).max(50) }).parse(request.body);
     const p = getPrincipal(request);
     const results: { index: number; ok: boolean; id?: string; existing?: boolean; error?: string }[] = [];
+    // Fast path: when every order in the request is valid, create them all in one set-based transaction. If anything in it is refused nothing was saved
+    // (one transaction) and the orders go through the one-by-one path below, which reports each order's own result.
+    const parsedAll = orders.map((raw) => orderInput.safeParse(raw));
+    if (parsedAll.every((x) => x.success)) {
+      try {
+        const made = await createOrdersBatch(p, request.id, parsedAll.map((x) => (x as { data: z.infer<typeof orderInput> }).data));
+        const fast = made.map((m, index) => ({ index, ok: true, id: m.id, existing: m.existing || undefined }));
+        return { results: fast, created: made.filter((m) => !m.existing).length, existing: made.filter((m) => m.existing).length, failed: 0 };
+      } catch (error) { if (!(error as { fallback?: boolean }).fallback) request.log.warn({ err: error }, 'bulk batch refused, creating one by one'); }
+    }
     for (const [index, raw] of orders.entries()) {
       const parsed = orderInput.safeParse(raw);
       if (!parsed.success) { const issue = parsed.error.issues[0]; results.push({ index, ok: false, error: `${issue.path.join('.') || 'order'}: ${issue.message}` }); continue; }
