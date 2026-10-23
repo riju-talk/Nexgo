@@ -132,7 +132,7 @@ function Detail({ shipment, mobile, onClose, reload, onChoose }) {
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Pill state={shipment.state} /><button aria-label="Close tracking panel" onClick={onClose} style={{ border: 0, background: 'transparent', color: T.TEXT_MUTED, fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button></div>
       </div>
       {delayed && <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, background: `${T.RED}12`, color: T.RED, fontSize: 12.5, fontWeight: 650 }}>Past its promised delivery date ({day(shipment.promised_delivery_at)}).</div>}
-      {failedOrder ? <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, background: `${T.RED}12`, color: T.RED, fontSize: 12.5, fontWeight: 650 }}>No courier is assigned to this order. Correct the order details (mobile number, address, pincode, weight and size) and assign a courier from All orders.</div> : <Progress state={shipment.state} />}
+      {failedOrder ? (shipment.state === 'ready' ? <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, background: `${T.GREEN}14`, color: T.TEXT, fontSize: 12.5, fontWeight: 650 }}>This order is ready. Click “Book now” in the list to choose a courier.</div> : <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, background: `${T.RED}12`, color: T.RED, fontSize: 12.5, fontWeight: 650 }}>This order needs fixing before a courier can be booked. Correct the order details (mobile number, address, pincode, weight and size), then book a courier.</div>) : <Progress state={shipment.state} />}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 14px', margin: '14px 0', paddingTop: 14, borderTop: `1px solid ${T.DIVIDER}` }}>
         {facts.map(([k, v]) => (
           <div key={k} style={{ minWidth: 0 }}><span style={{ color: T.TEXT_MUTED, fontSize: 10.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase' }}>{k}</span><div style={{ marginTop: 4, color: T.TEXT, fontSize: 13, fontWeight: 620, wordBreak: 'break-word' }}>{v}</div></div>
@@ -208,7 +208,7 @@ export default function LiveTrack({ mobile }) {
   const [picked, setPicked] = useState(() => new Set());
   const set = (k) => (e) => { setF((x) => ({ ...x, [k]: e.target.value })); setPage(1); };
 
-  const load = useCallback(() => apiFetch('/v1/shipments').then((x) => { setRows(x.items || []); setTotals(x.totals || null); setFailed((x.failed || []).map((o) => ({ ...o, state: o.ready ? 'ready' : 'failed', awb: '', booked_at: o.created_at, shipping_charge_paise: 0, chargeable_weight_g: o.total_weight_g, whatsapp_status: 'not_sent' }))); setError(null); }).catch(setError), []);
+  const load = useCallback(() => apiFetch('/v1/shipments').then((x) => { setRows(x.items || []); setTotals(x.totals || null); setFailed((x.failed || []).map((o) => ({ ...o, state: o.order_state === 'cancelled' ? 'cancelled' : o.ready ? 'ready' : 'failed', awb: '', booked_at: o.created_at, shipping_charge_paise: 0, chargeable_weight_g: o.total_weight_g, whatsapp_status: 'not_sent' }))); setError(null); }).catch(setError), []);
   useEffect(() => { load(); }, [load]);
   // Orders created or cancelled elsewhere (another tab, a bulk upload, a webhook) appear without a manual refresh: reload when the tab is shown again and every 30 s.
   useEffect(() => {

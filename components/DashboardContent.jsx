@@ -80,7 +80,7 @@ export default function DashboardContent({ mobile, narrow, phone }) {
   const chartColCount = [showTrend, showCourier, showCod].filter(Boolean).length;
   const chartCols = mobile ? '1fr' : chartColCount ? [showTrend ? '1.7fr' : null, showCourier ? '1fr' : null, showCod ? '1fr' : null].filter(Boolean).join(' ') : '1fr';
 
-  const dashboardPipeline = live ? PIPELINE.map(([label, count, color]) => [label, live.pipeline[label.toLowerCase().replaceAll(' ', '_')] ?? 0, color]) : PIPELINE;
+  const dashboardPipeline = live ? PIPELINE.filter(([label]) => label !== 'New').map(([label, count, color]) => [label, live.pipeline[label.toLowerCase().replaceAll(' ', '_')] ?? 0, color]) : PIPELINE;
   const total = dashboardPipeline.reduce((a, p) => a + p[1], 0);
   const queue = live?.queue;
   const trend = live?.trend || [];

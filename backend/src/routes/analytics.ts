@@ -14,8 +14,8 @@ const range = z.object({ days: z.coerce.number().int().min(1).max(365).default(3
   .refine((v) => !v.from || !v.to || (v.from <= v.to && (Date.parse(v.to) - Date.parse(v.from)) / 864e5 <= 365), { message: 'Pick a from and to date up to 366 days apart, with from on or before to' });
 type Range = z.infer<typeof range>;
 
-// Dashboard stage cards: awaiting-pickup shipments count as "pickup scheduled", every RTO sub-state as RTO.
-const stages = (m: Record<string, number>) => ({ ...m, pickup_scheduled: (m.pickup_scheduled || 0) + (m.pickup_pending || 0) + (m.booked || 0), rto: (m.rto || 0) + (m.rto_in_transit || 0) });
+// Dashboard stage cards: orders still waiting for a courier are the "Ready to ship" tab in Track, so they are counted there (there is no separate New card); awaiting-pickup shipments count as "pickup scheduled", every RTO sub-state as RTO.
+const stages = (m: Record<string, number>) => ({ ...m, new: 0, ready_to_ship: (m.ready_to_ship || 0) + (m.new || 0), pickup_scheduled: (m.pickup_scheduled || 0) + (m.pickup_pending || 0) + (m.booked || 0), rto: (m.rto || 0) + (m.rto_in_transit || 0) });
 
 const summarize = async (client: Pool | PoolClient, q: Range, sellerId?: string) => {
   const explicit = q.from && q.to ? { from: q.from, to: q.to } : null;

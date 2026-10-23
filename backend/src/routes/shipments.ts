@@ -89,8 +89,8 @@ export async function shipmentRoutes(app: FastifyInstance) {
               ${READY_SQL} AS ready
        FROM orders o JOIN customers c ON c.id=o.customer_id JOIN warehouses w ON w.id=o.warehouse_id
        LEFT JOIN LATERAL (SELECT COALESCE(sum(quantity),0)::int AS quantity, string_agg(name, ', ' ORDER BY name) AS product_names FROM order_items WHERE order_id=o.id) it ON true
-       WHERE o.seller_id=$1 AND o.state IN ('new','ready_to_ship') AND o.order_flow <> 'reverse' AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id=o.id)
-       ORDER BY o.created_at DESC, o.id LIMIT $2 OFFSET $3`, [p.sellerId, page.failedLimit, page.failedOffset])).rows, p, 'orders.view_customer'),
+       WHERE o.seller_id=$1 AND o.state IN ('new','ready_to_ship','cancelled') AND o.order_flow <> 'reverse' AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id=o.id)
+       ORDER BY (o.state = 'cancelled'), o.created_at DESC, o.id LIMIT $2 OFFSET $3`, [p.sellerId, page.failedLimit, page.failedOffset])).rows, p, 'orders.view_customer'),
       // Exact totals, so the page can say "showing the latest N of M" instead of silently hiding the rest.
       totals: (await client.query<{ shipments: string; unassigned: string; ready: string }>(
         `SELECT (SELECT count(*) FROM shipments WHERE seller_id=$1) AS shipments,

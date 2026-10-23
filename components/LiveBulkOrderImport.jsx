@@ -426,7 +426,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
               {unassignedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => { const n = downloadFailedOrders(orders, fileName, fmt); showToast(`${n} failed order${n === 1 ? '' : 's'} saved as ${fmt === 'xlsx' ? 'Excel' : 'CSV'}. Correct the errors and upload the file again.`); }}>⬇ Failed orders ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
               {failedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => downloadErrorReport(orders, fileName, fmt)}>Error report ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
               {result?.created > 0 && <Action primary onClick={() => nav('shipments')}>{assignMode === 'none' ? 'Go to Track > Ready to ship' : 'Go to Track'}</Action>}
-              <Action primary disabled={!validOrders.length || creating} onClick={() => createOrders()}>{creating ? (progress || 'Creating orders…') : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>
+              {(validOrders.length > 0 || creating) && <Action primary disabled={!validOrders.length || creating} onClick={() => createOrders()}>{creating ? (progress || 'Creating orders…') : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>}
             </div>
           </div>
 
@@ -450,8 +450,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ color: T.TEXT_LABEL, fontSize: 13, fontWeight: 750 }}>{o.paymentMode === 'cod' ? `COD ${inr(o.codAmountPaise)}` : `Prepaid ${inr(o.subtotal)}`}</div>
-                      {o.quote && !bad && <div style={{ marginTop: 3, color: T.TEXT_MUTED, fontSize: 11.5 }}>From {inr(Math.round(o.quote.price.total * 100))} · {o.quote.provider.name} ({o.quoteCount} option{o.quoteCount === 1 ? '' : 's'})</div>}
-                      {!o.quote && !bad && <div style={{ marginTop: 3, color: T.AMBER, fontSize: 11.5 }}>No serviceable courier yet</div>}
+                      {o.created && !o.unassigned && !bad && <div style={{ marginTop: 3, color: o.awb ? T.GREEN : T.TEXT_MUTED, fontSize: 11.5 }}>{o.awb ? `Booked · ${o.courier} · ${o.awb}` : 'In Track > Ready to ship'}</div>}
                     </div>
                   </div>
                   {bad && <div style={{ marginTop: 10, padding: '9px 11px', borderRadius: 9, background: `${T.RED}0D`, color: T.RED, fontSize: 12.5, lineHeight: 1.5 }}>{o.failure || o.errors.join(' · ')}</div>}
