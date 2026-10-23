@@ -84,7 +84,7 @@ function SingleOrder({ order, onClose, onDone }) {
                 <b style={{ display: 'block', fontSize: 13.5, color: T.TEXT }}>{q.provider.name} <span style={{ fontWeight: 500, color: T.TEXT_SECONDARY }}>{q.service.name.replace(new RegExp(`^${q.provider.name}\\s*`, 'i'), '') || 'Standard'}</span></b>
                 <small style={{ color: T.TEXT_MUTED }}>{days(q.tat)} · {q.service.type === 'air' || q.service.type === 'express' ? 'Air' : 'Surface'}{q.tags?.includes('cheapest') ? ' · Cheapest' : ''}{q.tags?.includes('fastest') ? ' · Fastest' : ''}{order.payment_mode === 'cod' && q.price.codFee ? ` · COD fee ${inr(q.price.codFee)}` : ''}</small>
               </span>
-              <span style={{ textAlign: 'right' }}><b style={{ fontSize: 14.5, color: T.TEXT }}>{inr(q.price.total)}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>incl. GST</small></span>
+              <span style={{ textAlign: 'right' }}><b style={{ fontSize: 14.5, color: T.TEXT }}>{inr(q.price.total)}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>+ {inr(q.price.gst)} GST</small></span>
             </label>
           );
         })}

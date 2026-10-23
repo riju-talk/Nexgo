@@ -27,6 +27,8 @@ import LiveRto from './LiveRto';
 import LiveAdminDisputes from './LiveAdminDisputes';
 import LiveAdminNotes from './LiveAdminNotes';
 import AdminSellerProfile from './AdminSellerProfile';
+import AdminRateCards from './AdminRateCards';
+import AdminRateAssign from './AdminRateAssign';
 import LiveRateCard from './LiveRateCard';
 import LiveTeamRoles from './LiveTeamRoles';
 import LiveCodConfirmation from './LiveCodConfirmation';
@@ -89,10 +91,11 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
   const isAdminDisputes = id === 'a-disputes';
   const isAdminNotes = id === 'a-notes';
   const isSellerProfile = id === 'a-seller-profile';
+  const isAdminRates = id === 'a-rate-cards' || id === 'a-rate-view' || id === 'a-rate-assign';
   // Admin screens that have no backend yet say so instead of showing sample figures.
   const ADMIN_SOON = { 'a-escalations': 'Escalations', 'a-credit': 'Credit limits', 'a-live-chat': 'Live chat', 'a-system': 'System settings', 'a-api': 'API management', 'a-roles': 'Role permissions' };
   const isAdminSoon = id in ADMIN_SOON;
-  const isAdminUtility = isAdminPage && !isAdminSoon && !isAdminOverview && !hasTable && !isLiveAdminReport && !isAdminDisputes && !isAdminNotes && !isSellerProfile;
+  const isAdminUtility = isAdminPage && !isAdminSoon && !isAdminOverview && !hasTable && !isLiveAdminReport && !isAdminDisputes && !isAdminNotes && !isSellerProfile && !isAdminRates;
 
   return (
     <>
@@ -115,6 +118,8 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isAdminNotes && <LiveAdminNotes mobile={mobile} />}
         {isAdminSoon && <ComingSoon mobile={mobile} name={ADMIN_SOON[id]} blurb="This admin screen is not connected to live data yet, so it shows nothing rather than sample numbers." back="a-overview" backLabel="Back to dashboard" />}
         {isSellerProfile && <AdminSellerProfile sellerId={sellerId} />}
+        {id === 'a-rate-cards' && <AdminRateCards mobile={mobile} />}
+        {(id === 'a-rate-view' || id === 'a-rate-assign') && <AdminRateAssign sellerId={sellerId} mode={id === 'a-rate-assign' ? 'assign' : 'view'} mobile={mobile} />}
         {isRateCard && <LiveRateCard mobile={mobile} />}
         {isMarketplace && <LiveMarketplace id={id} mobile={mobile} />}
         {isKyc && <LiveKyc mobile={mobile} />}

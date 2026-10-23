@@ -49,7 +49,14 @@ const rateCardInput = z.object({
     additionalPricePaise: z.number().int().min(0).default(0),
     codFeePaise: z.number().int().min(0).default(0),
     fuelSurchargeBps: z.number().int().min(0).max(10_000).default(0),
+    codPercentBps: z.number().int().min(0).max(10_000).default(0),
+    rtoBasePricePaise: z.number().int().min(0).nullable().optional(),
+    rtoAdditionalPricePaise: z.number().int().min(0).nullable().optional(),
   })).min(1).max(500),
+  // The "Assign courier and rates" screen sends the whole card: nothing is carried over from the previous one (so a removed slab really goes).
+  replaceAll: z.boolean().default(false),
+  // Services the seller may book: assigning rates to a courier also switches it on (with or without COD) for that seller.
+  access: z.array(z.object({ serviceId: z.string().uuid(), codEnabled: z.boolean().default(false) })).max(200).default([]),
 });
 const pincodeRuleInput = z.object({ serviceId: z.string().uuid(), destinationPrefix: z.string().regex(/^\d{1,6}$/), ruleType: z.enum(['allowed', 'blocked']), note: z.string().trim().max(500).optional() });
 
@@ -201,21 +208,33 @@ export async function adminRoutes(app: FastifyInstance) {
        SELECT $1, r.service_id, r.zone_code, r.min_weight_g, r.base_weight_g, r.base_price_paise,
          r.additional_weight_g, r.additional_price_paise, r.cod_fee_paise, r.fuel_surcharge_bps, r.cod_percent_bps, r.rto_base_price_paise, r.rto_additional_price_paise
        FROM rate_card_rates r
-       WHERE r.rate_card_id = (SELECT id FROM rate_cards WHERE seller_id IS NOT DISTINCT FROM $2 AND state='active' AND id <> $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1)`,
-      [rateCardId, sellerId],
+       WHERE NOT $3::boolean AND r.rate_card_id = (SELECT id FROM rate_cards WHERE seller_id IS NOT DISTINCT FROM $2 AND state='active' AND id <> $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1)`,
+      [rateCardId, sellerId, input.replaceAll],
     );
     for (const rate of input.rates) {
       await db.query(
         `INSERT INTO rate_card_rates (rate_card_id, service_id, zone_code, min_weight_g, base_weight_g, base_price_paise,
-          additional_weight_g, additional_price_paise, cod_fee_paise, fuel_surcharge_bps)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          additional_weight_g, additional_price_paise, cod_fee_paise, fuel_surcharge_bps, cod_percent_bps, rto_base_price_paise, rto_additional_price_paise)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          ON CONFLICT (rate_card_id, service_id, zone_code, min_weight_g) DO UPDATE SET
           base_weight_g=EXCLUDED.base_weight_g, base_price_paise=EXCLUDED.base_price_paise,
           additional_weight_g=EXCLUDED.additional_weight_g, additional_price_paise=EXCLUDED.additional_price_paise,
-          cod_fee_paise=EXCLUDED.cod_fee_paise, fuel_surcharge_bps=EXCLUDED.fuel_surcharge_bps`,
+          cod_fee_paise=EXCLUDED.cod_fee_paise, fuel_surcharge_bps=EXCLUDED.fuel_surcharge_bps, cod_percent_bps=EXCLUDED.cod_percent_bps,
+          rto_base_price_paise=EXCLUDED.rto_base_price_paise, rto_additional_price_paise=EXCLUDED.rto_additional_price_paise`,
         [rateCardId, rate.serviceId, rate.zoneCode, rate.minWeightG, rate.baseWeightG, rate.basePricePaise,
-          rate.additionalWeightG, rate.additionalPricePaise, rate.codFeePaise, rate.fuelSurchargeBps],
+          rate.additionalWeightG, rate.additionalPricePaise, rate.codFeePaise, rate.fuelSurchargeBps, rate.codPercentBps, rate.rtoBasePricePaise ?? null, rate.rtoAdditionalPricePaise ?? null],
       );
+    }
+    // Switch the couriers on for the seller (platform card = no seller, so nothing to switch on).
+    if (sellerId) {
+      for (const a of input.access) {
+        await db.query(
+          `INSERT INTO seller_courier_access (seller_id, service_id, account_mode, state, cod_enabled, auto_assign_eligible)
+           VALUES ($1, $2, 'platform', 'enabled', $3, true)
+           ON CONFLICT (seller_id, service_id) DO UPDATE SET state='enabled', cod_enabled=EXCLUDED.cod_enabled, updated_at=now()`,
+          [sellerId, a.serviceId, a.codEnabled],
+        );
+      }
     }
     await db.query(
       `INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id, metadata)

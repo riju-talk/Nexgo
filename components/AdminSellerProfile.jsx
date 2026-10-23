@@ -343,7 +343,7 @@ export default function AdminSellerProfile({ sellerId }) {
     { label: 'Update password', onClick: () => setModal('password') },
     { label: 'Manage wallet (credit / debit note)', onClick: () => setModal('wallet') },
     { label: 'View rate card', onClick: () => setModal('rate') },
-    { label: 'Assign rate card', onClick: () => setModal('assign') },
+    { label: 'Assign rate card', onClick: () => router.push(`/admin/rate-cards/${sellerId}/assign`) },
     { label: `Pincode access${p.blockedPincodeCount ? ` (${p.blockedPincodeCount} blocked)` : ''}`, onClick: () => setModal('pincodes') },
     { divider: true },
     p.state === 'suspended' ? { label: 'Restore seller', disabled: busy === 'state', onClick: () => setState('active') } : { label: 'Suspend seller', danger: true, disabled: busy === 'state' || p.state !== 'active', onClick: () => setState('suspended') },
@@ -414,7 +414,7 @@ export default function AdminSellerProfile({ sellerId }) {
         <div style={{ display: 'grid', gap: 16 }}>
           <Section heading="Quick actions"><div style={{ display: 'grid', gap: 8 }}>
             <Btn onClick={() => setModal('wallet')}>Manage wallet (credit / debit note)</Btn>
-            <Btn onClick={() => setModal('assign')}>Assign rate card</Btn>
+            <Btn onClick={() => router.push(`/admin/rate-cards/${sellerId}/assign`)}>Assign rate card</Btn>
             <Btn onClick={() => setModal('rate')}>View rate card</Btn>
             <Btn onClick={() => setModal('pincodes')}>Pincode access{p.blockedPincodeCount ? ` (${p.blockedPincodeCount} blocked)` : ''}</Btn>
             <Btn onClick={() => setModal('password')}>Update password</Btn>

@@ -162,6 +162,40 @@ export async function adminSellerProfileRoutes(app: FastifyInstance) {
     return { card: card.rows[0], rates: rates.rows };
   });
 
+  // Rate cards screen: every seller with the card they currently have (name, since when, how many courier services are priced).
+  app.get('/v1/admin/rate-cards/overview', { preHandler: requirePlatformAdmin }, async (request) => {
+    const { search } = z.object({ search: z.string().trim().max(120).optional() }).parse(request.query);
+    const like = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+    const result = await db.query(
+      `SELECT s.id, s.legal_name, s.nexgo_code, s.state, rc.id AS card_id, rc.name AS card_name, rc.effective_from,
+              COALESCE(x.services, 0)::int AS services, COALESCE(x.couriers, '{}') AS couriers
+       FROM sellers s
+       LEFT JOIN LATERAL (SELECT id, name, effective_from FROM rate_cards WHERE seller_id = s.id AND state = 'active' ORDER BY effective_from DESC, created_at DESC LIMIT 1) rc ON true
+       LEFT JOIN LATERAL (SELECT count(DISTINCT r.service_id) AS services, array_agg(DISTINCT cp.name) AS couriers
+                          FROM rate_card_rates r JOIN courier_services cs ON cs.id = r.service_id JOIN courier_providers cp ON cp.id = cs.provider_id WHERE r.rate_card_id = rc.id) x ON true
+       WHERE ($1::text IS NULL OR s.legal_name ILIKE $1 OR s.nexgo_code ILIKE $1)
+       ORDER BY s.legal_name LIMIT 300`, [like]);
+    return { items: result.rows };
+  });
+
+  // Everything the "Assign courier and rates" screen needs for one seller: all bookable courier services, whether the seller can use each, and the current card's rows.
+  app.get('/v1/admin/sellers/:sellerId/rate-setup', { preHandler: requirePlatformAdmin }, async (request, reply) => {
+    const sellerId = sellerParam(request);
+    const seller = await db.query('SELECT id, legal_name, nexgo_code FROM sellers WHERE id = $1', [sellerId]);
+    if (!seller.rows[0]) return reply.code(404).send({ error: 'SELLER_NOT_FOUND' });
+    const services = await db.query(
+      `SELECT cs.id, cs.code, cs.display_name AS name, cs.service_type AS type, cp.code AS provider_code, cp.name AS provider_name, cp.aggregator, cp.supports_cod,
+              sca.state AS access_state, sca.cod_enabled
+       FROM courier_services cs JOIN courier_providers cp ON cp.id = cs.provider_id AND cp.integration_state = 'live'
+       LEFT JOIN seller_courier_access sca ON sca.service_id = cs.id AND sca.seller_id = $1
+       WHERE cs.is_active ORDER BY cp.name, cs.display_name`, [sellerId]);
+    const card = await db.query(`SELECT id, name, effective_from FROM rate_cards WHERE seller_id = $1 AND state = 'active' ORDER BY effective_from DESC, created_at DESC LIMIT 1`, [sellerId]);
+    const rates = card.rows[0] ? (await db.query(
+      `SELECT service_id, zone_code, min_weight_g, base_weight_g, base_price_paise, additional_weight_g, additional_price_paise, cod_fee_paise, cod_percent_bps, fuel_surcharge_bps, rto_base_price_paise, rto_additional_price_paise
+       FROM rate_card_rates WHERE rate_card_id = $1 ORDER BY service_id, min_weight_g, zone_code`, [card.rows[0].id])).rows : [];
+    return { seller: seller.rows[0], services: services.rows, card: card.rows[0] ?? null, rates };
+  });
+
   // Every active card that can be copied onto a seller (platform courier-cost card excluded).
   app.get('/v1/admin/rate-cards', { preHandler: requirePlatformAdmin }, async () => {
     const result = await db.query(
