@@ -25,6 +25,7 @@ const ALIASES = {
   quantity: 'quantity', qty: 'quantity', unitprice: 'price', price: 'price', unitpricers: 'price',
   weightg: 'weight', unitweightg: 'weight', weight: 'weight',
   lengthcm: 'length', breadthcm: 'width', widthcm: 'width', heightcm: 'height',
+  warehouseid: 'warehouseCode', pickupwarehouseid: 'warehouseCode', warehousecode: 'warehouseCode', whid: 'warehouseCode', whcode: 'warehouseCode',
   pickupwarehouse: 'warehouseName', pickupwarehousename: 'warehouseName', warehouse: 'warehouseName', warehousename: 'warehouseName',
   pickupwarehouseaddress: 'warehouseAddress', warehouseaddress: 'warehouseAddress', pickupaddress: 'warehouseAddress', pickupwarehousepincode: 'warehouseAddress',
   paymentmode: 'paymentMode', payment: 'paymentMode', codamount: 'codAmount', cod: 'codAmount',
@@ -146,13 +147,15 @@ function validate(order) {
 
 // A re-upload-ready file: the failed orders laid out in the same columns as the NEXGO template, plus an Error column.
 // Fix the cells, delete the Error column (or leave it, it is ignored) and upload the file again.
-const isFailed = (o) => o.unassigned || (!o.created && (o.errors.length || o.failure || !o.quote));
-const failureReason = (o) => o.failure || (o.errors.length ? o.errors.join(' | ') : 'No courier could be assigned: no serviceable courier for this pincode, weight or payment mode');
+// Only real problems are failures: bad data, an order that could not be created, or an assignment that failed after creation (with the courier's own reason).
+// A missing rate preview is not one: couriers are assigned only after the order is created.
+const isFailed = (o) => o.unassigned || (!o.created && (o.errors.length || o.failure));
+const failureReason = (o) => o.failure || o.errors.join(' | ');
 // How each template column is filled from a parsed order (and one of its product lines).
 const CELL = {
   orderNumber: (o) => o.orderNumber || '', paymentMode: (o) => (o.paymentMode === 'cod' ? 'COD' : 'Prepaid'), codAmount: (o) => o.codAmount || '', customerName: (o) => o.customerName || '', phone: (o) => o.phone || '',
   alternatePhone: (o) => o.alternatePhone || '', email: (o) => o.email || '', companyName: (o) => o.companyName || '', address: (o) => o.address || '', address2: (o) => o.address2 || '', landmark: (o) => o.landmark || '',
-  pincode: (o) => o.pincode || '', city: (o) => o.city || '', state: (o) => o.state || '', warehouseName: (o) => o.warehouseName || '', warehouseAddress: (o) => o.warehouseAddress || '',
+  pincode: (o) => o.pincode || '', city: (o) => o.city || '', state: (o) => o.state || '', warehouseCode: (o) => o.whCode || o.warehouseCode || '',
   sku: (o, i) => (i.sku && i.sku !== 'CUSTOM' ? i.sku : ''), productName: (o, i) => i.name || '', hsn: (o, i) => i.hsn || '', quantity: (o, i) => i.quantity || '', price: (o, i) => (i.pricePaise ? i.pricePaise / 100 : ''),
   weight: (o, i) => i.weight || '', length: (o) => o.length || '', width: (o) => o.width || '', height: (o) => o.height || '',
 };
@@ -175,15 +178,21 @@ function downloadErrorReport(orders, fileName, format = 'xlsx') {
   saveRows([['Order number', 'Sheet rows', 'Problem'], ...rows], `${fileName.replace(/\.[^.]+$/, '') || 'bulk-orders'}-errors`, format, 'Errors');
 }
 
-// The pickup warehouse for an order: the one named in the sheet (by name, or by address / pincode), else the one chosen on the page.
+// The pickup warehouse for an order: the one whose ID (WH000004) is in the sheet, else the one chosen on the page.
+// Older sheets with a warehouse name / address column still work.
 function pickWarehouse(order, list, fallback) {
+  const code = (order.warehouseCode || '').trim().toUpperCase();
+  if (code) {
+    const byCode = list.find((w) => (w.warehouse_code || '').toUpperCase() === code);
+    return byCode ? { warehouse: byCode } : { error: `Warehouse ID "${order.warehouseCode}" was not found. Use an ID from Settings > Warehouse (for example ${list[0]?.warehouse_code || 'WH000001'}), or leave it blank` };
+  }
   const name = (order.warehouseName || '').trim().toLowerCase(); const addr = (order.warehouseAddress || '').trim().toLowerCase();
   if (!name && !addr) return { warehouse: fallback };
   const hay = (w) => [w.name, w.address_line_1, w.address_line_2, w.city, w.state, w.pincode].filter(Boolean).join(' ').toLowerCase();
   const byName = name && list.find((w) => w.name.trim().toLowerCase() === name);
-  const byAddress = !byName && list.find((w) => { const text = hay(w); const pin = (addr.match(/\d{6}/) || [])[0]; return (addr && (text.includes(addr) || (w.address_line_1 && addr.includes(w.address_line_1.toLowerCase())))) || (!name && pin && w.pincode === pin); });
+  const byAddress = !byName && list.find((w) => { const text = hay(w); const pin = (addr.match(/\d{6}/) || [])[0]; return (addr && (text.includes(addr) || (w.address_line_1 && addr.includes(w.address_line_1.toLowerCase())))) || (!name && pin && w.pincode === pin); });
   const found = byName || byAddress;
-  return found ? { warehouse: found } : { error: `Pickup warehouse "${order.warehouseName || order.warehouseAddress}" was not found. Use a name or address from Settings > Warehouse, or leave it blank` };
+  return found ? { warehouse: found } : { error: `Pickup warehouse "${order.warehouseName || order.warehouseAddress}" was not found. Use a warehouse ID from Settings > Warehouse, or leave it blank` };
 }
 
 export default function LiveBulkOrderImport({ mobile, embedded = false }) {
@@ -220,15 +229,17 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
       if (rows.length > MAX_ROWS) throw new Error(`Import up to ${MAX_ROWS} rows at a time.`);
       const grouped = groupOrders(rows, productData.items || []).map((o) => {
         const w = pickWarehouse(o, warehouses || [], warehouse);
-        return w.error ? { ...o, warehouseId: warehouse.id, errors: [...o.errors, w.error] } : { ...o, warehouseId: w.warehouse.id, whPincode: w.warehouse.pincode, whName: w.warehouse.name };
+        return w.error ? { ...o, warehouseId: warehouse.id, errors: [...o.errors, w.error] } : { ...o, warehouseId: w.warehouse.id, whPincode: w.warehouse.pincode, whName: w.warehouse.name, whCode: w.warehouse.warehouse_code };
       });
       if (grouped.length > MAX_ORDERS) throw new Error(`Import up to ${MAX_ORDERS} orders at a time.`);
 
       // Resolve city/state from pincode where the sheet left them blank.
+      const pinLookups = new Map(); // one lookup per distinct pincode, however many orders share it
+      const lookup = (pin) => { if (!pinLookups.has(pin)) pinLookups.set(pin, apiFetch(`/v1/locations/pincode/${pin}`).then((l) => ({ city: l.city, state: l.state })).catch(() => null)); return pinLookups.get(pin); };
       const located = await Promise.all(grouped.map(async (o) => {
         if (o.errors.length || (o.city && o.state)) return o;
-        try { const l = await apiFetch(`/v1/locations/pincode/${o.pincode}`); return { ...o, city: o.city || l.city, state: o.state || l.state, located: true }; }
-        catch { return { ...o, errors: [...o.errors, 'City and state not found for this pincode — add them to the sheet'] }; }
+        const l = await lookup(o.pincode);
+        return l ? { ...o, city: o.city || l.city, state: o.state || l.state, located: true } : { ...o, errors: [...o.errors, `Pincode ${o.pincode} could not be found in the India Post directory. Check the pincode, or enter the city and state in the sheet`] };
       }));
       // Indicative cheapest rate for the chargeable weight; booking happens later from All orders.
       const quoted = await Promise.all(located.map(async (o) => {
@@ -315,6 +326,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
         </div>
 
         {warehouses && !warehouses.length && <div style={{ marginTop: 18 }}><Action onClick={() => nav('warehouse')}>Add a pickup warehouse first</Action></div>}
+        {warehouses?.length > 0 && <div style={{ marginTop: 16, fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.7 }}><b style={{ color: T.TEXT }}>Your warehouse IDs</b> (use in the Warehouse ID column): {warehouses.filter((w) => w.is_active !== false).map((w) => <span key={w.id} style={{ display: 'inline-block', margin: '0 8px 0 0' }}><code style={{ fontFamily: T.MONO, fontWeight: 700, color: T.TEXT }}>{w.warehouse_code}</code> {w.name}</span>)}</div>}
 
         <div
           role="button" tabIndex={0}
