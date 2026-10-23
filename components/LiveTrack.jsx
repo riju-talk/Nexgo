@@ -172,6 +172,7 @@ export default function LiveTrack({ mobile }) {
   const [rows, setRows] = useState(null);
   const [failed, setFailed] = useState([]);
   const [totals, setTotals] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [chooser, setChooser] = useState(null); // not-yet-shipped orders the seller is choosing a courier for
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('all');
@@ -236,7 +237,12 @@ export default function LiveTrack({ mobile }) {
     ));
   }, [all, f]);
 
-  const counts = useMemo(() => Object.fromEntries(TABS.map(([key, , test]) => [key, filtered.filter(test).length])), [filtered]);
+  const counts = useMemo(() => {
+    const c = Object.fromEntries(TABS.map(([key, , test]) => [key, filtered.filter(test).length]));
+    // Only the newest 1,000 unassigned orders are loaded at a time: with no filter on, show the exact totals from the server instead of the loaded part.
+    if (totals && !Object.values(f).some(Boolean)) { c.ready = Number(totals.ready); c.failed = Number(totals.unassigned) - Number(totals.ready); }
+    return c;
+  }, [filtered, totals, f]);
 
   const visible = useMemo(() => {
     const test = TABS.find(([key]) => key === tab)[2];
@@ -279,6 +285,17 @@ export default function LiveTrack({ mobile }) {
     }
     showToast(failedCount ? `${done} cancelled, ${failedCount} could not be cancelled` : `${done} order${done === 1 ? '' : 's'} cancelled`, failedCount ? 'error' : 'success');
     setPicked(new Set()); await load();
+  };
+
+  // The server sends the newest 1,000 orders without a courier; this fetches the next 1,000.
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const x = await apiFetch(`/v1/shipments?failedOffset=${failed.length}`);
+      const more = (x.failed || []).map((o) => ({ ...o, state: o.ready ? 'ready' : 'failed', awb: '', booked_at: o.created_at, shipping_charge_paise: 0, chargeable_weight_g: o.total_weight_g, whatsapp_status: 'not_sent' }));
+      setFailed((cur) => [...cur, ...more.filter((m) => !cur.some((c) => c.id === m.id))]);
+    } catch (e) { showToast(e.message || 'More orders could not be loaded', 'error'); }
+    setLoadingMore(false);
   };
 
   // Pickup manifest: courier by courier, with a tick column for the pickup person.
@@ -388,7 +405,7 @@ export default function LiveTrack({ mobile }) {
         </div>
       </div>
 
-      {totals && (Number(totals.shipments) > (rows || []).length || Number(totals.unassigned) > failed.length) && <div style={{ marginBottom: 10, fontSize: 12.5, color: T.AMBER }}>Showing the latest {(rows || []).length} of {totals.shipments} shipments and {failed.length} of {totals.unassigned} orders without a courier. Use the filters or the date range to narrow down.</div>}
+      {totals && (Number(totals.shipments) > (rows || []).length || Number(totals.unassigned) > failed.length) && <div style={{ marginBottom: 10, fontSize: 12.5, color: T.AMBER, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span>Showing the latest {(rows || []).length} of {totals.shipments} shipments and {failed.length} of {totals.unassigned} orders without a courier.</span>{Number(totals.unassigned) > failed.length && <Btn small disabled={loadingMore} onClick={loadMore}>{loadingMore ? 'Loading…' : 'Show more orders'}</Btn>}</div>}
       <div role="tablist" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
         {TABS.map(([key, name]) => {
           const on = tab === key;

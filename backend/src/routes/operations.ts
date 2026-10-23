@@ -172,19 +172,24 @@ export async function operationsRoutes(app: FastifyInstance) {
   app.post('/v1/orders/bulk', { preHandler: requireSeller }, async (request) => {
     const { orders } = z.object({ orders: z.array(z.unknown()).min(1).max(50) }).parse(request.body);
     const p = getPrincipal(request);
-    const results: { index: number; ok: boolean; id?: string; error?: string }[] = [];
+    const results: { index: number; ok: boolean; id?: string; existing?: boolean; error?: string }[] = [];
     for (const [index, raw] of orders.entries()) {
       const parsed = orderInput.safeParse(raw);
       if (!parsed.success) { const issue = parsed.error.issues[0]; results.push({ index, ok: false, error: `${issue.path.join('.') || 'order'}: ${issue.message}` }); continue; }
       try { results.push({ index, ok: true, id: (await createOrder(p, request.id, parsed.data)).id as string }); }
       catch (error) {
         const e = error as { code?: string; statusCode?: number; message?: string };
-        if (e.code === '23505') results.push({ index, ok: false, error: 'This order number already exists' });
+        // Re-uploading a sheet that was only partly created is safe: an order number that already exists is reported as such (with its id), not as a failure.
+        if (e.code === '23505') {
+          const existing = await withSellerTransaction(p.sellerId, (client) => client.query<{ id: string }>('SELECT id FROM orders WHERE seller_id=$1 AND order_number=$2 LIMIT 1', [p.sellerId, parsed.data.orderNumber])).catch(() => null);
+          if (existing?.rows[0]) results.push({ index, ok: true, existing: true, id: existing.rows[0].id });
+          else results.push({ index, ok: false, error: 'This order number already exists' });
+        }
         else if (e.code === '23514' || (e.statusCode && e.statusCode < 500)) results.push({ index, ok: false, error: e.message || 'The order could not be created' });
         else { request.log.error(error); results.push({ index, ok: false, error: 'The order could not be created. Try again' }); }
       }
     }
-    return { results, created: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };
+    return { results, created: results.filter((r) => r.ok && !r.existing).length, existing: results.filter((r) => r.existing).length, failed: results.filter((r) => !r.ok).length };
   });
   // Rectify an order that never got a courier (Track > Failed): consignee, payment and parcel can change until a shipment exists.
   app.patch('/v1/orders/:orderId/details', { preHandler: requireSeller }, async (request) => {

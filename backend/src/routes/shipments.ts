@@ -53,10 +53,18 @@ async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, req
     await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'shipment.booked', targetType: 'shipment', targetId: shipment.rows[0].id, requestId, metadata: { orderId: input.orderId, awb: shipment.rows[0].awb, amount: paiseToAmount(price.totalPaise) } }); return { shipment: shipment.rows[0], replay: false };
 }
 
+// ready = nothing is wrong with the order itself, so a courier can be assigned (same checks as diagnose() in lib/failedOrders.js).
+const READY_SQL = `(char_length(btrim(c.full_name)) >= 2 AND right(regexp_replace(c.phone, '\\D', '', 'g'), 10) ~ '^[6-9][0-9]{9}$' AND char_length(btrim(COALESCE(c.address_line_1, ''))) >= 3
+                AND c.pincode ~ '^[0-9]{6}$' AND COALESCE(c.city, '') <> '' AND COALESCE(c.state, '') <> '' AND o.total_weight_g > 0
+                AND o.package_length_mm IS NOT NULL AND o.package_width_mm IS NOT NULL AND o.package_height_mm IS NOT NULL
+                AND (o.payment_mode <> 'cod' OR o.cod_amount_paise > 0))`;
+
 export async function shipmentRoutes(app: FastifyInstance) {
   // Seller shipment register: everything the Track page filters, groups and exports on, in one round trip.
   app.get('/v1/shipments', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
+    // Orders without a courier come 1,000 at a time (failedOffset to page): 5,000 of them in one response is over Vercel's 4.5 MB limit.
+    const page = z.object({ failedLimit: z.coerce.number().int().min(1).max(1000).default(1000), failedOffset: z.coerce.number().int().min(0).default(0) }).parse(request.query);
     return withSellerTransaction(p.sellerId, async (client) => ({ items: maskCustomerRows((await client.query(
       `SELECT s.*, o.order_number, o.nexgo_order_id, o.channel, o.payment_mode, o.cod_amount_paise, o.subtotal_paise, o.total_weight_g, o.order_flow, o.created_at AS order_created_at,
               c.full_name AS customer_name, c.phone AS customer_phone, c.city AS customer_city, c.pincode AS customer_pincode,
@@ -78,19 +86,18 @@ export async function shipmentRoutes(app: FastifyInstance) {
               c.address_line_1 AS customer_address1, c.address_line_2 AS customer_address2, c.landmark AS customer_landmark, c.state AS customer_state, c.email AS customer_email,
               w.name AS warehouse_name, w.pincode AS warehouse_pincode, w.city AS warehouse_city,
               it.quantity, it.product_names,
-              -- ready = nothing is wrong with the order itself, so a courier can be assigned (same checks as diagnose() in lib/failedOrders.js). Not ready = needs fixing: the Failed tab.
-              (char_length(btrim(c.full_name)) >= 2 AND right(regexp_replace(c.phone, '\\D', '', 'g'), 10) ~ '^[6-9][0-9]{9}$' AND char_length(btrim(COALESCE(c.address_line_1, ''))) >= 3
-                AND c.pincode ~ '^[0-9]{6}$' AND COALESCE(c.city, '') <> '' AND COALESCE(c.state, '') <> '' AND o.total_weight_g > 0
-                AND o.package_length_mm IS NOT NULL AND o.package_width_mm IS NOT NULL AND o.package_height_mm IS NOT NULL
-                AND (o.payment_mode <> 'cod' OR o.cod_amount_paise > 0)) AS ready
+              ${READY_SQL} AS ready
        FROM orders o JOIN customers c ON c.id=o.customer_id JOIN warehouses w ON w.id=o.warehouse_id
        LEFT JOIN LATERAL (SELECT COALESCE(sum(quantity),0)::int AS quantity, string_agg(name, ', ' ORDER BY name) AS product_names FROM order_items WHERE order_id=o.id) it ON true
        WHERE o.seller_id=$1 AND o.state IN ('new','ready_to_ship') AND o.order_flow <> 'reverse' AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id=o.id)
-       ORDER BY o.created_at DESC LIMIT 5000`, [p.sellerId])).rows, p, 'orders.view_customer'),
+       ORDER BY o.created_at DESC, o.id LIMIT $2 OFFSET $3`, [p.sellerId, page.failedLimit, page.failedOffset])).rows, p, 'orders.view_customer'),
       // Exact totals, so the page can say "showing the latest N of M" instead of silently hiding the rest.
-      totals: (await client.query<{ shipments: string; unassigned: string }>(
+      totals: (await client.query<{ shipments: string; unassigned: string; ready: string }>(
         `SELECT (SELECT count(*) FROM shipments WHERE seller_id=$1) AS shipments,
-                (SELECT count(*) FROM orders o WHERE o.seller_id=$1 AND o.state IN ('new','ready_to_ship') AND o.order_flow <> 'reverse' AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id=o.id)) AS unassigned`, [p.sellerId])).rows[0] }));
+                u.unassigned, u.ready
+         FROM (SELECT count(*) AS unassigned, count(*) FILTER (WHERE ${READY_SQL}) AS ready
+               FROM orders o JOIN customers c ON c.id=o.customer_id
+               WHERE o.seller_id=$1 AND o.state IN ('new','ready_to_ship') AND o.order_flow <> 'reverse' AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id=o.id)) u`, [p.sellerId])).rows[0], }));
   });
   // Bulk AWB tracking: the current status of up to 500 AWBs in one call, in the order they were given. AWBs that are not this seller's come back
   // with found: false (never another seller's data), so a pasted list with typos is easy to spot.

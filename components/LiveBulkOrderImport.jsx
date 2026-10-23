@@ -300,16 +300,24 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           items: o.items.map((i) => ({ productId: i.productId, sku: i.sku, name: i.name, hsnCode: i.hsn || undefined, quantity: i.quantity, unitPricePaise: i.pricePaise, weightG: Math.round(i.weight) })),
           package: { weightG: o.weightG, ...(o.dims ? { lengthMm: o.dims[0], widthMm: o.dims[1], heightMm: o.dims[2] } : {}) },
         });
-    for (let i = 0; i < validOrders.length; i += 50) {
-      const chunk = validOrders.slice(i, i + 50);
-      setProgress(`Creating orders… ${i} of ${validOrders.length}`);
-      try {
-        const res = await apiFetchPatient('/v1/orders/bulk', { method: 'POST', body: { orders: chunk.map(payloadOf) } });
-        chunk.forEach((o, k) => { const r = res.results?.find((x) => x.index === k); outcome.set(o.orderNumber, r?.ok ? { created: true, orderId: r.id } : { failure: r?.error || 'Not created' }); });
-      } catch (error) {
-        chunk.forEach((o) => outcome.set(o.orderNumber, { failure: error instanceof ApiError ? error.message : 'Not created' }));
+    // 25 orders per request, 4 requests at a time: on the hosted database one order takes ~150 ms, so one-after-another would take ~12 minutes for 5,000.
+    // Re-uploading the same file is safe: an order number that already exists comes back as { existing: true } and is counted as already in NEXGO.
+    const chunks = []; for (let i = 0; i < validOrders.length; i += 25) chunks.push(validOrders.slice(i, i + 25));
+    let existing = 0; let finished = 0;
+    const createWorker = async () => {
+      while (chunks.length) {
+        const chunk = chunks.shift();
+        try {
+          const res = await apiFetchPatient('/v1/orders/bulk', { method: 'POST', body: { orders: chunk.map(payloadOf) } });
+          chunk.forEach((o, k) => { const r = res.results?.find((x) => x.index === k); if (r?.existing) existing += 1; outcome.set(o.orderNumber, r?.ok ? { created: true, orderId: r.id } : { failure: r?.error || 'Not created' }); });
+        } catch (error) {
+          chunk.forEach((o) => outcome.set(o.orderNumber, { failure: error instanceof ApiError ? error.message : 'Not created' }));
+        }
+        finished += chunk.length; setProgress(`Creating orders… ${finished} of ${validOrders.length}`);
       }
-    }
+    };
+    setProgress(`Creating orders… 0 of ${validOrders.length}`);
+    await Promise.all([createWorker(), createWorker(), createWorker(), createWorker()]);
     // Allocate couriers by the seller's priority list (Settings > Courier rules). Orders no courier could take stay listed as failed.
     const made = assignMode === 'none' ? [] : [...outcome.values()].filter((x) => x.orderId);
     const [pickProvider, pickService] = courierPick.split(':');
@@ -333,7 +341,8 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     setCreating(false);
     const created = next.filter((o) => o.created && !o.unassigned).length;
     const failed = next.filter((o) => o.errors.length || o.failure).length;
-    setResult({ total: next.length, created, failed });
+    setResult({ total: next.length, created, failed, existing });
+    if (existing) showToast(`${existing} order${existing === 1 ? ' was' : 's were'} already in NEXGO from an earlier upload and were left as they are.`);
     if (created) showToast(assignMode === 'none' ? `${created} order${created === 1 ? '' : 's'} created. Choose couriers in Track > Ready to ship.` : `${created} order${created === 1 ? '' : 's'} created and assigned to a courier.`);
     if (failed) showToast(`${failed} order${failed === 1 ? '' : 's'} failed or not assigned — download the failed orders file.`, 'error');
   };
