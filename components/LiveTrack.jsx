@@ -210,6 +210,13 @@ export default function LiveTrack({ mobile }) {
 
   const load = useCallback(() => apiFetch('/v1/shipments').then((x) => { setRows(x.items || []); setTotals(x.totals || null); setFailed((x.failed || []).map((o) => ({ ...o, state: o.ready ? 'ready' : 'failed', awb: '', booked_at: o.created_at, shipping_charge_paise: 0, chargeable_weight_g: o.total_weight_g, whatsapp_status: 'not_sent' }))); setError(null); }).catch(setError), []);
   useEffect(() => { load(); }, [load]);
+  // Orders created or cancelled elsewhere (another tab, a bulk upload, a webhook) appear without a manual refresh: reload when the tab is shown again and every 30 s.
+  useEffect(() => {
+    const again = () => { if (document.visibilityState === 'visible') load(); };
+    const timer = setInterval(again, 30000);
+    document.addEventListener('visibilitychange', again); window.addEventListener('focus', again);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', again); window.removeEventListener('focus', again); };
+  }, [load]);
   const loadTags = useCallback(() => apiFetch('/v1/shipments/tags').then((x) => setAllTags(x.items || [])).catch(() => {}), []);
   useEffect(() => { loadTags(); }, [loadTags]);
 

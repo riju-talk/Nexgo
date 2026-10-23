@@ -43,6 +43,13 @@ export default function DashboardContent({ mobile, narrow, phone }) {
     apiFetch(`/v1/analytics/dashboard?${qs}`).then((x) => { if (on) setLive(x); }).catch(() => {});
     return () => { on = false; };
   }, [days, tick, customReady, dashRange.from, dashRange.to]);
+  // Keep the figures live: refresh when the tab is shown again and every 30 s while it is open.
+  useEffect(() => {
+    const bump = () => { if (document.visibilityState === 'visible') setTick((t) => t + 1); };
+    const timer = setInterval(bump, 30000);
+    document.addEventListener('visibilitychange', bump); window.addEventListener('focus', bump);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', bump); window.removeEventListener('focus', bump); };
+  }, []);
   const rangeLabel = (RANGES.find((r) => r[0] === days) || RANGES[2])[1];
   const shortRange = days === 1 ? 'Today' : days === 0 ? 'Custom' : `${days}d`;
   const [rescheduling, setRescheduling] = useState(false);
