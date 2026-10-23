@@ -209,11 +209,16 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
+  // What happens to the orders after they are created: assign by the seller's priority list, leave them in Track > Ready to ship, or one chosen courier.
+  const [assignMode, setAssignMode] = useState('none');
+  const [courierPick, setCourierPick] = useState('');
+  const [courierOptions, setCourierOptions] = useState(null);
   const [creating, setCreating] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [fileName, setFileName] = useState('');
   const [result, setResult] = useState(null);
   const [warehouses, setWarehouses] = useState(null);
+  useEffect(() => { let live = true; apiFetch('/v1/shipping/courier-options').then((x) => live && setCourierOptions(x.items || [])).catch(() => live && setCourierOptions([])); return () => { live = false; }; }, []);
   const [warehouseId, setWarehouseId] = useState('');
   useEffect(() => {
     apiFetch('/v1/warehouses').then((x) => {
@@ -245,12 +250,17 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
       // Resolve city/state from pincode where the sheet left them blank: distinct pincodes only, 20 per request (a few thousand orders share a few hundred pincodes).
       const needed = [...new Set(grouped.filter((o) => !o.errors.length && !(o.city && o.state) && /^\d{6}$/.test(o.pincode || '')).map((o) => o.pincode))];
       const resolved = new Map(); const unchecked = new Set();
-      for (let i = 0; i < needed.length; i += 20) {
-        const chunk = needed.slice(i, i + 20);
-        setProgress(`Looking up pincodes… ${Math.min(i + 20, needed.length)} of ${needed.length}`);
-        try { const r = await apiFetch('/v1/locations/resolve', { method: 'POST', body: { pincodes: chunk } }); for (const [pin, place] of Object.entries(r.items || {})) if (place) resolved.set(pin, place); }
-        catch { chunk.forEach((pin) => unchecked.add(pin)); }
-      }
+      const chunks = []; for (let i = 0; i < needed.length; i += 20) chunks.push(needed.slice(i, i + 20));
+      let finished = 0;
+      const worker = async () => {
+        while (chunks.length) {
+          const chunk = chunks.shift();
+          try { const r = await apiFetch('/v1/locations/resolve', { method: 'POST', body: { pincodes: chunk } }); for (const [pin, place] of Object.entries(r.items || {})) if (place) resolved.set(pin, place); }
+          catch { chunk.forEach((pin) => unchecked.add(pin)); }
+          finished += chunk.length; setProgress(`Looking up pincodes… ${Math.min(finished, needed.length)} of ${needed.length}`);
+        }
+      };
+      await Promise.all([worker(), worker(), worker(), worker()]);
       setProgress('');
       const located = grouped.map((o) => {
         if (o.errors.length || (o.city && o.state)) return o;
@@ -260,18 +270,13 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           ? `Pincode ${o.pincode} could not be checked just now. Upload the file again, or enter the city and state in the sheet`
           : `Pincode ${o.pincode} could not be found in the India Post directory. Check the pincode, or enter the city and state in the sheet`] };
       });
-      // Indicative cheapest rate for the chargeable weight; booking happens later from All orders.
-      const quoted = await Promise.all(located.map(async (o) => {
-        if (o.errors.length) return o;
-        try {
-          const body = { destinationPincode: o.pincode, pickupPincode: o.whPincode || warehouse.pincode, orderValue: o.subtotal / 100, weightG: o.weightG, paymentMode: o.paymentMode, ...(o.dims ? { lengthMm: o.dims[0], widthMm: o.dims[1], heightMm: o.dims[2] } : {}) };
-          const response = await apiFetch('/v1/shipping/quotes', { method: 'POST', body });
-          return { ...o, quote: response.quotes?.[0] || null, quoteCount: response.quotes?.length || 0 };
-        } catch { return o; }
-      }));
+      const quoted = located;
       setOrders(quoted);
       const invalid = quoted.filter((o) => o.errors.length).length;
-      showToast(invalid ? `${quoted.length - invalid} orders ready. ${invalid} need fixing.` : `${quoted.length} orders ready to create.`, invalid ? 'error' : 'success');
+      if (invalid) showToast(`${invalid} order${invalid === 1 ? '' : 's'} have a problem and will be listed as failed.`, 'error');
+      setLoading(false);
+      // One step, like SwiftCourier: the valid orders are created right away, the failed ones are listed with their reasons.
+      await createOrders(quoted.filter((o) => !o.errors.length), quoted);
     } catch (error) {
       showToast(error instanceof ApiError ? error.message : error.message || 'Unable to read this file.', 'error');
     } finally {
@@ -280,10 +285,13 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
   };
 
   const validOrders = orders.filter((o) => !o.errors.length && !o.created);
-  const createOrders = async () => {
-    if (!validOrders.length) return;
+  // `list` = the orders to create, `all` = every order on the page (defaults to what is on screen: used by the Retry button).
+  const createOrders = async (list = validOrders, all = orders) => {
+    if (!list.length) return;
+    if (assignMode === 'one' && !courierPick) { showToast('Choose the courier to use, or pick another option.', 'error'); return; }
     setCreating(true);
     const outcome = new Map();
+    const validOrders = list;
     // Orders are created 50 per request (POST /v1/orders/bulk): one request per order would take 15+ minutes for a big sheet under the API's rate limit.
     const payloadOf = (o) => ({
           warehouseId: o.warehouseId, orderNumber: o.orderNumber, orderFlow: 'forward', channel: 'bulk_upload', notes: 'Created from bulk order upload',
@@ -303,13 +311,15 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
       }
     }
     // Allocate couriers by the seller's priority list (Settings > Courier rules). Orders no courier could take stay listed as failed.
-    const made = [...outcome.values()].filter((x) => x.orderId);
+    const made = assignMode === 'none' ? [] : [...outcome.values()].filter((x) => x.orderId);
+    const [pickProvider, pickService] = courierPick.split(':');
+    const chosenCourier = assignMode === 'one' && pickProvider ? { providerCode: pickProvider, serviceCode: pickService } : {};
     // Couriers are assigned 25 orders per request: each order is a live booking call and one request may only run for a few seconds.
     for (let i = 0; i < made.length; i += 25) {
       const chunk = made.slice(i, i + 25);
       setProgress(`Assigning couriers… ${Math.min(i + 25, made.length)} of ${made.length}`);
       try {
-        const r = await apiFetchPatient('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds: chunk.map((x) => x.orderId) } });
+        const r = await apiFetchPatient('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds: chunk.map((x) => x.orderId), ...chosenCourier } });
         const by = new Map(r.results.map((x) => [x.orderId, x]));
         for (const [num, x] of outcome) { const a = x.orderId && by.get(x.orderId); if (a) outcome.set(num, a.ok ? { ...x, courier: a.courier, awb: a.awb } : { ...x, unassigned: true, failure: `Order created, but no courier assigned: ${a.error}` }); }
       } catch (error) {
@@ -318,13 +328,13 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
       }
     }
     setProgress('');
-    const next = orders.map((o) => (outcome.has(o.orderNumber) ? { ...o, ...outcome.get(o.orderNumber) } : o));
+    const next = all.map((o) => (outcome.has(o.orderNumber) ? { ...o, ...outcome.get(o.orderNumber) } : o));
     setOrders(next);
     setCreating(false);
     const created = next.filter((o) => o.created && !o.unassigned).length;
     const failed = next.filter((o) => o.errors.length || o.failure).length;
     setResult({ total: next.length, created, failed });
-    if (created) showToast(`${created} order${created === 1 ? '' : 's'} created and assigned to a courier.`);
+    if (created) showToast(assignMode === 'none' ? `${created} order${created === 1 ? '' : 's'} created. Choose couriers in Track > Ready to ship.` : `${created} order${created === 1 ? '' : 's'} created and assigned to a courier.`);
     if (failed) showToast(`${failed} order${failed === 1 ? '' : 's'} failed or not assigned — download the failed orders file.`, 'error');
   };
 
@@ -360,11 +370,25 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           <SummaryCard label="Failed orders" value={failedCount} tone="#EF4444" icon="×" />
         </div>
 
-        {!!orders.length && validOrders.length > 0 && !creating && <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 9, background: `${T.GREEN}12`, color: T.TEXT, fontSize: 13, lineHeight: 1.5 }}><b>{validOrders.length} order{validOrders.length === 1 ? ' is' : 's are'} valid and not created yet.</b> Click “Create {validOrders.length} order{validOrders.length === 1 ? '' : 's'}” below to add them to NEXGO and assign couriers. They then appear in Track: Pickup Pending if a courier was assigned, Ready to ship if not.</div>}
+        {!!orders.length && validOrders.length > 0 && !creating && !loading && <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 9, background: `${T.GREEN}12`, color: T.TEXT, fontSize: 13, lineHeight: 1.5 }}><b>{validOrders.length} order{validOrders.length === 1 ? ' was' : 's were'} not created.</b> Click “Create {validOrders.length} order{validOrders.length === 1 ? '' : 's'}” to try again.</div>}
         {failedCount > 0 && <div style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: `${T.RED}0D`, fontSize: 12.5, lineHeight: 1.6 }}><b style={{ color: T.RED }}>Why {failedCount} order{failedCount === 1 ? '' : 's'} failed</b>{reasons.map(([text, n]) => <div key={text} style={{ color: T.TEXT_SECONDARY }}><b style={{ color: T.TEXT }}>{n}</b> × {text}</div>)}</div>}
         {warehouses && !warehouses.length && <div style={{ marginTop: 18 }}><Action onClick={() => nav('warehouse')}>Add a pickup warehouse first</Action></div>}
         {warehouses?.length > 0 && <div style={{ marginTop: 16, fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.7 }}><b style={{ color: T.TEXT }}>Your warehouse IDs</b> (use in the Warehouse ID column): {warehouses.filter((w) => w.is_active !== false).map((w) => <span key={w.id} style={{ display: 'inline-block', margin: '0 8px 0 0' }}><code style={{ fontFamily: T.MONO, fontWeight: 700, color: T.TEXT }}>{w.warehouse_code}</code> {w.name}</span>)}</div>}
 
+        {!creating && !loading && (
+          <div style={{ marginTop: 12, padding: '11px 13px', borderRadius: 9, border: `1px solid ${T.BORDER}`, fontSize: 13, lineHeight: 1.6 }}>
+            <b style={{ color: T.TEXT }}>When the file is uploaded, the orders are created straight away. Then:</b>
+            {[['none', 'Keep them in Track > Ready to ship so I choose the courier myself (recommended)'], ['auto', 'Assign couriers automatically by my courier priority (Settings > Courier rules)'], ['one', 'Use one courier for all']].map(([id, text]) => (
+              <label key={id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, cursor: 'pointer', color: T.TEXT_SECONDARY }}><input type="radio" name="assign-mode" checked={assignMode === id} onChange={() => setAssignMode(id)} />{text}</label>
+            ))}
+            {assignMode === 'one' && (
+              <select aria-label="Courier" value={courierPick} onChange={(e) => setCourierPick(e.target.value)} style={{ marginTop: 8, height: 36, minWidth: 260, border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13 }}>
+                <option value="">{courierOptions === null ? 'Loading your couriers…' : courierOptions.length ? 'Select a courier' : 'No courier is enabled for your account'}</option>
+                {(courierOptions || []).map((o) => <option key={`${o.code}:${o.service_code}`} value={`${o.code}:${o.service_code}`}>{o.name} · {o.display_name}</option>)}
+              </select>
+            )}
+          </div>
+        )}
         <div
           role="button" tabIndex={0}
           onClick={() => !loading && inputRef.current?.click()}
@@ -392,8 +416,8 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
             <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
               {unassignedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => { const n = downloadFailedOrders(orders, fileName, fmt); showToast(`${n} failed order${n === 1 ? '' : 's'} saved as ${fmt === 'xlsx' ? 'Excel' : 'CSV'}. Correct the errors and upload the file again.`); }}>⬇ Failed orders ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
               {failedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => downloadErrorReport(orders, fileName, fmt)}>Error report ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
-              {result?.created > 0 && <Action onClick={() => nav('orders')}>Go to All orders</Action>}
-              <Action primary disabled={!validOrders.length || creating} onClick={createOrders}>{creating ? (progress || 'Creating orders…') : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>
+              {result?.created > 0 && <Action primary onClick={() => nav('shipments')}>{assignMode === 'none' ? 'Go to Track > Ready to ship' : 'Go to Track'}</Action>}
+              <Action primary disabled={!validOrders.length || creating} onClick={() => createOrders()}>{creating ? (progress || 'Creating orders…') : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>
             </div>
           </div>
 

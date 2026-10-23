@@ -144,7 +144,7 @@ export async function operationsRoutes(app: FastifyInstance) {
     }); return reply.code(201).send(row);
   });
   app.get('/v1/orders', { preHandler: requireSeller }, async (request) => {
-    const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query(`SELECT o.*,w.name AS warehouse_name,c.full_name AS customer_name,c.city AS customer_city,c.pincode AS customer_pincode FROM orders o JOIN warehouses w ON w.id=o.warehouse_id JOIN customers c ON c.id=o.customer_id WHERE o.seller_id=$1 ORDER BY o.created_at DESC LIMIT 100`, [p.sellerId])).rows }));
+    const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query(`SELECT o.*,w.name AS warehouse_name,w.pincode AS warehouse_pincode,c.full_name AS customer_name,c.city AS customer_city,c.pincode AS customer_pincode FROM orders o JOIN warehouses w ON w.id=o.warehouse_id JOIN customers c ON c.id=o.customer_id WHERE o.seller_id=$1 ORDER BY o.created_at DESC LIMIT 100`, [p.sellerId])).rows }));
   });
   app.get('/v1/orders/:orderId', { preHandler: requireSeller }, async (request) => {
     const p = getPrincipal(request); const orderId = uuid.parse((request.params as { orderId: string }).orderId);

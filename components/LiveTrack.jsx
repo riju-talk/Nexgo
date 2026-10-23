@@ -8,6 +8,7 @@ import * as T from '@/lib/theme';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import { diagnose, failedSheet, readCorrections, toPatch } from '@/lib/failedOrders';
 import { Pager } from './Kit';
+import CourierChooser from './CourierChooser';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 12, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 10px 28px rgba(20,44,66,.055)' };
 const FIELD = { height: 36, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
@@ -82,22 +83,8 @@ const openDocs = (kind, ids) => window.open(`/documents/${kind}?ids=${ids.join('
 const copyText = (text, showToast, done) => { navigator.clipboard?.writeText(text).then(() => showToast(done)).catch(() => showToast('Copy is not available in this browser', 'error')); };
 
 // Auto-assign couriers to not-yet-shipped orders using the seller's courier priority list (Settings > Courier rules).
-// Assigns couriers in chunks of 25 (each order is a live booking call), so a few thousand ready orders neither time out nor hit the per-request cap.
-async function assignCouriers(orderIds, showToast, reload) {
-  let assigned = 0; let failed = 0; let firstError = '';
-  try {
-    for (let i = 0; i < orderIds.length; i += 25) {
-      if (orderIds.length > 25) showToast(`Assigning couriers… ${Math.min(i + 25, orderIds.length)} of ${orderIds.length}`);
-      const r = await apiFetch('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds: orderIds.slice(i, i + 25) } });
-      assigned += r.assigned; failed += r.failed;
-      if (!firstError) firstError = r.results.find((x) => !x.ok)?.error || '';
-    }
-    showToast(failed ? `${assigned} assigned, ${failed} not assigned: ${firstError}` : `${assigned} order${assigned === 1 ? '' : 's'} assigned to a courier`, failed ? 'error' : 'success');
-  } catch (e) { showToast(`${assigned} assigned before it stopped: ${e.message || 'couriers could not be assigned'}`, 'error'); }
-  await reload();
-}
 
-function Detail({ shipment, mobile, onClose, reload }) {
+function Detail({ shipment, mobile, onClose, reload, onChoose }) {
   const { showToast, nav } = useAppState();
   const [events, setEvents] = useState(null);
   const cancellable = ['booked', 'pickup_pending', 'pickup_scheduled'].includes(shipment.state);
@@ -152,7 +139,7 @@ function Detail({ shipment, mobile, onClose, reload }) {
         ))}
       </div>
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
-        {failedOrder ? <Btn primary onClick={() => assignCouriers([shipment.id], showToast, reload)}>Assign courier now</Btn> : <><Btn primary onClick={() => openDocs('label', [shipment.id])}>Print label</Btn><Btn onClick={() => openDocs('invoice', [shipment.id])}>Invoice</Btn><Btn onClick={() => copyText(shipment.awb, showToast, 'AWB copied')}>Copy AWB</Btn></>}
+        {failedOrder ? <Btn primary onClick={() => onChoose([shipment])}>Choose courier</Btn> : <><Btn primary onClick={() => openDocs('label', [shipment.id])}>Print label</Btn><Btn onClick={() => openDocs('invoice', [shipment.id])}>Invoice</Btn><Btn onClick={() => copyText(shipment.awb, showToast, 'AWB copied')}>Copy AWB</Btn></>}
         {cancellable && <Btn danger onClick={cancelShipment}>Cancel shipment</Btn>}
         {shipment.state === 'ndr' && <Btn onClick={() => nav('ndr')}>Resolve NDR</Btn>}
         {RTO.includes(shipment.state) && <Btn onClick={() => nav('rto')}>View RTO</Btn>}
@@ -185,6 +172,7 @@ export default function LiveTrack({ mobile }) {
   const [rows, setRows] = useState(null);
   const [failed, setFailed] = useState([]);
   const [totals, setTotals] = useState(null);
+  const [chooser, setChooser] = useState(null); // not-yet-shipped orders the seller is choosing a courier for
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('all');
   const [f, setF] = useState({ q: '', courier: '', pay: '', mode: '', channel: '', warehouse: '', tag: '', from: '', to: '' });
@@ -278,6 +266,19 @@ export default function LiveTrack({ mobile }) {
     const safeBody = canExportCustomer ? body : body.map((row) => row.map((cell, i) => (i === 7 || i === 8 ? '' : cell)));
     await saveRows([head, ...safeBody], `shipments-${isoDay(Date.now())}`, exportFormat, 'Shipments');
     showToast(`${source.length} shipments exported (${exportFormat === 'xlsx' ? 'Excel' : 'CSV'})`);
+  };
+
+  // Orders that never got a courier can be cancelled here (nothing was booked, so nothing is charged or refunded).
+  const cancelOrders = async () => {
+    const chosen = visible.filter((r) => picked.has(r.id) && isUnassigned(r));
+    if (!chosen.length) return;
+    if (!window.confirm(`Cancel ${chosen.length} order${chosen.length === 1 ? '' : 's'}? Nothing has been booked, so nothing is charged.`)) return;
+    let done = 0; let failedCount = 0;
+    for (const r of chosen) {
+      try { await apiFetch(`/v1/orders/${r.id}/state`, { method: 'PATCH', body: { state: 'cancelled' } }); done += 1; } catch { failedCount += 1; }
+    }
+    showToast(failedCount ? `${done} cancelled, ${failedCount} could not be cancelled` : `${done} order${done === 1 ? '' : 's'} cancelled`, failedCount ? 'error' : 'success');
+    setPicked(new Set()); await load();
   };
 
   // Pickup manifest: courier by courier, with a tick column for the pickup person.
@@ -399,7 +400,7 @@ export default function LiveTrack({ mobile }) {
         <div style={{ ...CARD, padding: '12px 14px', marginBottom: 12, boxShadow: 'none' }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <div style={{ flex: '1 1 320px', fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.5 }}>These orders are complete and waiting for a courier. Assigning books the shipment, charges your wallet and moves it to Pickup Pending, where you can print labels and download the pickup manifest. Orders no courier can take stay here with the reason.</div>
-            <Btn primary disabled={!visible.length} onClick={() => assignCouriers(visible.map((r) => r.id), showToast, async () => { await load(); setPicked(new Set()); })}>Assign courier to all {visible.length}</Btn>
+            <Btn primary disabled={!visible.length} onClick={() => setChooser(visible)}>Assign courier to all {visible.length}</Btn>
           </div>
         </div>
       )}
@@ -432,7 +433,7 @@ export default function LiveTrack({ mobile }) {
         <div style={{ ...CARD, padding: '9px 12px', marginBottom: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', background: 'rgba(56,119,252,.08)', boxShadow: 'none' }}>
           <b style={{ fontSize: 13, color: T.TEXT }}>{picked.size} selected</b>
           <Btn small onClick={() => copyText(visible.filter((r) => picked.has(r.id)).map((r) => r.awb).join('\n'), showToast, 'AWBs copied')}>Copy AWBs</Btn>
-          {visible.some((r) => picked.has(r.id) && isUnassigned(r)) && <Btn small primary onClick={() => assignCouriers(visible.filter((r) => picked.has(r.id) && isUnassigned(r)).map((r) => r.id), showToast, async () => { await load(); setPicked(new Set()); })}>Assign couriers</Btn>}
+          {visible.some((r) => picked.has(r.id) && isUnassigned(r)) && <><Btn small primary onClick={() => setChooser(visible.filter((r) => picked.has(r.id) && isUnassigned(r)))}>Choose courier</Btn><Btn small onClick={cancelOrders}>Cancel orders</Btn></>}
           {visible.some((r) => picked.has(r.id) && !isUnassigned(r)) && <><Btn small onClick={() => downloadManifest(visible.filter((r) => picked.has(r.id) && !isUnassigned(r)), 'xlsx')}>Manifest (Excel)</Btn><Btn small onClick={() => downloadManifest(visible.filter((r) => picked.has(r.id) && !isUnassigned(r)), 'csv')}>Manifest (CSV)</Btn></>}
           <Btn small onClick={() => printSelected('label')}>Print labels</Btn>
           <Btn small onClick={() => printSelected('invoice')}>Print invoices</Btn>
@@ -474,7 +475,7 @@ export default function LiveTrack({ mobile }) {
                             <td style={CELL}>{r.awb ? <b style={{ fontFamily: T.MONO }}>{r.awb}</b> : <span style={{ color: T.TEXT_MUTED }}>—</span>}</td>
                             <td style={CELL}><span style={{ color: waTone(r.whatsapp_status), fontWeight: 650 }}>{WHATSAPP[r.whatsapp_status] || 'Not sent'}</span></td>
                             <td style={CELL}><Pill state={r.state} />{late && <small style={{ ...SUB, color: T.RED }}>Delayed · due {day(r.promised_delivery_at)}</small>}</td>
-                            <td style={CELL} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}><Btn small onClick={() => setSelectedId(r.id)}>{isUnassigned(r) ? 'Details' : 'Track'}</Btn>{r.awb && <Btn small onClick={() => openDocs('label', [r.id])}>Label</Btn>}</div></td>
+                            <td style={CELL} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}>{r.state === 'ready' && <Btn small primary onClick={() => setChooser([r])}>Book now</Btn>}<Btn small onClick={() => setSelectedId(r.id)}>{isUnassigned(r) ? 'Details' : 'Track'}</Btn>{r.awb && <Btn small onClick={() => openDocs('label', [r.id])}>Label</Btn>}</div></td>
                           </tr>
                         );
                       })}
@@ -488,7 +489,8 @@ export default function LiveTrack({ mobile }) {
               </>
             )}
           </section>
-          {selected && <Detail key={selected.id} shipment={selected} mobile={mobile} reload={load} onClose={() => setSelectedId(null)} />}
+          {chooser && <CourierChooser orders={chooser} onClose={() => setChooser(null)} onDone={async () => { setChooser(null); setSelectedId(null); setPicked(new Set()); await load(); }} />}
+          {selected && <Detail key={selected.id} shipment={selected} mobile={mobile} reload={load} onChoose={setChooser} onClose={() => setSelectedId(null)} />}
         </div>
       )}
     </div>

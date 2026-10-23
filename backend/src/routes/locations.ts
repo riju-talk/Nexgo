@@ -48,8 +48,8 @@ export async function locationRoutes(app: FastifyInstance) {
     const items: Record<string, { city: string; state: string } | null> = Object.fromEntries(unique.map((x) => [x, null]));
     for (const r of known) items[r.pincode] = { city: r.city, state: r.state };
     const missing = unique.filter((x) => !items[x]);
-    for (let i = 0; i < missing.length; i += 5) {
-      await Promise.all(missing.slice(i, i + 5).map(async (pin) => {
+    for (let i = 0; i < missing.length; i += 10) {
+      await Promise.all(missing.slice(i, i + 10).map(async (pin) => {
         if (!inFlight.has(pin)) inFlight.set(pin, lookupIndiaPost(pin).finally(() => inFlight.delete(pin)));
         const found = await inFlight.get(pin);
         if (found) items[pin] = { city: found.city, state: found.state };

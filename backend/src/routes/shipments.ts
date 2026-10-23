@@ -172,7 +172,8 @@ export async function shipmentRoutes(app: FastifyInstance) {
   // Courier allocation by the seller's priority list (Settings > Courier rules: priority 1, 2, 3 ...). For each order the first courier
   // service that is serviceable and bookable wins; unlisted couriers are tried last. Orders nobody can take come back with the reason.
   app.post('/v1/shipments/auto-assign', { preHandler: requireSeller }, async (request) => {
-    const { orderIds } = z.object({ orderIds: z.array(uuid).min(1).max(100) }).parse(request.body);
+    // providerCode (+ optional serviceCode): the seller picked one courier for all these orders; nothing else is tried. Without it, the priority list decides.
+    const { orderIds, providerCode, serviceCode } = z.object({ orderIds: z.array(uuid).min(1).max(100), providerCode: z.string().regex(/^[a-z0-9-]{2,64}$/).optional(), serviceCode: z.string().regex(/^[a-z0-9-]{2,64}$/).optional() }).parse(request.body);
     const p = principal(request);
     const prefs = await withSellerTransaction(p.sellerId, async (client) => (await client.query<{ rules: Record<string, unknown> | null }>(`SELECT preferences->'courier-rules' AS rules FROM seller_preferences WHERE seller_id = $1`, [p.sellerId])).rows[0]?.rules ?? {});
     const priority = [1, 2, 3, 4, 5, 6].map((n) => String(prefs[`priority${n}`] ?? '').toLowerCase().replace(/[^a-z]/g, '')).filter((x) => x && x !== 'notset');
@@ -188,8 +189,8 @@ export async function shipmentRoutes(app: FastifyInstance) {
           if (order.rows[0].state === 'new') await client.query(`UPDATE orders SET state = 'ready_to_ship', updated_at = now() WHERE id = $1`, [orderId]);
           const services = await client.query<{ pcode: string; pname: string; scode: string }>(
             `SELECT cp.code AS pcode, cp.name AS pname, cs.code AS scode FROM seller_courier_access sca JOIN courier_services cs ON cs.id = sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id = cs.provider_id AND cp.integration_state = 'live' WHERE sca.seller_id = $1 ORDER BY cp.name, cs.display_name`, [p.sellerId]);
-          const ordered = services.rows.sort((a, b) => rank(a.pname, a.pcode) - rank(b.pname, b.pcode));
-          if (!ordered.length) return { ok: false, error: 'No courier is enabled for this account' };
+          const ordered = services.rows.filter((c) => !providerCode || (c.pcode === providerCode && (!serviceCode || c.scode === serviceCode))).sort((a, b) => rank(a.pname, a.pcode) - rank(b.pname, b.pcode));
+          if (!ordered.length) return { ok: false, error: providerCode ? 'The courier you chose is not enabled for this account' : 'No courier is enabled for this account' };
           let lastError = 'No serviceable courier for this order';
           for (const c of ordered) {
             await client.query('SAVEPOINT try_courier');
