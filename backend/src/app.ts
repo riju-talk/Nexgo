@@ -64,6 +64,8 @@ await app.register(cors, { origin: config.FRONTEND_ORIGIN, credentials: true, me
 // tighter per-route limit since those are the actual brute-force surface.
 await app.register(rateLimit, { global: true, max: 300, timeWindow: '1 minute' });
 app.addHook('onRequest', requireCsrfHeader);
+// Live figures (Track, dashboard) must never come from a browser or CDN cache.
+app.addHook('onSend', async (_req, reply) => { reply.header('Cache-Control', 'no-store'); });
 app.addHook('preHandler', impersonationGuard);
 app.addHook('onResponse', impersonationAudit);
 

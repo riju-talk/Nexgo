@@ -342,8 +342,8 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     const created = next.filter((o) => o.created && !o.unassigned).length;
     const failed = next.filter((o) => o.errors.length || o.failure).length;
     setResult({ total: next.length, created, failed, existing });
-    if (existing) showToast(`${existing} order${existing === 1 ? ' was' : 's were'} already in NEXGO from an earlier upload and were left as they are.`);
-    if (created) showToast(assignMode === 'none' ? `${created} order${created === 1 ? '' : 's'} created. Choose couriers in Track > Ready to ship.` : `${created} order${created === 1 ? '' : 's'} created and assigned to a courier.`);
+    if (existing) showToast(`${created} unique order${created === 1 ? '' : 's'} added. ${existing} duplicate${existing === 1 ? '' : 's'} discarded (already in NEXGO).`);
+    if (created && !existing) showToast(assignMode === 'none' ? `${created} order${created === 1 ? '' : 's'} created. Choose couriers in Track > Ready to ship.` : `${created} order${created === 1 ? '' : 's'} created and assigned to a courier.`);
     if (failed) showToast(`${failed} order${failed === 1 ? '' : 's'} failed or not assigned — download the failed orders file.`, 'error');
   };
 
