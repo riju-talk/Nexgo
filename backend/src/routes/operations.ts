@@ -150,9 +150,8 @@ export async function operationsRoutes(app: FastifyInstance) {
     const p = getPrincipal(request); const orderId = uuid.parse((request.params as { orderId: string }).orderId);
     return withSellerTransaction(p.sellerId, async (client) => { const order = await client.query('SELECT * FROM orders WHERE id=$1 AND seller_id=$2', [orderId, p.sellerId]); if (!order.rows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 }); const items = await client.query('SELECT * FROM order_items WHERE order_id=$1 ORDER BY created_at', [orderId]); return { ...order.rows[0], items: items.rows }; });
   });
-  app.post('/v1/orders', { preHandler: requireSeller }, async (request, reply) => {
-    const input = orderInput.parse(request.body); const p = getPrincipal(request);
-    const row = await withSellerTransaction(p.sellerId, async (client) => {
+  // One order in its own transaction. Shared by POST /v1/orders and POST /v1/orders/bulk, so both create orders exactly the same way.
+  const createOrder = (p: ReturnType<typeof getPrincipal>, requestId: string, input: z.infer<typeof orderInput>) => withSellerTransaction(p.sellerId, async (client) => {
       const warehouse = await client.query('SELECT id FROM warehouses WHERE id=$1 AND seller_id=$2 AND is_active', [input.warehouseId, p.sellerId]); if (!warehouse.rows[0]) throw Object.assign(new Error('Active warehouse not found'), { statusCode: 422 });
       let customer = await client.query<{ id: string }>('SELECT id FROM customers WHERE seller_id=$1 AND phone=$2 AND pincode=$3 LIMIT 1', [p.sellerId, input.customer.phone, input.customer.pincode]);
       const c = input.customer;
@@ -162,8 +161,30 @@ export async function operationsRoutes(app: FastifyInstance) {
       if (input.channel !== 'single') { await client.query('UPDATE orders SET channel=$1 WHERE id=$2', [input.channel, result.rows[0].id]); result.rows[0].channel = input.channel; }
       await queueCodConfirmation(client, { sellerId: p.sellerId, orderId: result.rows[0].id, paymentMode: input.paymentMode, channel: input.channel, customerName: c.fullName, orderNumber: input.orderNumber });
       for (const item of input.items) await client.query('INSERT INTO order_items (order_id,product_id,sku,name,quantity,unit_price_paise,weight_g,hsn_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [result.rows[0].id, item.productId ?? null, item.sku, item.name, item.quantity, item.unitPricePaise, item.weightG, item.hsnCode ?? null]);
-      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.created', targetType: 'order', targetId: result.rows[0].id, requestId: request.id, metadata: { orderNumber: input.orderNumber, itemCount: input.items.length } }); return result.rows[0];
-    }); return reply.code(201).send(row);
+      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.created', targetType: 'order', targetId: result.rows[0].id, requestId: requestId, metadata: { orderNumber: input.orderNumber, itemCount: input.items.length } }); return result.rows[0];
+  });
+  app.post('/v1/orders', { preHandler: requireSeller }, async (request, reply) => {
+    const input = orderInput.parse(request.body);
+    return reply.code(201).send(await createOrder(getPrincipal(request), request.id, input));
+  });
+  // Bulk upload: up to 50 orders per request instead of one request per order (the API allows 300 requests a minute, so a 5,000-order sheet
+  // would otherwise take more than 15 minutes). Each order is validated and saved on its own: one bad order never blocks the others.
+  app.post('/v1/orders/bulk', { preHandler: requireSeller }, async (request) => {
+    const { orders } = z.object({ orders: z.array(z.unknown()).min(1).max(50) }).parse(request.body);
+    const p = getPrincipal(request);
+    const results: { index: number; ok: boolean; id?: string; error?: string }[] = [];
+    for (const [index, raw] of orders.entries()) {
+      const parsed = orderInput.safeParse(raw);
+      if (!parsed.success) { const issue = parsed.error.issues[0]; results.push({ index, ok: false, error: `${issue.path.join('.') || 'order'}: ${issue.message}` }); continue; }
+      try { results.push({ index, ok: true, id: (await createOrder(p, request.id, parsed.data)).id as string }); }
+      catch (error) {
+        const e = error as { code?: string; statusCode?: number; message?: string };
+        if (e.code === '23505') results.push({ index, ok: false, error: 'This order number already exists' });
+        else if (e.code === '23514' || (e.statusCode && e.statusCode < 500)) results.push({ index, ok: false, error: e.message || 'The order could not be created' });
+        else { request.log.error(error); results.push({ index, ok: false, error: 'The order could not be created. Try again' }); }
+      }
+    }
+    return { results, created: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };
   });
   // Rectify an order that never got a courier (Track > Failed): consignee, payment and parcel can change until a shipment exists.
   app.patch('/v1/orders/:orderId/details', { preHandler: requireSeller }, async (request) => {

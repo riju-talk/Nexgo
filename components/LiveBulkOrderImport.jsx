@@ -181,10 +181,10 @@ function downloadErrorReport(orders, fileName, format = 'xlsx') {
 // The pickup warehouse for an order: the one whose ID (WH000004) is in the sheet, else the one chosen on the page.
 // Older sheets with a warehouse name / address column still work.
 // The API allows 300 requests a minute; a big file can touch that, so a "too many requests" answer is waited out and retried instead of failing the order.
-async function apiFetchPatient(path, options, tries = 4) {
+async function apiFetchPatient(path, options, tries = 8) {
   for (let attempt = 1; ; attempt++) {
     try { return await apiFetch(path, options); }
-    catch (error) { if (!(error instanceof ApiError) || error.status !== 429 || attempt >= tries) throw error; await new Promise((r) => setTimeout(r, 4000 * attempt)); }
+    catch (error) { if (!(error instanceof ApiError) || error.status !== 429 || attempt >= tries) throw error; await new Promise((r) => setTimeout(r, Math.min(4000 * attempt, 15000))); } // waits 4, 8, 12, 15 ... s: longer than the 60 s rate-limit window in total
   }
 }
 
@@ -284,21 +284,22 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     if (!validOrders.length) return;
     setCreating(true);
     const outcome = new Map();
-    let done = 0;
-    for (const o of validOrders) {
-      if (done % 10 === 0) setProgress(`Creating orders… ${done} of ${validOrders.length}`);
-      done += 1;
-      try {
-        const made = await apiFetchPatient('/v1/orders', { method: 'POST', body: {
+    // Orders are created 50 per request (POST /v1/orders/bulk): one request per order would take 15+ minutes for a big sheet under the API's rate limit.
+    const payloadOf = (o) => ({
           warehouseId: o.warehouseId, orderNumber: o.orderNumber, orderFlow: 'forward', channel: 'bulk_upload', notes: 'Created from bulk order upload',
           paymentMode: o.paymentMode, codAmountPaise: o.codAmountPaise,
           customer: { fullName: o.customerName, companyName: o.companyName || undefined, email: o.email || undefined, phone: o.phone, alternatePhone: o.alternatePhone || undefined, addressLine1: o.address, addressLine2: o.address2 || undefined, landmark: o.landmark || undefined, city: o.city, state: o.state, pincode: o.pincode },
           items: o.items.map((i) => ({ productId: i.productId, sku: i.sku, name: i.name, hsnCode: i.hsn || undefined, quantity: i.quantity, unitPricePaise: i.pricePaise, weightG: Math.round(i.weight) })),
           package: { weightG: o.weightG, ...(o.dims ? { lengthMm: o.dims[0], widthMm: o.dims[1], heightMm: o.dims[2] } : {}) },
-        } });
-        outcome.set(o.orderNumber, { created: true, orderId: made?.id });
+        });
+    for (let i = 0; i < validOrders.length; i += 50) {
+      const chunk = validOrders.slice(i, i + 50);
+      setProgress(`Creating orders… ${i} of ${validOrders.length}`);
+      try {
+        const res = await apiFetchPatient('/v1/orders/bulk', { method: 'POST', body: { orders: chunk.map(payloadOf) } });
+        chunk.forEach((o, k) => { const r = res.results?.find((x) => x.index === k); outcome.set(o.orderNumber, r?.ok ? { created: true, orderId: r.id } : { failure: r?.error || 'Not created' }); });
       } catch (error) {
-        outcome.set(o.orderNumber, { failure: error instanceof ApiError ? error.message : 'Not created' });
+        chunk.forEach((o) => outcome.set(o.orderNumber, { failure: error instanceof ApiError ? error.message : 'Not created' }));
       }
     }
     // Allocate couriers by the seller's priority list (Settings > Courier rules). Orders no courier could take stay listed as failed.
