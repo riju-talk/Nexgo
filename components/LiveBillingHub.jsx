@@ -33,16 +33,24 @@ async function saveInvoice(invoice, format) {
     ['#', 'AWB', 'Booked on', 'Order', 'Courier', 'Service', 'Payment', 'Weight (kg)', 'Shipping charge excl. GST (INR)'],
     ...lines.map((l, i) => [i + 1, l.awb, dayText(l.booked_at), l.order_number, l.courier_name, l.service_name, l.payment_mode === 'cod' ? 'COD' : 'Prepaid', Number(l.chargeable_weight_g || 0) / 1000, rupee(l.shipping_charge_paise)]),
   ];
+  // Totals row, and a visible difference if the lines do not add up to the invoice subtotal (e.g. a charge was adjusted after the invoice was cut).
+  const linesTotal = lines.reduce((n, l) => n + Number(l.shipping_charge_paise || 0), 0);
+  rows.push(['', 'TOTAL', '', '', '', '', '', '', rupee(linesTotal)]);
+  if (linesTotal !== Number(inv.subtotal_paise)) rows.push(['', 'Difference vs invoice subtotal', '', '', '', '', '', '', rupee(Number(inv.subtotal_paise) - linesTotal)]);
   await saveRows(rows, `invoice-${fileSafe(inv.invoice_number)}`, format, 'Invoice');
 }
 async function saveCodStatement(cycle, no, format) {
   const { cycle: c, lines } = await apiFetch(`/v1/seller/cod-remittances/${cycle.id}/lines`);
   const rows = [
     ['Remittance ID', no], ['Cycle', `${dayText(c.cycle_start)} to ${dayText(c.cycle_end)}`], ['Status', titleCase(c.status)], ['Shipments', c.shipment_count],
-    ['COD collected (INR)', rupee(c.cod_collected_paise)], ['Freight deducted (INR)', rupee(c.charges_deducted_paise)], ['Net remittance (INR)', rupee(c.net_remitted_paise)], ['Bank reference', c.bank_reference || ''], [],
+    ['COD collected (INR)', rupee(c.cod_collected_paise)], ['Freight deducted (INR)', rupee(c.charges_deducted_paise)], ['Net remittance (INR)', rupee(c.net_remitted_paise)],
+    ['Wallet adjustment (INR)', rupee(c.wallet_offset_paise)], ['Amount paid to bank (INR)', c.payout_paise == null ? '' : rupee(c.payout_paise)], ['Bank reference', c.bank_reference || ''], [],
     ['#', 'AWB', 'Delivered on', 'Order', 'Customer', 'Courier', 'COD collected (INR)', 'Freight (INR)'],
     ...lines.map((l, i) => [i + 1, l.awb, dayText(l.delivered_on), l.order_number, l.customer_name, l.courier_name, rupee(l.cod_amount_paise), rupee(l.shipping_charge_paise)]),
   ];
+  const codTotal = lines.reduce((n, l) => n + Number(l.cod_amount_paise || 0), 0); const freightTotal = lines.reduce((n, l) => n + Number(l.shipping_charge_paise || 0), 0);
+  rows.push(['', 'TOTAL', '', '', '', '', rupee(codTotal), rupee(freightTotal)]);
+  if (codTotal !== Number(c.cod_collected_paise) || freightTotal !== Number(c.charges_deducted_paise)) rows.push(['', 'Difference vs remittance (statement figures minus listed lines)', '', '', '', '', rupee(Number(c.cod_collected_paise) - codTotal), rupee(Number(c.charges_deducted_paise) - freightTotal)]);
   await saveRows(rows, `cod-statement-${fileSafe(no)}`, format, 'COD statement');
 }
 async function openInvoicePdf(invoice) {

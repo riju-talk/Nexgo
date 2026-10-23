@@ -2,15 +2,16 @@
 
 import Barcode from 'react-barcode';
 import { routingOf } from './exportRows';
+import { invoiceNumber } from './invoiceMath';
 import { joinParts, longDate, rs } from './format';
 
 // 4 × 6 inch thermal shipping label. Black on white, no colour, so it prints cleanly on any label printer.
 // `d` is one entry of GET /v1/shipments/documents; `cfg` is the saved Label settings (what the seller chose to hide).
-export default function LabelSheet({ d, cfg = {} }) {
+export default function LabelSheet({ d, cfg = {}, invoiceCfg = {} }) {
   const cod = d.payment_mode === 'cod';
   const dims = d.package_length_mm ? `${(d.package_length_mm / 10).toFixed(2)} X ${(d.package_width_mm / 10).toFixed(2)} X ${(d.package_height_mm / 10).toFixed(2)}` : '—';
   const items = d.items || [];
-  const invoiceNo = d.invoice_seq ? `#${d.invoice_seq}` : d.order_number;
+  const invoiceNo = invoiceNumber(d, invoiceCfg) || d.order_number;
   const routing = routingOf(d);
   const showContact = !cfg.hideSellerMobile || (d.warehouse_email && !cfg.hideSellerAddress);
   return (
@@ -74,7 +75,7 @@ export default function LabelSheet({ d, cfg = {} }) {
         </div>
       )}
       <div className="lb-foot">
-        This is computer generated document, hence does not required signature.<br />
+        This is computer generated document, hence does not require a signature.<br />
         <b>Note:</b> All matters shall be handled as per the Seller&apos;s Agreement and T&amp;C. Goods once sold will only be taken back or exchanged as per the store&apos;s exchange/return policy.
       </div>
     </section>

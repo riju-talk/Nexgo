@@ -48,10 +48,13 @@ export default function DocumentViewer({ kind }) {
   }, []);
 
   const loading = !!ids && state.ids !== ids;
-  const { items, error } = ids ? state : { items: [], error: 'No shipments selected.' };
+  const { items: all, error } = ids ? state : { items: [], error: 'No shipments selected.' };
+  // A cancelled shipment has no valid AWB and must not be invoiced, so it is left out of both labels and invoices.
+  const items = all.filter((d) => d.state !== 'cancelled');
+  const skipped = all.length - items.length;
   const page = label ? (layout === 'thermal' ? '4in 6in' : layout === 'thermal35' ? '3in 5in' : 'A4') : String(cfg.pageFormat || '').startsWith('Thermal') ? '4in 6in' : 'A4';
 
-  const download = (format) => saveRows(label ? labelRows(items) : invoiceRows(items, cfg), `${label ? 'shipping-labels' : 'tax-invoices'}${sample ? '-sample' : ''}`, format, label ? 'Labels' : 'Invoices');
+  const download = (format) => saveRows(label ? labelRows(items, cfg) : invoiceRows(items, cfg), `${label ? 'shipping-labels' : 'tax-invoices'}${sample ? '-sample' : ''}`, format, label ? 'Labels' : 'Invoices');
   return (
     <div className={`doc-root ${label ? `doc-${layout}` : 'doc-a4'}`}>
       <style>{CSS.replace('__PAGE__', page)}</style>
@@ -64,8 +67,9 @@ export default function DocumentViewer({ kind }) {
       </header>
       {loading && <p className="doc-msg">Preparing {label ? 'labels' : 'invoices'}…</p>}
       {!loading && error && <p className="doc-msg doc-err">{error}</p>}
+      {!loading && skipped > 0 && <p className="doc-msg doc-err">{skipped} cancelled shipment{skipped === 1 ? ' was' : 's were'} left out: a cancelled AWB cannot be shipped or invoiced.</p>}
       <main className="doc-pages">
-        {!loading && items.map((d) => (label ? <LabelSheet key={d.id} d={d} cfg={labelCfg} /> : <InvoiceSheet key={d.id} d={d} cfg={cfg} />))}
+        {!loading && items.map((d) => (label ? <LabelSheet key={d.id} d={d} cfg={labelCfg} invoiceCfg={cfg} /> : <InvoiceSheet key={d.id} d={d} cfg={cfg} />))}
       </main>
     </div>
   );

@@ -46,7 +46,7 @@ export default function InvoiceSheet({ d, cfg = {} }) {
         </thead>
         <tbody>
           {lines.map((l, n) => (
-            <tr key={n}><td>{l.name}</td><td className="c">{l.sku === 'CUSTOM' ? '' : l.sku}</td><td className="c">{l.hsn || ''}</td><td className="c">{l.quantity}</td><td className="c">{amount(l.unitPricePaise)}</td><td className="c">{l.tax ? amount(l.tax) : ''}</td>{taxCells(l.tax).map((c, k) => <td key={k} className="c">{l.tax ? c : `0 | ${intra ? pct / 2 : pct}%`}</td>)}<td className="c">{amount(l.total)}</td></tr>
+            <tr key={n}><td>{l.name}</td><td className="c">{l.sku === 'CUSTOM' ? '' : l.sku}</td><td className="c">{l.hsn || ''}</td><td className="c">{l.quantity}</td><td className="c">{amount(l.unitPricePaise)}</td><td className="c">{l.tax ? amount(l.tax) : ''}</td>{taxCells(l.tax).map((c, k) => <td key={k} className="c">{c}</td>)}<td className="c">{amount(l.total)}</td></tr>
           ))}
         </tbody>
       </table>
@@ -54,8 +54,8 @@ export default function InvoiceSheet({ d, cfg = {} }) {
       <table className="iv-table iv-charges">
         <thead><tr><th>Charges Applied</th><th>Tax Amount</th>{taxCols.map((t) => <th key={t}>{t}</th>)}<th>TOTAL (Including GST)</th></tr></thead>
         <tbody>
-          {charges.filter(([label, v], i) => i < 2 || v > 0).map(([label, v]) => (
-            <tr key={label}><th className="l">{label}</th><td className="c">-</td>{taxCols.map((t) => <td key={t} className="c">-</td>)}<td className="c">{v ? amount(v) : '-'}</td></tr>
+          {charges.filter(([, v], i) => i < 2 || v).map(([label, v]) => (
+            <tr key={label}><th className="l">{label}</th><td className="c">-</td>{taxCols.map((t) => <td key={t} className="c">-</td>)}<td className="c">{v ? `${v < 0 ? '- ' : ''}${amount(Math.abs(v))}` : '-'}</td></tr>
           ))}
           {d.discount_paise > 0 && <tr><th className="l">Discount</th><td className="c">-</td>{taxCols.map((t) => <td key={t} className="c">-</td>)}<td className="c">- {amount(d.discount_paise)}</td></tr>}
         </tbody>

@@ -1,4 +1,4 @@
-import { computeInvoice } from './invoiceMath';
+import { computeInvoice, invoiceNumber } from './invoiceMath';
 import { joinParts, longDate } from './format';
 
 // Rows for the Excel / CSV downloads of printable documents (first row = headers). Numbers are real numbers, in rupees.
@@ -13,17 +13,17 @@ export function invoiceRows(items, cfg = {}) {
     const common = [v.invoiceNo, longDate(d.booked_at || d.order_date), d.awb, d.order_number, d.payment_mode === 'cod' ? 'COD' : 'Prepaid', d.customer_name, d.customer_state, d.customer_pincode, cfg.hideCompanyName ? '' : d.seller_name, d.seller_gstin || ''];
     v.lines.forEach((l, i) => rows.push([...common, i + 1, l.name, l.sku === 'CUSTOM' ? '' : l.sku, l.hsn || '', l.quantity, rupees(l.unitPricePaise), rupees(l.base), pct,
       v.intra ? rupees(Math.floor(l.tax / 2)) : 0, v.intra ? rupees(l.tax - Math.floor(l.tax / 2)) : 0, v.intra ? 0 : rupees(l.tax), rupees(l.total)]));
-    for (const [label, paise] of v.charges) if (paise > 0) rows.push([...common, '', label, '', '', '', '', rupees(paise), '', 0, 0, 0, rupees(paise)]);
+    for (const [label, paise] of v.charges) if (paise) rows.push([...common, '', label, '', '', '', '', rupees(paise), '', 0, 0, 0, rupees(paise)]);
     if (d.discount_paise > 0) rows.push([...common, '', 'Discount', '', '', '', '', -rupees(d.discount_paise), '', 0, 0, 0, -rupees(d.discount_paise)]);
     rows.push([...common, '', 'INVOICE TOTAL', '', '', '', '', '', '', '', '', '', rupees(v.grand)]);
   }
   return rows;
 }
 
-export function labelRows(items) {
-  const head = ['AWB', 'Courier', 'Routing', 'Order ID', 'NEXGO order ID', 'Order date', 'Payment', 'COD to collect (INR)', 'Weight (kg)', 'Dimensions (cm)', 'Customer', 'Mobile', 'Address', 'City', 'State', 'Pincode', 'Products', 'Pickup warehouse', 'Pickup address'];
+export function labelRows(items, cfg = {}) {
+  const head = ['AWB', 'Invoice number', 'Courier', 'Routing', 'Order ID', 'NEXGO order ID', 'Order date', 'Payment', 'COD to collect (INR)', 'Weight (kg)', 'Dimensions (cm)', 'Customer', 'Mobile', 'Address', 'City', 'State', 'Pincode', 'Products', 'Pickup warehouse', 'Pickup address'];
   return [head, ...items.map((d) => [
-    d.awb, d.courier_name, routingOf(d), d.order_number, d.nexgo_order_id, longDate(d.order_date), d.payment_mode === 'cod' ? 'COD' : 'Prepaid', d.payment_mode === 'cod' ? rupees(d.cod_amount_paise) : 0,
+    d.awb, invoiceNumber(d, cfg), d.courier_name, routingOf(d), d.order_number, d.nexgo_order_id, longDate(d.order_date), d.payment_mode === 'cod' ? 'COD' : 'Prepaid', d.payment_mode === 'cod' ? rupees(d.cod_amount_paise) : 0,
     Math.max(d.chargeable_weight_g || 0, d.total_weight_g || 0) / 1000, d.package_length_mm ? `${d.package_length_mm / 10} x ${d.package_width_mm / 10} x ${d.package_height_mm / 10}` : '',
     d.customer_name, d.customer_phone, joinParts(d.address_line_1, d.address_line_2, d.landmark), d.customer_city, d.customer_state, d.customer_pincode,
     (d.items || []).map((i) => `${i.name} x${i.quantity}`).join('; '), d.warehouse_name, joinParts(d.wh_line_1, d.wh_line_2, d.wh_city, d.wh_state, d.wh_pincode),

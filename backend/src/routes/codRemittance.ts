@@ -132,7 +132,7 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
     const p = principal(request);
     const cycleId = z.string().uuid().parse((request.params as { cycleId: string }).cycleId);
     return withSellerTransaction(p.sellerId, async (client) => {
-      const cycle = (await client.query('SELECT id, cycle_start, cycle_end, shipment_count, cod_collected_paise, charges_deducted_paise, net_remitted_paise, status, bank_reference, remitted_at FROM cod_remittance_cycles WHERE id=$1 AND seller_id=$2', [cycleId, p.sellerId])).rows[0];
+      const cycle = (await client.query('SELECT id, cycle_start, cycle_end, shipment_count, cod_collected_paise, charges_deducted_paise, net_remitted_paise, wallet_offset_paise, payout_paise, status, bank_reference, remitted_at FROM cod_remittance_cycles WHERE id=$1 AND seller_id=$2', [cycleId, p.sellerId])).rows[0];
       if (!cycle) throw Object.assign(new Error('Remittance not found'), { statusCode: 404 });
       const lines = (await client.query(
         `SELECT sh.awb, COALESCE(sh.delivered_at, sh.booked_at) AS delivered_on, o.order_number, c.full_name AS customer_name, cp.name AS courier_name, o.cod_amount_paise, sh.shipping_charge_paise
