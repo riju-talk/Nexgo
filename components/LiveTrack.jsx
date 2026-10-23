@@ -27,8 +27,12 @@ const CLOSED = ['delivered', 'cancelled', 'rto', 'lost'];
 const stageIndex = (state) => (PICKUP.includes(state) ? 0 : STAGES.indexOf(state));
 const isDelayed = (r) => !!r.promised_delivery_at && !CLOSED.includes(r.state) && new Date(r.promised_delivery_at) < new Date();
 
+// Orders with no courier yet: 'ready' = the order is complete and only needs a courier assigned, 'failed' = something in the order must be fixed first.
+const isUnassigned = (r) => r.state === 'failed' || r.state === 'ready';
+
 const TABS = [
   ['all', 'All', (r) => r.state !== 'failed'],
+  ['ready', 'Ready to ship', (r) => r.state === 'ready'],
   ['pickup', 'Pickup Pending', (r) => PICKUP.includes(r.state)],
   ['in_transit', 'In Transit', (r) => r.state === 'in_transit'],
   ['out_for_delivery', 'OFD', (r) => r.state === 'out_for_delivery'],
@@ -46,8 +50,8 @@ const WHATSAPP = { not_sent: 'Not sent', sent: 'Sent', delivered: 'Delivered', r
 const waTone = (w) => (w === 'read' || w === 'delivered' ? T.GREEN : w === 'failed' ? T.RED : w === 'sent' ? T.ACCENT : T.TEXT_MUTED);
 const PAGE_SIZES = [10, 25, 50, 100, 500];
 
-const tone = (state) => (state === 'delivered' ? T.GREEN : state === 'ndr' || RTO.includes(state) ? T.AMBER : state === 'cancelled' || state === 'failed' || state === 'lost' ? T.RED : T.ACCENT);
-const label = (state) => (state === 'failed' ? 'Not assigned' : state === 'rto_in_transit' ? 'RTO in transit' : state === 'rto' ? 'RTO' : state === 'ndr' ? 'NDR' : title(state));
+const tone = (state) => (state === 'delivered' || state === 'ready' ? T.GREEN : state === 'ndr' || RTO.includes(state) ? T.AMBER : state === 'cancelled' || state === 'failed' || state === 'lost' ? T.RED : T.ACCENT);
+const label = (state) => (state === 'failed' ? 'Needs fixing' : state === 'ready' ? 'Ready to ship' : state === 'rto_in_transit' ? 'RTO in transit' : state === 'rto' ? 'RTO' : state === 'ndr' ? 'NDR' : title(state));
 
 function Pill({ state }) {
   const c = tone(state);
@@ -78,13 +82,19 @@ const openDocs = (kind, ids) => window.open(`/documents/${kind}?ids=${ids.join('
 const copyText = (text, showToast, done) => { navigator.clipboard?.writeText(text).then(() => showToast(done)).catch(() => showToast('Copy is not available in this browser', 'error')); };
 
 // Auto-assign couriers to not-yet-shipped orders using the seller's courier priority list (Settings > Courier rules).
+// Assigns couriers in chunks of 25 (each order is a live booking call), so a few thousand ready orders neither time out nor hit the per-request cap.
 async function assignCouriers(orderIds, showToast, reload) {
+  let assigned = 0; let failed = 0; let firstError = '';
   try {
-    const r = await apiFetch('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds } });
-    const bad = r.results.find((x) => !x.ok);
-    showToast(r.failed ? `${r.assigned} assigned, ${r.failed} not assigned: ${bad.error}` : `${r.assigned} order${r.assigned === 1 ? '' : 's'} assigned to a courier`, r.failed ? 'error' : 'success');
-    await reload();
-  } catch (e) { showToast(e.message || 'Couriers could not be assigned', 'error'); }
+    for (let i = 0; i < orderIds.length; i += 25) {
+      if (orderIds.length > 25) showToast(`Assigning couriers… ${Math.min(i + 25, orderIds.length)} of ${orderIds.length}`);
+      const r = await apiFetch('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds: orderIds.slice(i, i + 25) } });
+      assigned += r.assigned; failed += r.failed;
+      if (!firstError) firstError = r.results.find((x) => !x.ok)?.error || '';
+    }
+    showToast(failed ? `${assigned} assigned, ${failed} not assigned: ${firstError}` : `${assigned} order${assigned === 1 ? '' : 's'} assigned to a courier`, failed ? 'error' : 'success');
+  } catch (e) { showToast(`${assigned} assigned before it stopped: ${e.message || 'couriers could not be assigned'}`, 'error'); }
+  await reload();
 }
 
 function Detail({ shipment, mobile, onClose, reload }) {
@@ -99,13 +109,13 @@ function Detail({ shipment, mobile, onClose, reload }) {
 
   useEffect(() => {
     let live = true;
-    if (shipment.state === 'failed') return undefined;
+    if (shipment.state === 'failed' || shipment.state === 'ready') return undefined; // no courier yet, nothing to track
     apiFetch(`/v1/shipments/${shipment.id}/tracking`).then((x) => live && setEvents(x.items || [])).catch(() => live && setEvents([]));
     return () => { live = false; };
   }, [shipment.id, shipment.state]);
 
   const delayed = isDelayed(shipment);
-  const failedOrder = shipment.state === 'failed';
+  const failedOrder = isUnassigned(shipment);
   const facts = [
     ['Order', shipment.order_number],
     ['NEXGO order ID', shipment.nexgo_order_id],
@@ -118,7 +128,7 @@ function Detail({ shipment, mobile, onClose, reload }) {
     ['Payment', shipment.payment_mode === 'cod' ? `COD ${inr(shipment.cod_amount_paise)}` : 'Prepaid'],
     ['Products', `${shipment.product_names || '—'} (qty ${shipment.quantity ?? 0})`],
     ['Weight', `${kg(shipment.total_weight_g)} dead · ${kg(shipment.chargeable_weight_g)} billed`],
-    ['Freight charge', shipment.state === 'failed' ? '—' : inr(shipment.shipping_charge_paise)],
+    ['Freight charge', isUnassigned(shipment) ? '—' : inr(shipment.shipping_charge_paise)],
     ['WhatsApp', WHATSAPP[shipment.whatsapp_status] || 'Not sent'],
     ['Order value', inr(shipment.subtotal_paise)],
     ['Booked', stamp(shipment.booked_at)],
@@ -174,6 +184,7 @@ export default function LiveTrack({ mobile }) {
   const { nav, showToast, trackFocus, setTrackFocus, trackHandoff, setTrackHandoff } = useAppState();
   const [rows, setRows] = useState(null);
   const [failed, setFailed] = useState([]);
+  const [totals, setTotals] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('all');
   const [f, setF] = useState({ q: '', courier: '', pay: '', mode: '', channel: '', warehouse: '', tag: '', from: '', to: '' });
@@ -208,7 +219,7 @@ export default function LiveTrack({ mobile }) {
   const [picked, setPicked] = useState(() => new Set());
   const set = (k) => (e) => { setF((x) => ({ ...x, [k]: e.target.value })); setPage(1); };
 
-  const load = useCallback(() => apiFetch('/v1/shipments').then((x) => { setRows(x.items || []); setFailed((x.failed || []).map((o) => ({ ...o, state: 'failed', awb: '', booked_at: o.created_at, shipping_charge_paise: 0, chargeable_weight_g: o.total_weight_g, whatsapp_status: 'not_sent' }))); setError(null); }).catch(setError), []);
+  const load = useCallback(() => apiFetch('/v1/shipments').then((x) => { setRows(x.items || []); setTotals(x.totals || null); setFailed((x.failed || []).map((o) => ({ ...o, state: o.ready ? 'ready' : 'failed', awb: '', booked_at: o.created_at, shipping_charge_paise: 0, chargeable_weight_g: o.total_weight_g, whatsapp_status: 'not_sent' }))); setError(null); }).catch(setError), []);
   useEffect(() => { load(); }, [load]);
   const loadTags = useCallback(() => apiFetch('/v1/shipments/tags').then((x) => setAllTags(x.items || [])).catch(() => {}), []);
   useEffect(() => { loadTags(); }, [loadTags]);
@@ -269,6 +280,16 @@ export default function LiveTrack({ mobile }) {
     showToast(`${source.length} shipments exported (${exportFormat === 'xlsx' ? 'Excel' : 'CSV'})`);
   };
 
+  // Pickup manifest: courier by courier, with a tick column for the pickup person.
+  const downloadManifest = async (list, format) => {
+    const rows = list.filter((r) => !isUnassigned(r) && r.awb).sort((a, b) => String(a.courier_name).localeCompare(String(b.courier_name)) || String(a.awb).localeCompare(String(b.awb)));
+    if (!rows.length) return showToast('There are no shipments with an AWB to list.', 'error');
+    await saveRows([['#', 'Courier', 'AWB', 'Order', 'Customer', 'City', 'Pincode', 'Weight (kg)', 'Payment', 'COD to collect (INR)', 'Pickup warehouse', 'Picked up (tick)'],
+      ...rows.map((r, i) => [i + 1, r.courier_name, r.awb, r.order_number, r.customer_name, r.customer_city, r.customer_pincode, Math.max(r.chargeable_weight_g || 0, r.total_weight_g || 0) / 1000, r.payment_mode === 'cod' ? 'COD' : 'Prepaid', r.payment_mode === 'cod' ? (r.cod_amount_paise || 0) / 100 : 0, r.warehouse_name, ''])],
+      `pickup-manifest-${isoDay(Date.now())}`, format, 'Manifest');
+    showToast(`Manifest for ${rows.length} shipment${rows.length === 1 ? '' : 's'} downloaded (${format === 'xlsx' ? 'Excel' : 'CSV'}).`);
+  };
+
   // Failed orders: download them as Excel (with the reason), fix the cells, upload the file: orders are updated in place and couriers assigned.
   const downloadFailed = async (format = 'xlsx') => {
     const source = visible.filter((r) => r.state === 'failed');
@@ -311,7 +332,7 @@ export default function LiveTrack({ mobile }) {
 
   // Tags go onto the selected shipments (never onto not-yet-shipped "failed" orders).
   const tagSelected = async (mode) => {
-    const ids = visible.filter((r) => picked.has(r.id) && r.state !== 'failed').map((r) => r.id);
+    const ids = visible.filter((r) => picked.has(r.id) && !isUnassigned(r)).map((r) => r.id);
     if (!ids.length) return showToast('Select shipments that have an AWB to tag.', 'error');
     try {
       const r = await apiFetch('/v1/shipments/tags', { method: 'POST', body: { shipmentIds: ids, [mode]: [tagInput.trim()] } });
@@ -320,14 +341,14 @@ export default function LiveTrack({ mobile }) {
     } catch (e) { showToast(e instanceof ApiError ? e.message : 'Tags could not be saved', 'error'); }
   };
   const printSelected = (kind) => {
-    const ids = visible.filter((r) => picked.has(r.id) && r.state !== 'failed').map((r) => r.id);
+    const ids = visible.filter((r) => picked.has(r.id) && !isUnassigned(r)).map((r) => r.id);
     if (!ids.length) return showToast('Select shipments that have an AWB first.', 'error');
     if (ids.length > 100) return showToast('Print up to 100 shipments at a time.', 'error');
     openDocs(kind, ids);
   };
   // Only shipments the courier has not picked up can be cancelled; the rest are left alone and counted so nothing is silently skipped.
   const cancelSelected = async () => {
-    const chosen = visible.filter((r) => picked.has(r.id) && r.state !== 'failed');
+    const chosen = visible.filter((r) => picked.has(r.id) && !isUnassigned(r));
     const ids = chosen.filter((r) => ['booked', 'pickup_pending', 'pickup_scheduled'].includes(r.state)).map((r) => r.id);
     if (!ids.length) return showToast('None of the selected shipments can be cancelled. Only shipments that are not yet picked up can.', 'error');
     if (ids.length > 50) return showToast('Cancel up to 50 shipments at a time.', 'error');
@@ -366,6 +387,7 @@ export default function LiveTrack({ mobile }) {
         </div>
       </div>
 
+      {totals && (Number(totals.shipments) > (rows || []).length || Number(totals.unassigned) > failed.length) && <div style={{ marginBottom: 10, fontSize: 12.5, color: T.AMBER }}>Showing the latest {(rows || []).length} of {totals.shipments} shipments and {failed.length} of {totals.unassigned} orders without a courier. Use the filters or the date range to narrow down.</div>}
       <div role="tablist" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
         {TABS.map(([key, name]) => {
           const on = tab === key;
@@ -373,6 +395,20 @@ export default function LiveTrack({ mobile }) {
         })}
       </div>
 
+      {tab === 'ready' && (
+        <div style={{ ...CARD, padding: '12px 14px', marginBottom: 12, boxShadow: 'none' }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ flex: '1 1 320px', fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.5 }}>These orders are complete and waiting for a courier. Assigning books the shipment, charges your wallet and moves it to Pickup Pending, where you can print labels and download the pickup manifest. Orders no courier can take stay here with the reason.</div>
+            <Btn primary disabled={!visible.length} onClick={() => assignCouriers(visible.map((r) => r.id), showToast, async () => { await load(); setPicked(new Set()); })}>Assign courier to all {visible.length}</Btn>
+          </div>
+        </div>
+      )}
+      {tab === 'pickup' && visible.length > 0 && (
+        <div style={{ ...CARD, padding: '12px 14px', marginBottom: 12, boxShadow: 'none', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ flex: '1 1 320px', fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.5 }}>Pickup manifest: the parcels the courier collects, listed courier by courier with a tick column for the pickup person.</div>
+          <Btn onClick={() => downloadManifest(visible, 'xlsx')}>Manifest (Excel)</Btn><Btn onClick={() => downloadManifest(visible, 'csv')}>Manifest (CSV)</Btn>
+        </div>
+      )}
       {tab === 'failed' && (
         <div style={{ ...CARD, padding: '12px 14px', marginBottom: 12, boxShadow: 'none' }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -396,7 +432,8 @@ export default function LiveTrack({ mobile }) {
         <div style={{ ...CARD, padding: '9px 12px', marginBottom: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', background: 'rgba(56,119,252,.08)', boxShadow: 'none' }}>
           <b style={{ fontSize: 13, color: T.TEXT }}>{picked.size} selected</b>
           <Btn small onClick={() => copyText(visible.filter((r) => picked.has(r.id)).map((r) => r.awb).join('\n'), showToast, 'AWBs copied')}>Copy AWBs</Btn>
-          {visible.some((r) => picked.has(r.id) && r.state === 'failed') && <Btn small primary onClick={() => assignCouriers(visible.filter((r) => picked.has(r.id) && r.state === 'failed').map((r) => r.id), showToast, async () => { await load(); setPicked(new Set()); })}>Assign couriers</Btn>}
+          {visible.some((r) => picked.has(r.id) && isUnassigned(r)) && <Btn small primary onClick={() => assignCouriers(visible.filter((r) => picked.has(r.id) && isUnassigned(r)).map((r) => r.id), showToast, async () => { await load(); setPicked(new Set()); })}>Assign couriers</Btn>}
+          {visible.some((r) => picked.has(r.id) && !isUnassigned(r)) && <><Btn small onClick={() => downloadManifest(visible.filter((r) => picked.has(r.id) && !isUnassigned(r)), 'xlsx')}>Manifest (Excel)</Btn><Btn small onClick={() => downloadManifest(visible.filter((r) => picked.has(r.id) && !isUnassigned(r)), 'csv')}>Manifest (CSV)</Btn></>}
           <Btn small onClick={() => printSelected('label')}>Print labels</Btn>
           <Btn small onClick={() => printSelected('invoice')}>Print invoices</Btn>
           <Btn small onClick={cancelSelected}>Cancel shipments</Btn>
@@ -437,7 +474,7 @@ export default function LiveTrack({ mobile }) {
                             <td style={CELL}>{r.awb ? <b style={{ fontFamily: T.MONO }}>{r.awb}</b> : <span style={{ color: T.TEXT_MUTED }}>—</span>}</td>
                             <td style={CELL}><span style={{ color: waTone(r.whatsapp_status), fontWeight: 650 }}>{WHATSAPP[r.whatsapp_status] || 'Not sent'}</span></td>
                             <td style={CELL}><Pill state={r.state} />{late && <small style={{ ...SUB, color: T.RED }}>Delayed · due {day(r.promised_delivery_at)}</small>}</td>
-                            <td style={CELL} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}><Btn small onClick={() => setSelectedId(r.id)}>{r.state === 'failed' ? 'Details' : 'Track'}</Btn>{r.awb && <Btn small onClick={() => openDocs('label', [r.id])}>Label</Btn>}</div></td>
+                            <td style={CELL} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}><Btn small onClick={() => setSelectedId(r.id)}>{isUnassigned(r) ? 'Details' : 'Track'}</Btn>{r.awb && <Btn small onClick={() => openDocs('label', [r.id])}>Label</Btn>}</div></td>
                           </tr>
                         );
                       })}

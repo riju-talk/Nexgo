@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
@@ -180,6 +180,14 @@ function downloadErrorReport(orders, fileName, format = 'xlsx') {
 
 // The pickup warehouse for an order: the one whose ID (WH000004) is in the sheet, else the one chosen on the page.
 // Older sheets with a warehouse name / address column still work.
+// The API allows 300 requests a minute; a big file can touch that, so a "too many requests" answer is waited out and retried instead of failing the order.
+async function apiFetchPatient(path, options, tries = 4) {
+  for (let attempt = 1; ; attempt++) {
+    try { return await apiFetch(path, options); }
+    catch (error) { if (!(error instanceof ApiError) || error.status !== 429 || attempt >= tries) throw error; await new Promise((r) => setTimeout(r, 4000 * attempt)); }
+  }
+}
+
 function pickWarehouse(order, list, fallback) {
   const code = (order.warehouseCode || '').trim().toUpperCase();
   if (code) {
@@ -200,6 +208,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
   const inputRef = useRef(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState('');
   const [creating, setCreating] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [fileName, setFileName] = useState('');
@@ -233,14 +242,24 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
       });
       if (grouped.length > MAX_ORDERS) throw new Error(`Import up to ${MAX_ORDERS} orders at a time.`);
 
-      // Resolve city/state from pincode where the sheet left them blank.
-      const pinLookups = new Map(); // one lookup per distinct pincode, however many orders share it
-      const lookup = (pin) => { if (!pinLookups.has(pin)) pinLookups.set(pin, apiFetch(`/v1/locations/pincode/${pin}`).then((l) => ({ city: l.city, state: l.state })).catch(() => null)); return pinLookups.get(pin); };
-      const located = await Promise.all(grouped.map(async (o) => {
+      // Resolve city/state from pincode where the sheet left them blank: distinct pincodes only, 20 per request (a few thousand orders share a few hundred pincodes).
+      const needed = [...new Set(grouped.filter((o) => !o.errors.length && !(o.city && o.state) && /^\d{6}$/.test(o.pincode || '')).map((o) => o.pincode))];
+      const resolved = new Map(); const unchecked = new Set();
+      for (let i = 0; i < needed.length; i += 20) {
+        const chunk = needed.slice(i, i + 20);
+        setProgress(`Looking up pincodes… ${Math.min(i + 20, needed.length)} of ${needed.length}`);
+        try { const r = await apiFetch('/v1/locations/resolve', { method: 'POST', body: { pincodes: chunk } }); for (const [pin, place] of Object.entries(r.items || {})) if (place) resolved.set(pin, place); }
+        catch { chunk.forEach((pin) => unchecked.add(pin)); }
+      }
+      setProgress('');
+      const located = grouped.map((o) => {
         if (o.errors.length || (o.city && o.state)) return o;
-        const l = await lookup(o.pincode);
-        return l ? { ...o, city: o.city || l.city, state: o.state || l.state, located: true } : { ...o, errors: [...o.errors, `Pincode ${o.pincode} could not be found in the India Post directory. Check the pincode, or enter the city and state in the sheet`] };
-      }));
+        const l = resolved.get(o.pincode);
+        if (l) return { ...o, city: o.city || l.city, state: o.state || l.state, located: true };
+        return { ...o, errors: [...o.errors, unchecked.has(o.pincode)
+          ? `Pincode ${o.pincode} could not be checked just now. Upload the file again, or enter the city and state in the sheet`
+          : `Pincode ${o.pincode} could not be found in the India Post directory. Check the pincode, or enter the city and state in the sheet`] };
+      });
       // Indicative cheapest rate for the chargeable weight; booking happens later from All orders.
       const quoted = await Promise.all(located.map(async (o) => {
         if (o.errors.length) return o;
@@ -265,9 +284,12 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     if (!validOrders.length) return;
     setCreating(true);
     const outcome = new Map();
+    let done = 0;
     for (const o of validOrders) {
+      if (done % 10 === 0) setProgress(`Creating orders… ${done} of ${validOrders.length}`);
+      done += 1;
       try {
-        const made = await apiFetch('/v1/orders', { method: 'POST', body: {
+        const made = await apiFetchPatient('/v1/orders', { method: 'POST', body: {
           warehouseId: o.warehouseId, orderNumber: o.orderNumber, orderFlow: 'forward', channel: 'bulk_upload', notes: 'Created from bulk order upload',
           paymentMode: o.paymentMode, codAmountPaise: o.codAmountPaise,
           customer: { fullName: o.customerName, companyName: o.companyName || undefined, email: o.email || undefined, phone: o.phone, alternatePhone: o.alternatePhone || undefined, addressLine1: o.address, addressLine2: o.address2 || undefined, landmark: o.landmark || undefined, city: o.city, state: o.state, pincode: o.pincode },
@@ -281,15 +303,20 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     }
     // Allocate couriers by the seller's priority list (Settings > Courier rules). Orders no courier could take stay listed as failed.
     const made = [...outcome.values()].filter((x) => x.orderId);
-    if (made.length) {
+    // Couriers are assigned 25 orders per request: each order is a live booking call and one request may only run for a few seconds.
+    for (let i = 0; i < made.length; i += 25) {
+      const chunk = made.slice(i, i + 25);
+      setProgress(`Assigning couriers… ${Math.min(i + 25, made.length)} of ${made.length}`);
       try {
-        const r = await apiFetch('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds: made.map((x) => x.orderId) } });
+        const r = await apiFetchPatient('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds: chunk.map((x) => x.orderId) } });
         const by = new Map(r.results.map((x) => [x.orderId, x]));
         for (const [num, x] of outcome) { const a = x.orderId && by.get(x.orderId); if (a) outcome.set(num, a.ok ? { ...x, courier: a.courier, awb: a.awb } : { ...x, unassigned: true, failure: `Order created, but no courier assigned: ${a.error}` }); }
       } catch (error) {
-        for (const [num, x] of outcome) if (x.orderId) outcome.set(num, { ...x, unassigned: true, failure: `Order created, but couriers could not be assigned: ${error.message || 'try again from All orders'}` });
+        const ids = new Set(chunk.map((x) => x.orderId));
+        for (const [num, x] of outcome) if (x.orderId && ids.has(x.orderId)) outcome.set(num, { ...x, unassigned: true, failure: `Order created, but couriers could not be assigned: ${error.message || 'try again from the Ready to ship tab'}` });
       }
     }
+    setProgress('');
     const next = orders.map((o) => (outcome.has(o.orderNumber) ? { ...o, ...outcome.get(o.orderNumber) } : o));
     setOrders(next);
     setCreating(false);
@@ -302,6 +329,12 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
 
   const onDrop = (e) => { e.preventDefault(); setDragging(false); importFile(e.dataTransfer.files?.[0]); };
   const failedCount = orders.filter((o) => o.errors.length || o.failure).length;
+  // Why the failed orders failed, grouped (digits and quoted values collapsed), so thousands of failures read as a few causes.
+  const reasons = useMemo(() => {
+    const counts = new Map();
+    for (const o of orders) for (const text of [...o.errors, ...(o.failure ? [o.failure] : [])]) { const key = text.replace(/"[^"]*"/g, '"…"').replace(/\d{3,}/g, '#'); counts.set(key, (counts.get(key) || 0) + 1); }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+  }, [orders]);
   const unassignedCount = orders.filter(isFailed).length;
 
   return (
@@ -318,13 +351,16 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4,minmax(0,1fr))', gap: 12, marginTop: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(5,minmax(0,1fr))', gap: 12, marginTop: 18 }}>
           <SummaryCard label="Total uploads" value={fileName ? 1 : 0} tone="#3877fc" icon="⇧" />
           <SummaryCard label="Total orders" value={orders.length} tone="#3B82F6" icon="□" />
+          <SummaryCard label="Ready to create" value={validOrders.length} tone="#F59E0B" icon="…" />
           <SummaryCard label="Successful orders" value={result?.created ?? orders.filter((o) => o.created && !o.unassigned).length} tone="#22C55E" icon="✓" />
           <SummaryCard label="Failed orders" value={failedCount} tone="#EF4444" icon="×" />
         </div>
 
+        {!!orders.length && validOrders.length > 0 && !creating && <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 9, background: `${T.GREEN}12`, color: T.TEXT, fontSize: 13, lineHeight: 1.5 }}><b>{validOrders.length} order{validOrders.length === 1 ? ' is' : 's are'} valid and not created yet.</b> Click “Create {validOrders.length} order{validOrders.length === 1 ? '' : 's'}” below to add them to NEXGO and assign couriers. They then appear in Track: Pickup Pending if a courier was assigned, Ready to ship if not.</div>}
+        {failedCount > 0 && <div style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: `${T.RED}0D`, fontSize: 12.5, lineHeight: 1.6 }}><b style={{ color: T.RED }}>Why {failedCount} order{failedCount === 1 ? '' : 's'} failed</b>{reasons.map(([text, n]) => <div key={text} style={{ color: T.TEXT_SECONDARY }}><b style={{ color: T.TEXT }}>{n}</b> × {text}</div>)}</div>}
         {warehouses && !warehouses.length && <div style={{ marginTop: 18 }}><Action onClick={() => nav('warehouse')}>Add a pickup warehouse first</Action></div>}
         {warehouses?.length > 0 && <div style={{ marginTop: 16, fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.7 }}><b style={{ color: T.TEXT }}>Your warehouse IDs</b> (use in the Warehouse ID column): {warehouses.filter((w) => w.is_active !== false).map((w) => <span key={w.id} style={{ display: 'inline-block', margin: '0 8px 0 0' }}><code style={{ fontFamily: T.MONO, fontWeight: 700, color: T.TEXT }}>{w.warehouse_code}</code> {w.name}</span>)}</div>}
 
@@ -337,7 +373,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           onDrop={onDrop}
           style={{ marginTop: 18, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(56,119,252,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
         >
-          <b style={{ display: 'block', color: T.TEXT, fontSize: 14 }}>{loading ? 'Reading and validating…' : 'Drop your order file here, or click to browse'}</b>
+          <b style={{ display: 'block', color: T.TEXT, fontSize: 14 }}>{loading ? (progress || 'Reading and validating…') : 'Drop your order file here, or click to browse'}</b>
           <span style={{ display: 'block', marginTop: 5, color: T.TEXT_MUTED, fontSize: 12.5 }}>{fileName && !loading ? fileName : '.xlsx, .xls or .csv · up to 5 MB · NEXGO bulk upload format'}</span>
           <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; importFile(f); }} />
         </div>
@@ -356,7 +392,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
               {unassignedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => { const n = downloadFailedOrders(orders, fileName, fmt); showToast(`${n} failed order${n === 1 ? '' : 's'} saved as ${fmt === 'xlsx' ? 'Excel' : 'CSV'}. Correct the errors and upload the file again.`); }}>⬇ Failed orders ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
               {failedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => downloadErrorReport(orders, fileName, fmt)}>Error report ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
               {result?.created > 0 && <Action onClick={() => nav('orders')}>Go to All orders</Action>}
-              <Action primary disabled={!validOrders.length || creating} onClick={createOrders}>{creating ? 'Creating orders…' : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>
+              <Action primary disabled={!validOrders.length || creating} onClick={createOrders}>{creating ? (progress || 'Creating orders…') : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>
             </div>
           </div>
 

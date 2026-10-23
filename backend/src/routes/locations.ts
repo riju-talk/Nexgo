@@ -39,6 +39,25 @@ export async function locationRoutes(app: FastifyInstance) {
     return { pincode: row.pincode, city: row.city, state: row.state, district: row.district, zone: row.zone, latitude: row.latitude === null ? null : Number(row.latitude), longitude: row.longitude === null ? null : Number(row.longitude), codAvailable: row.cod_available, outOfDeliveryArea: row.is_oda };
   });
 
+  // Many pincodes at once (bulk upload): one round trip per chunk instead of one request per order. Known pincodes come from one query; at most
+  // 20 per call, so the few unknown ones can be looked up at India Post (5 at a time) inside the serverless time limit.
+  app.post('/v1/locations/resolve', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request) => {
+    const { pincodes } = z.object({ pincodes: z.array(z.string().regex(/^\d{6}$/)).min(1).max(20) }).parse(request.body);
+    const unique = [...new Set(pincodes)];
+    const known = (await db.query<{ pincode: string; city: string; state: string }>('SELECT pincode, city, state FROM pincodes WHERE pincode = ANY($1::text[]) AND is_active', [unique])).rows;
+    const items: Record<string, { city: string; state: string } | null> = Object.fromEntries(unique.map((x) => [x, null]));
+    for (const r of known) items[r.pincode] = { city: r.city, state: r.state };
+    const missing = unique.filter((x) => !items[x]);
+    for (let i = 0; i < missing.length; i += 5) {
+      await Promise.all(missing.slice(i, i + 5).map(async (pin) => {
+        if (!inFlight.has(pin)) inFlight.set(pin, lookupIndiaPost(pin).finally(() => inFlight.delete(pin)));
+        const found = await inFlight.get(pin);
+        if (found) items[pin] = { city: found.city, state: found.state };
+      }));
+    }
+    return { items };
+  });
+
   // Typing aid: pincodes that start with the digits entered so far.
   app.get('/v1/locations/pincodes', async (request) => {
     const { q } = z.object({ q: z.string().regex(/^\d{2,6}$/) }).parse(request.query);
