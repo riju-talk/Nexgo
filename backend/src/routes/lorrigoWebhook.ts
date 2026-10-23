@@ -52,7 +52,7 @@ async function processItem(item: Item, rawBody: string, log: { warn: (o: object,
   return withTransaction(async (tx) => {
     const delivery = await tx.query("INSERT INTO webhook_deliveries (provider_code,external_event_id,payload_hash,payload) VALUES ('lorrigo',$1,$2,$3) ON CONFLICT (provider_code, external_event_id) DO NOTHING RETURNING id", [bodyHash, bodyHash, JSON.stringify(item)]);
     if (!delivery.rows[0]) return 'duplicate' as const;
-    const found = await tx.query<Shipment>("SELECT s.id,s.seller_id,s.state::text AS state FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.awb=$1 AND cp.code='lorrigo' FOR UPDATE OF s", [awb]);
+    const found = await tx.query<Shipment>("SELECT s.id,s.seller_id,s.state::text AS state FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.awb=$1 AND cp.aggregator='lorrigo' FOR UPDATE OF s", [awb]);
     const shipment = found.rows[0];
     // Not remembered as a delivery: the webhook can beat our own booking commit, and Lorrigo's identical retry must still be processed.
     if (!shipment) { await tx.query('DELETE FROM webhook_deliveries WHERE id=$1', [delivery.rows[0].id]); return 'unknown' as const; }

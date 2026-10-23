@@ -15,9 +15,9 @@ export async function pushNdrToCourier(input: { sellerId: string; userId: string
   const action = COURIER_ACTION[input.resolution] ?? null;
   if (!action) return { status: 'not_applicable' };
   try {
-    const row = await withSellerTransaction(input.sellerId, async (c) => (await c.query<{ awb: string | null; code: string }>('SELECT s.awb, cp.code FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.id=$1 AND s.seller_id=$2', [input.shipmentId, input.sellerId])).rows[0]);
+    const row = await withSellerTransaction(input.sellerId, async (c) => (await c.query<{ awb: string | null; code: string; aggregator: string | null }>('SELECT s.awb, cp.code, cp.aggregator FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.id=$1 AND s.seller_id=$2', [input.shipmentId, input.sellerId])).rows[0]);
     if (!row?.awb) return { status: 'not_applicable' };
-    const adapter = courierAdapter(row.code);
+    const adapter = courierAdapter(row.aggregator, row.code);
     if (!adapter.ndrAction) return { status: 'not_applicable' }; // e.g. the sandbox courier has no NDR API
     await adapter.ndrAction(row.awb, action, input.comment);
     await withSellerTransaction(input.sellerId, (c) => audit(c, { sellerId: input.sellerId, actorUserId: input.userId, action: 'ndr.courier_notified', targetType: 'ndr_case', targetId: input.caseId, requestId: input.requestId, metadata: { action } }));

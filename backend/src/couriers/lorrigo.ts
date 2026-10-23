@@ -85,6 +85,16 @@ export class LorrigoAdapter implements CourierAdapter {
     throw new LorrigoError(`Lorrigo: ${String(message).slice(0, 300)}`, res.status >= 500 ? 502 : 422, res.status);
   }
 
+  /** The courier services this aggregator offers (GET /couriers -> { couriers: [{ id, name, type, is_active, is_reversed_courier }] }). Inactive and reverse (RVP) services are left out. */
+  async listServices(): Promise<{ id: string; name: string; type: string }[]> {
+    const body = await this.call('GET', '/couriers');
+    const list = Array.isArray(body) ? body : isObj(body) ? [body.couriers, body.data, isObj(body.data) ? body.data.couriers : null].find(Array.isArray) ?? [] : [];
+    return (list as unknown[]).filter(isObj)
+      .filter((c) => c.is_active !== false && c.is_reversed_courier !== true)
+      .map((c) => ({ id: String(c.id ?? ''), name: String(c.name ?? c.displayName ?? '').trim(), type: String(c.type ?? '').toLowerCase() }))
+      .filter((c) => c.id && c.name);
+  }
+
   /** Finds our pickup address by name (paging through the list), otherwise creates it. */
   private async findHub(facilityName: string): Promise<string | null> {
     for (let page = 1; page <= 5; page++) {

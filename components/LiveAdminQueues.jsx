@@ -16,6 +16,56 @@ const money = (paise = 0) => new Intl.NumberFormat('en-IN', { style: 'currency',
 function Badge({ children, tone = 'neutral' }) { const map = tone === 'ok' ? ['#137D50', '#E8F7EF'] : tone === 'warn' ? ['#9B6500', '#FFF5DF'] : tone === 'bad' ? ['#B23A2B', '#FFF0EE'] : ['var(--ops-muted)', 'var(--ops-surface-soft)']; return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 8px', borderRadius: 99, color: map[0], background: map[1], fontSize: 11.5, fontWeight: 750, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: 9, background: map[0] }} />{children}</span>; }
 function Button({ children, onClick, disabled, primary = false }) { return <motion.button whileTap={disabled ? undefined : { scale: .97 }} disabled={disabled} onClick={onClick} style={{ minHeight: 31, padding: '0 10px', border: `1px solid ${primary ? T.NAVY : 'var(--ops-border)'}`, borderRadius: 8, background: primary ? T.NAVY : 'var(--ops-surface)', color: primary ? '#fff' : 'var(--ops-heading)', fontSize: 12, fontWeight: 720, cursor: disabled ? 'wait' : 'pointer', opacity: disabled ? .55 : 1 }}>{children}</motion.button>; }
 
+const slug = (v = '') => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+// Admin "Add courier": a courier (Delhivery, Bluedart ...) is added by hand and books through an aggregator such as Lorrigo.
+// The aggregator is never listed as a courier itself; each service just stores the aggregator's own id for it.
+function AddCourier({ onAdded }) {
+  const { showToast } = useAppState();
+  const blank = { name: '', cod: true, aggregator: 'lorrigo', services: [{ name: '', type: 'surface', externalId: '' }] };
+  const [open, setOpen] = useState(false); const [f, setF] = useState(blank); const [catalogue, setCatalogue] = useState(null); const [busy, setBusy] = useState(false);
+  const loadCatalogue = useCallback(() => adminApi.aggregatorCouriers('lorrigo').then((x) => setCatalogue(x.items || [])).catch(() => setCatalogue([])), []);
+  useEffect(() => { if (open && f.aggregator === 'lorrigo' && catalogue === null) loadCatalogue(); }, [open, f.aggregator, catalogue, loadCatalogue]);
+  const setService = (i, patch) => setF((s) => ({ ...s, services: s.services.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
+  const save = async () => {
+    const code = slug(f.name);
+    if (f.name.trim().length < 2 || code.length < 2) { showToast('Enter the courier name.', 'error'); return; }
+    if (f.services.some((s) => s.name.trim().length < 2 || (f.aggregator && !s.externalId.trim()))) { showToast('Each service needs a name and its aggregator service.', 'error'); return; }
+    setBusy(true);
+    try {
+      await adminApi.createCourier({ code, name: f.name.trim(), integrationState: f.aggregator ? 'live' : 'sandbox', supportsCod: f.cod, aggregator: f.aggregator || null,
+        services: f.services.map((s) => ({ code: slug(s.name), displayName: s.name.trim(), serviceType: s.type, ...(f.aggregator ? { externalServiceId: s.externalId.trim() } : {}) })) });
+      showToast(`${f.name.trim()} added`); setF(blank); setOpen(false); onAdded();
+    } catch (e) { showToast(e instanceof ApiError ? e.message : 'Could not add the courier', 'error'); } finally { setBusy(false); }
+  };
+  if (!open) return <div style={{ marginBottom: 14 }}><Button primary onClick={() => setOpen(true)}>+ Add courier</Button></div>;
+  return (
+    <section style={{ ...CARD, padding: 16, marginBottom: 14 }}>
+      <div style={{ fontSize: 14, fontWeight: 760, color: 'var(--ops-heading)' }}>Add courier</div>
+      <p style={{ margin: '5px 0 12px', fontSize: 12.5, color: 'var(--ops-muted)' }}>Add the courier sellers will see, for example Delhivery. Bookings go through the aggregator; the aggregator itself is never shown to sellers as a courier.</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 10 }}>
+        <input aria-label="Courier name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Courier name (e.g. Delhivery)" maxLength={120} style={FIELD} />
+        <select aria-label="Books through" value={f.aggregator} onChange={(e) => setF({ ...f, aggregator: e.target.value })} style={FIELD}><option value="lorrigo">Books through Lorrigo</option><option value="">Sandbox (no aggregator)</option></select>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5 }}><input type="checkbox" checked={f.cod} onChange={(e) => setF({ ...f, cod: e.target.checked })} /> Supports COD</label>
+      </div>
+      <div style={{ marginTop: 12, fontSize: 11.5, fontWeight: 750, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--ops-muted)' }}>Services</div>
+      {f.services.map((s, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 8, marginTop: 8 }}>
+          <input aria-label="Service name" value={s.name} onChange={(e) => setService(i, { name: e.target.value })} placeholder="Service name (e.g. Delhivery Surface 0.5 kg)" maxLength={120} style={FIELD} />
+          <select aria-label="Service type" value={s.type} onChange={(e) => setService(i, { type: e.target.value })} style={FIELD}>{['surface', 'express', 'air'].map((t) => <option key={t} value={t}>{title(t)}</option>)}</select>
+          {f.aggregator && (catalogue?.length
+            ? <select aria-label="Aggregator service" value={s.externalId} onChange={(e) => { const c = catalogue.find((x) => x.id === e.target.value); setService(i, { externalId: e.target.value, ...(c && !s.name.trim() ? { name: c.name } : {}), ...(c && ['surface', 'express', 'air'].includes(c.type) ? { type: c.type } : {}) }); }} style={FIELD}><option value="">Pick the Lorrigo service</option>{catalogue.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            : <input aria-label="Aggregator service id" value={s.externalId} onChange={(e) => setService(i, { externalId: e.target.value })} placeholder={catalogue === null ? 'Loading Lorrigo services…' : 'Lorrigo service id'} style={FIELD} />)}
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+        <Button onClick={() => setF({ ...f, services: [...f.services, { name: '', type: 'surface', externalId: '' }] })}>+ Add service</Button>
+        <Button primary disabled={busy} onClick={save}>Save courier</Button><Button onClick={() => { setOpen(false); setF(blank); }}>Cancel</Button>
+      </div>
+    </section>
+  );
+}
+
 // Admin "Manage pincode": a pincode blocked here is blocked for every seller; opening it opens it for all sellers.
 function ManagePincode() {
   const { showToast } = useAppState();
@@ -121,13 +171,13 @@ export default function LiveAdminQueues({ activeId, mobile }) {
     if (kind === 'pickups') return [r.seller_name, <b>{r.warehouse_name}</b>, r.courier_name || 'Courier to be assigned', new Date(r.requested_for).toLocaleDateString('en-IN'), <Badge tone={r.state === 'completed' ? 'ok' : r.state === 'cancelled' ? 'bad' : 'warn'}>{title(r.state)}</Badge>];
     if (kind === 'ndr') return [<b style={{ fontFamily: T.MONO }}>{r.awb}</b>, r.seller_name, <><b>{title(r.reason_code || 'Exception')}</b><small>{r.order_number}</small></>, <Badge tone={r.state === 'open' ? 'warn' : 'ok'}>{title(r.state)}</Badge>];
     const { courier: c, service: s } = r;
-    return [<><b>{c.name}</b><small>{c.code}</small></>, s?.serviceProvider || 'Direct (3PL)', <Badge tone={c.integration_state === 'live' ? 'ok' : 'warn'}>{title(c.integration_state)}</Badge>, s ? title(s.type) : '—', c.supports_cod ? <Badge tone="ok">Enabled</Badge> : <Badge>Off</Badge>];
+    return [<><b>{c.name}</b><small>{c.code}</small></>, c.aggregator ? title(c.aggregator) : s?.serviceProvider || 'Direct (3PL)', <Badge tone={c.integration_state === 'live' ? 'ok' : 'warn'}>{title(c.integration_state)}</Badge>, s ? title(s.type) : '—', c.supports_cod ? <Badge tone="ok">Enabled</Badge> : <Badge>Off</Badge>];
   };
   const empty = <div style={{ ...CARD, padding: 48, textAlign: 'center', color: 'var(--ops-muted)', fontSize: 13.5 }}>{error instanceof ApiError && error.status === 401 ? <><div>Sign in as a platform administrator to load this live queue.</div><div style={{ marginTop: 15 }}><Button onClick={() => nav('admin-login')}>Admin sign in</Button></div></> : error ? 'This list could not be loaded. Try Refresh.' : (qLive || sellerId || providerId) ? 'Nothing matches these filters.' : `No live ${kind} to show yet.`}</div>;
   const courierTabs = (kind === 'shipments' || kind === 'rto') && couriers.length > 0;
   const tab = (id, label) => <button key={id || 'all'} type="button" onClick={() => setProviderId(id)} style={{ height: 31, padding: '0 12px', border: `1px solid ${providerId === id ? T.NAVY : 'var(--ops-border)'}`, borderRadius: 99, background: providerId === id ? T.NAVY : 'var(--ops-surface)', color: providerId === id ? '#fff' : 'var(--ops-heading)', fontSize: 12, fontWeight: 720, cursor: 'pointer' }}>{label}</button>;
   return <div style={{ padding: mobile ? '14px 12px 42px' : '18px 28px 48px', maxWidth: '100%', margin: '0 auto' }}>
-    {kind === 'couriers' && <ManagePincode />}
+    {kind === 'couriers' && <><AddCourier onAdded={load} /><ManagePincode /></>}
     {courierTabs && <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 10 }}>{tab('', 'All couriers')}{couriers.map((c) => tab(c.id, c.name))}</div>}
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 13, flexWrap: 'wrap' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

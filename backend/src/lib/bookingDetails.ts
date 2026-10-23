@@ -9,8 +9,8 @@ export async function loadBookingDetails(client: PoolClient, sellerId: string, o
             c.full_name, c.phone, c.email, c.address_line_1, c.address_line_2, c.landmark, c.city, c.state, c.pincode,
             s.legal_name, cs.external_service_id, h.external_hub_id
        FROM orders o JOIN warehouses w ON w.id = o.warehouse_id JOIN customers c ON c.id = o.customer_id JOIN sellers s ON s.id = o.seller_id
-       JOIN courier_services cs ON cs.id = $3
-       LEFT JOIN courier_pickup_hubs h ON h.warehouse_id = w.id AND h.provider_id = cs.provider_id
+       JOIN courier_services cs ON cs.id = $3 JOIN courier_providers cp ON cp.id = cs.provider_id
+       LEFT JOIN courier_pickup_hubs h ON h.warehouse_id = w.id AND h.aggregator = cp.aggregator
       WHERE o.id = $1 AND o.seller_id = $2`, [orderId, sellerId, serviceId])).rows[0];
   if (!r) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
   const items = (await client.query<{ name: string; sku: string; quantity: number; unit_price_paise: number; weight_g: number }>('SELECT name, sku, quantity, unit_price_paise, weight_g FROM order_items WHERE order_id = $1 ORDER BY created_at', [orderId])).rows;

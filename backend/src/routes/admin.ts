@@ -4,10 +4,13 @@ import { hashSessionToken } from '../lib/session.js';
 import { z } from 'zod';
 import argon2 from 'argon2';
 import { config } from '../config.js';
+import { AGGREGATORS, lorrigoAdapter } from '../couriers/registry.js';
 import { newSessionToken } from '../lib/session.js';
 import { requirePlatformAdmin, requireCommercialAdmin } from '../lib/adminAuth.js';
 import { sessionCookieOptions } from '../lib/cookies.js';
 import { issueCsrfCookie, clearCsrfCookie } from '../lib/csrf.js';
+
+const AGGREGATOR_LABEL: Record<(typeof AGGREGATORS)[number], string> = { lorrigo: 'Lorrigo' };
 
 const courierInput = z.object({
   code: z.string().regex(/^[a-z0-9-]{2,64}$/),
@@ -15,13 +18,15 @@ const courierInput = z.object({
   integrationState: z.enum(['sandbox', 'live', 'maintenance', 'disabled']).default('sandbox'),
   supportsCod: z.boolean().default(false),
   supportsReverse: z.boolean().default(false),
+  // The aggregator this courier books through (null = sandbox). Each service then needs the aggregator's own id for it.
+  aggregator: z.enum(AGGREGATORS).nullable().default(null),
   services: z.array(z.object({
     code: z.string().regex(/^[a-z0-9-]{2,64}$/),
     displayName: z.string().min(2).max(120),
     serviceType: z.enum(['surface', 'express', 'air', 'reverse']),
-    serviceProvider: z.string().trim().max(80).optional(),
+    externalServiceId: z.string().trim().min(1).max(120).optional(),
   })).min(1).max(20),
-});
+}).refine((c) => !c.aggregator || c.services.every((s) => s.externalServiceId), { message: 'Every service needs the aggregator service id.', path: ['services'] });
 
 const accessInput = z.object({
   serviceId: z.string().uuid(),
@@ -102,14 +107,20 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.get('/v1/admin/couriers', { preHandler: requirePlatformAdmin }, async () => {
     const result = await db.query(
-      `SELECT cp.id, cp.code, cp.name, cp.integration_state, cp.supports_cod, cp.supports_reverse,
-              COALESCE(json_agg(json_build_object('id', cs.id, 'code', cs.code, 'name', cs.display_name, 'type', cs.service_type, 'serviceProvider', cs.service_provider))
+      `SELECT cp.id, cp.code, cp.name, cp.integration_state, cp.supports_cod, cp.supports_reverse, cp.aggregator,
+              COALESCE(json_agg(json_build_object('id', cs.id, 'code', cs.code, 'name', cs.display_name, 'type', cs.service_type, 'serviceProvider', cs.service_provider, 'externalServiceId', cs.external_service_id))
                 FILTER (WHERE cs.id IS NOT NULL), '[]') AS services
        FROM courier_providers cp
        LEFT JOIN courier_services cs ON cs.provider_id = cp.id
        GROUP BY cp.id ORDER BY cp.name`,
     );
     return { items: result.rows };
+  });
+
+  // The aggregator's own list of courier services, so an admin picks the id from a list instead of typing it when adding a courier.
+  app.get('/v1/admin/aggregators/:aggregator/couriers', { preHandler: requirePlatformAdmin }, async (request) => {
+    const aggregator = z.enum(AGGREGATORS).parse((request.params as { aggregator: string }).aggregator);
+    return { aggregator, items: await lorrigoAdapter().listServices() };
   });
 
   app.get('/v1/admin/courier-pincode-rules', { preHandler: requirePlatformAdmin }, async () => {
@@ -133,15 +144,15 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/v1/admin/couriers', { preHandler: [requirePlatformAdmin, requireCommercialAdmin] }, async (request) => {
     const input = courierInput.parse(request.body);
     const provider = await db.query<{ id: string }>(
-      `INSERT INTO courier_providers (code, name, integration_state, supports_cod, supports_reverse)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [input.code, input.name, input.integrationState, input.supportsCod, input.supportsReverse],
+      `INSERT INTO courier_providers (code, name, integration_state, supports_cod, supports_reverse, aggregator)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [input.code, input.name, input.integrationState, input.supportsCod, input.supportsReverse, input.aggregator],
     );
     const providerId = provider.rows[0].id;
     for (const service of input.services) {
       await db.query(
-        'INSERT INTO courier_services (provider_id, code, display_name, service_type, service_provider) VALUES ($1, $2, $3, $4, $5)',
-        [providerId, service.code, service.displayName, service.serviceType, service.serviceProvider ?? null],
+        'INSERT INTO courier_services (provider_id, code, display_name, service_type, service_provider, external_service_id) VALUES ($1, $2, $3, $4, $5, $6)',
+        [providerId, service.code, service.displayName, service.serviceType, input.aggregator ? AGGREGATOR_LABEL[input.aggregator] : null, service.externalServiceId ?? null],
       );
     }
     await db.query(

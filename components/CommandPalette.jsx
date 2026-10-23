@@ -30,7 +30,7 @@ const KINDS = [
   ['email:', 'Email', 'email:asha@example.com', 'A customer email'],
   ['status:', 'Shipment status', 'status:ndr', 'ndr · rto · ofd · transit · delivered · lost · pickup'],
   ['tag:', 'Tag', 'tag:priority', 'Shipments with a tag'],
-  ['courier:', 'Courier', 'courier:lorrigo', 'Shipments by courier'],
+  ['courier:', 'Courier', 'courier:delhivery', 'Shipments by courier'],
   ['wh:', 'Warehouse', 'wh:pune', 'A pickup warehouse'],
   ['inv:', 'Invoice', 'inv:NX/26-27/00418', 'A tax invoice'],
   ['pay:', 'Recharge / payment', 'pay:order_ABC123', 'A wallet recharge reference'],
