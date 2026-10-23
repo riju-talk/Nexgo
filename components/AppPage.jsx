@@ -135,7 +135,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
         {hasTable && !isNew && !isNdr && !isWeight && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isCustomSetting && <TablePage activeId={id} mobile={mobile} phone={phone} />}
         {hasForm && !isNew && !isWeight && !isWarehouse && !isRateCalc && !isPincode && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isCustomSetting && <FormPage activeId={id} mobile={mobile} phone={phone} />}
-        {isAdminUtility && !isLiveAdminOperations && !isLiveWorkspaceTool && <AdminUtilityPage activeId={id} mobile={mobile} />}
+        {isAdminUtility && !isLiveAdminPage && !isLiveAdminOperations && !isLiveWorkspaceTool && <AdminUtilityPage activeId={id} mobile={mobile} />}
         {isAccountConfig && <AccountConfiguration mobile={mobile} phone={phone} />}
       </PageContainer>
     </>

@@ -15,7 +15,7 @@ const kycBase = z.object({
   gstApplicable: z.boolean().default(true),
   gstin: z.string().trim().toUpperCase().regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, 'Enter a valid 15-character GSTIN').optional().or(z.literal('').transform(() => undefined)),
   pan: z.string().trim().toUpperCase().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, 'Enter a valid 10-character PAN'),
-  panHolderName: z.string().trim().min(2).max(150).optional().or(z.literal('').transform(() => undefined)),
+  panHolderName: z.string().trim().min(2, 'Name on PAN is required').max(150),
   // The full Aadhaar number is validated here but only its last 4 digits are ever stored.
   aadhaarNumber: z.string().trim().transform((v) => v.replace(/[\s-]/g, '')).pipe(z.string().regex(/^[2-9][0-9]{11}$/, 'Enter a valid 12-digit Aadhaar number')),
   entityType: z.enum(['individual', 'proprietorship', 'partnership', 'private_limited', 'llp', 'public_limited']),

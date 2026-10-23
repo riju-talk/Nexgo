@@ -45,12 +45,16 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
     return { items: result.rows };
   });
 
+  // Live pickups = shipments booked but not yet collected: exactly the sellers' "Pickup pending" tab, across all sellers.
   app.get('/v1/admin/pickups', { preHandler: requirePlatformAdmin }, async () => {
     const result = await db.query(
-      `SELECT p.id, p.state, p.requested_for, p.created_at, s.legal_name AS seller_name, w.name AS warehouse_name, cp.name AS courier_name
-       FROM pickup_requests p JOIN sellers s ON s.id=p.seller_id JOIN warehouses w ON w.id=p.warehouse_id
-       LEFT JOIN courier_providers cp ON cp.id=p.courier_provider_id
-       ORDER BY p.requested_for DESC, p.created_at DESC LIMIT 200`,
+      `SELECT sh.id, sh.awb, sh.state::text AS state, sh.booked_at, sh.pickup_scheduled_at, sh.pickup_deadline_at,
+              COALESCE(sh.pickup_deadline_at, sh.booked_at + interval '1 day') < now() AS overdue,
+              s.legal_name AS seller_name, w.name AS warehouse_name, o.order_number, cp.name AS courier_name
+       FROM shipments sh JOIN orders o ON o.id=sh.order_id JOIN sellers s ON s.id=sh.seller_id
+       LEFT JOIN warehouses w ON w.id=o.warehouse_id JOIN courier_providers cp ON cp.id=sh.provider_id
+       WHERE sh.state IN ('booked','pickup_pending','pickup_scheduled')
+       ORDER BY sh.booked_at DESC LIMIT 500`,
     );
     return { items: result.rows };
   });

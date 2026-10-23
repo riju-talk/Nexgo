@@ -23,7 +23,7 @@ function Section({ n, title, hint, children }) {
 }
 
 // Document chooser. Files are validated here and uploaded together with the KYC submission.
-function DocPicker({ label, file, onPick, onClear }) {
+function DocPicker({ label, file, onPick, onClear, required }) {
   const { showToast } = useAppState(); const ref = useRef(null);
   const choose = (e) => {
     const f = e.target.files?.[0]; e.target.value = ''; if (!f) return;
@@ -33,11 +33,11 @@ function DocPicker({ label, file, onPick, onClear }) {
   };
   return (
     <div>
-      <Label>{label}</Label>
+      <Label required={required}>{label}</Label>
       <input ref={ref} type="file" accept=".pdf,.png,.jpg,.jpeg" hidden onChange={choose} />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <Btn small onClick={() => ref.current?.click()}>{file ? 'Replace file' : '⬆ Choose file'}</Btn>
-        {file ? <><span style={{ fontSize: 12.5, color: T.TEXT }}>{file.name} <small style={{ color: T.TEXT_MUTED }}>({Math.max(1, Math.round(file.size / 1024))} KB · uploads on submit)</small></span><button type="button" onClick={onClear} style={{ border: 0, background: 'transparent', color: T.RED, cursor: 'pointer', fontSize: 12 }}>Remove</button></> : <small style={{ color: T.TEXT_MUTED }}>PDF, PNG or JPG · max 5 MB</small>}
+        {file ? <><span style={{ fontSize: 12.5, color: T.TEXT }}>{file.name} <small style={{ color: T.TEXT_MUTED }}>({Math.max(1, Math.round(file.size / 1024))} KB · uploads on submit)</small></span><button type="button" onClick={onClear} style={{ border: 0, background: 'transparent', color: T.RED, cursor: 'pointer', fontSize: 12 }}>Remove</button></> : <small style={{ color: T.TEXT_MUTED }}>PDF, PNG or JPG · max 3 MB</small>}
       </div>
     </div>
   );
@@ -59,7 +59,11 @@ export default function LiveKyc({ mobile }) {
   const aadhaarDigits = f.aadhaar.replace(/\D/g, '');
   const problems = [
     !RULES.pan.test(f.pan) && 'Enter a valid 10-character PAN (e.g. ABCDE1234F)',
+    f.panHolderName.trim().length < 2 && 'Enter the name exactly as printed on the PAN card',
+    !files.pan && 'Upload your PAN card',
     !RULES.aadhaar.test(aadhaarDigits) && 'Enter a valid 12-digit Aadhaar number',
+    !files.aadhaarFront && 'Upload the front side of your Aadhaar',
+    !files.aadhaarBack && 'Upload the back side of your Aadhaar',
     f.gstApplicable && !RULES.gstin.test(f.gstin) && 'Enter a valid 15-character GSTIN, or switch GST to not applicable',
     f.registeredAddress.trim().length < 10 && 'Enter the full registered address',
     f.bankAccountHolder.trim().length < 2 && 'Enter the bank account holder name',
@@ -71,7 +75,7 @@ export default function LiveKyc({ mobile }) {
     e.preventDefault(); if (problems.length) return showToast(problems[0], 'error');
     setBusy(true);
     try {
-      const body = { gstApplicable: f.gstApplicable, gstin: f.gstApplicable ? f.gstin : undefined, pan: f.pan, panHolderName: f.panHolderName.trim() || undefined, aadhaarNumber: aadhaarDigits, entityType: f.entityType, registeredAddress: f.registeredAddress.trim(), bankAccountHolder: f.bankAccountHolder.trim(), bankAccountNumber: f.bankAccountNumber, bankIfsc: f.bankIfsc };
+      const body = { gstApplicable: f.gstApplicable, gstin: f.gstApplicable ? f.gstin : undefined, pan: f.pan, panHolderName: f.panHolderName.trim(), aadhaarNumber: aadhaarDigits, entityType: f.entityType, registeredAddress: f.registeredAddress.trim(), bankAccountHolder: f.bankAccountHolder.trim(), bankAccountNumber: f.bankAccountNumber, bankIfsc: f.bankIfsc };
       setCurrent(await apiFetch('/v1/seller/kyc', { method: 'POST', body })); setEditing(false); setF((x) => ({ ...x, aadhaar: '', bankAccountNumber: '' }));
       const uploads = [['pan', 'kyc_pan'], ['aadhaarFront', 'kyc_aadhaar_front'], ['aadhaarBack', 'kyc_aadhaar_back'], ['gst', 'kyc_gst'], ['bank', 'kyc_bank']].filter(([k]) => files[k]);
       const failed = [];
@@ -112,15 +116,15 @@ export default function LiveKyc({ mobile }) {
           <Section n="1" title="PAN card" hint="Permanent Account Number of the business or proprietor.">
             <div style={{ display: 'grid', gridTemplateColumns: two, gap: 14 }}>
               <label><Label required>PAN number</Label><input style={{ ...FIELD, width: '100%', height: 42, textTransform: 'uppercase' }} value={f.pan} maxLength={10} onChange={up('pan')} placeholder="ABCDE1234F" /></label>
-              <label><Label>Name on PAN</Label><input style={{ ...FIELD, width: '100%', height: 42 }} value={f.panHolderName} maxLength={150} onChange={set('panHolderName')} /></label>
-              <DocPicker label="Upload PAN card" file={files.pan} onPick={(x) => setFiles({ ...files, pan: x })} onClear={() => setFiles({ ...files, pan: null })} />
+              <label><Label required>Name on PAN</Label><input style={{ ...FIELD, width: '100%', height: 42 }} value={f.panHolderName} maxLength={150} onChange={set('panHolderName')} /></label>
+              <DocPicker required label="Upload PAN card" file={files.pan} onPick={(x) => setFiles({ ...files, pan: x })} onClear={() => setFiles({ ...files, pan: null })} />
             </div>
           </Section>
           <Section n="2" title="Aadhaar" hint="Only the last 4 digits are stored. The full number is never saved.">
             <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3,1fr)', gap: 14 }}>
               <label><Label required>Aadhaar number</Label><input style={{ ...FIELD, width: '100%', height: 42, letterSpacing: '.08em' }} value={aadhaarDigits.replace(/(\d{4})(?=\d)/g, '$1 ')} inputMode="numeric" maxLength={14} onChange={(e) => setF({ ...f, aadhaar: e.target.value.replace(/\D/g, '').slice(0, 12) })} placeholder="XXXX XXXX XXXX" /></label>
-              <DocPicker label="Upload Aadhaar: front side" file={files.aadhaarFront} onPick={(x) => setFiles({ ...files, aadhaarFront: x })} onClear={() => setFiles({ ...files, aadhaarFront: null })} />
-              <DocPicker label="Upload Aadhaar: back side" file={files.aadhaarBack} onPick={(x) => setFiles({ ...files, aadhaarBack: x })} onClear={() => setFiles({ ...files, aadhaarBack: null })} />
+              <DocPicker required label="Upload Aadhaar: front side" file={files.aadhaarFront} onPick={(x) => setFiles({ ...files, aadhaarFront: x })} onClear={() => setFiles({ ...files, aadhaarFront: null })} />
+              <DocPicker required label="Upload Aadhaar: back side" file={files.aadhaarBack} onPick={(x) => setFiles({ ...files, aadhaarBack: x })} onClear={() => setFiles({ ...files, aadhaarBack: null })} />
             </div>
           </Section>
           <Section n="3" title="GST (optional)" hint="Not mandatory. Add your GSTIN only if your business is GST registered.">
