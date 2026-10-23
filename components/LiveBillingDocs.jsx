@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
+import { saveRows } from '@/lib/exportFile';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
@@ -47,12 +48,9 @@ export default function LiveBillingDocs({ kind, mobile, embedded = false }) {
   const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
   const unauth = error instanceof ApiError && error.status === 401;
 
-  const exportCsv = () => {
-    const text = cfg.csv(rows).map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(',')).join('\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
-    a.download = `${kind}.csv`; a.click(); URL.revokeObjectURL(a.href);
-    showToast(`${cfg.heading} exported`);
+  const exportFile = async (format) => {
+    await saveRows(cfg.csv(rows), `${kind}-${new Date().toISOString().slice(0, 10)}`, format, cfg.heading);
+    showToast(`${cfg.heading} exported (${format === 'xlsx' ? 'Excel' : 'CSV'})`);
   };
 
   return (
@@ -71,7 +69,7 @@ export default function LiveBillingDocs({ kind, mobile, embedded = false }) {
             <section style={{ ...CARD, overflow: 'hidden' }}>
               <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${T.DIVIDER}` }}>
                 <b style={{ color: T.TEXT, fontSize: 14 }}>{cfg.heading}</b>
-                <button onClick={exportCsv} style={{ height: 32, padding: '0 11px', borderRadius: 8, border: `1px solid ${T.INPUT_BORDER}`, background: T.SURFACE, color: T.TEXT, fontWeight: 720, fontSize: 12, cursor: 'pointer' }}>Export CSV</button>
+                <span style={{ display: 'flex', gap: 8 }}>{[['xlsx', 'Export Excel'], ['csv', 'Export CSV']].map(([fmt, text]) => <button key={fmt} onClick={() => exportFile(fmt)} style={{ height: 32, padding: '0 11px', borderRadius: 8, border: `1px solid ${T.INPUT_BORDER}`, background: T.SURFACE, color: T.TEXT, fontWeight: 720, fontSize: 12, cursor: 'pointer' }}>{text}</button>)}</span>
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse' }}>

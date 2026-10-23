@@ -270,11 +270,11 @@ export default function LiveTrack({ mobile }) {
   };
 
   // Failed orders: download them as Excel (with the reason), fix the cells, upload the file: orders are updated in place and couriers assigned.
-  const downloadFailed = async () => {
+  const downloadFailed = async (format = 'xlsx') => {
     const source = visible.filter((r) => r.state === 'failed');
     if (!source.length) return showToast('There are no failed orders to download.', 'error');
-    await saveRows(failedSheet(source), `failed-orders-${isoDay(Date.now())}`, 'xlsx', 'Failed orders');
-    showToast(`${source.length} failed order${source.length === 1 ? '' : 's'} downloaded. Correct them in Excel and upload the file.`);
+    await saveRows(failedSheet(source), `failed-orders-${isoDay(Date.now())}`, format, 'Failed orders');
+    showToast(`${source.length} failed order${source.length === 1 ? '' : 's'} downloaded. Correct them and upload the file.`);
   };
   const uploadCorrected = async (file) => {
     if (!file) return;
@@ -377,7 +377,8 @@ export default function LiveTrack({ mobile }) {
         <div style={{ ...CARD, padding: '12px 14px', marginBottom: 12, boxShadow: 'none' }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <div style={{ flex: '1 1 320px', fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.5 }}>These orders have no courier. Download the Excel file, correct what it flags (invalid mobile number, missing address, pincode, weight or size), then upload it to re-assign.</div>
-            <Btn onClick={downloadFailed}>Download Excel file</Btn>
+            <Btn onClick={() => downloadFailed('xlsx')}>Download Excel file</Btn>
+            <Btn onClick={() => downloadFailed('csv')}>Download CSV file</Btn>
             <Btn primary disabled={fixing} onClick={() => fixInput.current?.click()}>{fixing ? 'Re-assigning…' : 'Upload corrected file'}</Btn>
             <input ref={fixInput} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; uploadCorrected(file); }} />
           </div>
