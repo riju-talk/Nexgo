@@ -36,6 +36,16 @@ const schema = z.object({
   LORRIGO_API_KEY: z.string().optional(),
   LORRIGO_BASE_URL: z.string().url().default('https://app.lorrigo.com/api/v2'),
   LORRIGO_WEBHOOK_TOKEN: z.string().min(24).optional(),
+  // The company that issues the monthly tax invoice (printed in the From block and the bank details). Unset lines are left off the invoice.
+  COMPANY_NAME: z.string().default('NEXGO Logistics Technologies Pvt. Ltd.'),
+  COMPANY_ADDRESS: z.string().default(''),
+  COMPANY_GSTIN: z.string().default(''),
+  COMPANY_REGD_OFFICE: z.string().default(''),
+  COMPANY_BANK_ACCOUNT_NAME: z.string().default(''),
+  COMPANY_BANK_NAME: z.string().default(''),
+  COMPANY_BANK_ACCOUNT_NO: z.string().default(''),
+  COMPANY_BANK_IFSC: z.string().default(''),
+  COMPANY_BANK_BRANCH: z.string().default(''),
   SMTP_HOST: z.string().default('localhost'),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
 });

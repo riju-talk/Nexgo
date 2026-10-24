@@ -121,18 +121,33 @@ export async function invoiceRoutes(app: FastifyInstance) {
     }));
   });
 
-  // The shipments an invoice was raised for (same rule the generator uses: not cancelled, booked inside the period), for the Excel / CSV download.
+  // Everything the monthly tax invoice (print page) and its shipment-wise Excel / CSV annexure need.
+  // Lines: every shipment booked inside the period, cancelled ones included at zero (as in the reference annexure); only non-cancelled ones are billed, the same rule the generator uses.
   app.get('/v1/seller/invoices/:invoiceId/lines', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
     const invoiceId = z.string().uuid().parse((request.params as { invoiceId: string }).invoiceId);
     return withSellerTransaction(p.sellerId, async (client) => {
-      const invoice = (await client.query('SELECT id, invoice_number, period_start, period_end, subtotal_paise, gst_paise, total_paise, shipment_count, status, issued_at FROM invoices WHERE id=$1 AND seller_id=$2', [invoiceId, p.sellerId])).rows[0];
+      const invoice = (await client.query('SELECT id, invoice_number, period_start::text AS period_start, period_end::text AS period_end, subtotal_paise, gst_paise, total_paise, shipment_count, status, issued_at, created_at FROM invoices WHERE id=$1 AND seller_id=$2', [invoiceId, p.sellerId])).rows[0];
       if (!invoice) throw Object.assign(new Error('Invoice not found'), { statusCode: 404 });
+      const seller = (await client.query(
+        `SELECT sl.legal_name, sl.nexgo_code, k.gstin, k.registered_address,
+                (SELECT u.phone FROM seller_memberships m JOIN users u ON u.id=m.user_id WHERE m.seller_id=sl.id AND m.role='owner' LIMIT 1) AS phone
+           FROM sellers sl LEFT JOIN seller_kyc k ON k.seller_id=sl.id WHERE sl.id=$1`, [p.sellerId])).rows[0];
       const lines = (await client.query(
-        `SELECT s.awb, s.booked_at, o.order_number, o.payment_mode, cp.name AS courier_name, cs.display_name AS service_name, s.chargeable_weight_g, s.shipping_charge_paise
-           FROM shipments s JOIN orders o ON o.id=s.order_id JOIN courier_providers cp ON cp.id=s.provider_id JOIN courier_services cs ON cs.id=s.service_id
-          WHERE s.seller_id=$1 AND s.state <> 'cancelled' AND s.booked_at::date BETWEEN $2 AND $3 ORDER BY s.booked_at, s.awb LIMIT 20000`, [p.sellerId, invoice.period_start, invoice.period_end])).rows;
-      return { invoice, lines };
+        `SELECT s.awb, s.state, s.booked_at, s.chargeable_weight_g, s.shipping_charge_paise, s.quote_snapshot, s.destination_pincode, s.destination_city,
+                o.order_number, o.nexgo_order_id, o.payment_mode, o.subtotal_paise AS order_amount_paise, o.cod_amount_paise,
+                cp.name AS courier_name, cs.display_name AS service_name,
+                cu.pincode AS customer_pincode, cu.city AS customer_city, cu.state AS customer_state,
+                w.city AS wh_city, w.state AS wh_state, w.pincode AS wh_pincode,
+                (SELECT COALESCE(json_agg(json_build_object('sku', i.sku, 'name', i.name, 'quantity', i.quantity) ORDER BY i.created_at), '[]'::json) FROM order_items i WHERE i.order_id=o.id) AS items
+           FROM shipments s JOIN orders o ON o.id=s.order_id JOIN customers cu ON cu.id=o.customer_id JOIN warehouses w ON w.id=o.warehouse_id
+           JOIN courier_providers cp ON cp.id=s.provider_id JOIN courier_services cs ON cs.id=s.service_id
+          WHERE s.seller_id=$1 AND s.booked_at::date BETWEEN $2 AND $3 ORDER BY s.booked_at, s.awb LIMIT 20000`, [p.sellerId, invoice.period_start, invoice.period_end])).rows;
+      const company = {
+        name: config.COMPANY_NAME, address: config.COMPANY_ADDRESS, gstin: config.COMPANY_GSTIN, regdOffice: config.COMPANY_REGD_OFFICE,
+        bankAccountName: config.COMPANY_BANK_ACCOUNT_NAME, bank: config.COMPANY_BANK_NAME, accountNo: config.COMPANY_BANK_ACCOUNT_NO, ifsc: config.COMPANY_BANK_IFSC, branch: config.COMPANY_BANK_BRANCH,
+      };
+      return { invoice, seller, company, lines };
     });
   });
 

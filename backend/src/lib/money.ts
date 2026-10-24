@@ -21,17 +21,19 @@ export const GST_BPS = 1800; // 18% GST on freight and COD, invoiced after the s
 export function calculateRate(rate: RateRow, weightG: number, isCod: boolean, orderValuePaise = 0) {
   const extraWeight = Math.max(0, weightG - rate.base_weight_g);
   const extraSlabs = Math.ceil(extraWeight / rate.additional_weight_g);
-  const transportPaise = rate.base_price_paise + extraSlabs * rate.additional_price_paise;
+  const extraWeightPaise = extraSlabs * rate.additional_price_paise;
+  const transportPaise = rate.base_price_paise + extraWeightPaise;
   const fuelSurchargePaise = Math.round((transportPaise * rate.fuel_surcharge_bps) / 10_000);
   const codPercentPaise = Math.round((orderValuePaise * (rate.cod_percent_bps ?? 0)) / 10_000);
   const codFeePaise = isCod ? Math.max(rate.cod_fee_paise, codPercentPaise) : 0;
   const totalPaise = transportPaise + fuelSurchargePaise + codFeePaise;
   const gstPaise = Math.round((totalPaise * GST_BPS) / 10_000);
-  const rtoTransportPaise = (rate.rto_base_price_paise ?? rate.base_price_paise) + extraSlabs * (rate.rto_additional_price_paise ?? rate.additional_price_paise);
+  const rtoExtraWeightPaise = extraSlabs * (rate.rto_additional_price_paise ?? rate.additional_price_paise);
+  const rtoTransportPaise = (rate.rto_base_price_paise ?? rate.base_price_paise) + rtoExtraWeightPaise;
   const rtoFuelPaise = Math.round((rtoTransportPaise * rate.fuel_surcharge_bps) / 10_000);
   const rtoPaise = rtoTransportPaise + rtoFuelPaise;
   const rtoGstPaise = Math.round((rtoPaise * GST_BPS) / 10_000);
-  return { transportPaise, fuelSurchargePaise, codFeePaise, extraSlabs, totalPaise, gstPaise, totalWithGstPaise: totalPaise + gstPaise, rtoPaise, rtoGstPaise, rtoWithGstPaise: rtoPaise + rtoGstPaise };
+  return { transportPaise, extraWeightPaise, rtoExtraWeightPaise, fuelSurchargePaise, codFeePaise, extraSlabs, totalPaise, gstPaise, totalWithGstPaise: totalPaise + gstPaise, rtoPaise, rtoGstPaise, rtoWithGstPaise: rtoPaise + rtoGstPaise };
 }
 
 // Couriers bill the greater of dead and volumetric weight. Volumetric kg is

@@ -6,6 +6,7 @@ import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
 import { BLUE, Btn, CARD, FIELD, ListTab, Pill, Stat, Table, dateTime, dayText, inr, isoDay, kg, titleCase } from './Kit';
+import { annexureRows } from './documents/monthlyInvoice';
 import LiveBillingDocs from './LiveBillingDocs';
 import LiveRateCalculator from './LiveRateCalculator';
 import LiveRateCard from './LiveRateCard';
@@ -26,18 +27,9 @@ const money = (paise) => (Number(paise) ? inr(paise) : dash);
 const rupee = (paise) => Math.round(Number(paise || 0)) / 100;
 const fileSafe = (v) => String(v || 'document').replace(/[^A-Za-z0-9._-]+/g, '-');
 async function saveInvoice(invoice, format) {
-  const { invoice: inv, lines } = await apiFetch(`/v1/seller/invoices/${invoice.id}/lines`);
-  const rows = [
-    ['Invoice number', inv.invoice_number], ['Period', `${dayText(inv.period_start)} to ${dayText(inv.period_end)}`], ['Status', titleCase(inv.status)], ['Shipments', inv.shipment_count],
-    ['Subtotal (INR)', rupee(inv.subtotal_paise)], ['GST 18% (INR)', rupee(inv.gst_paise)], ['Invoice amount (INR)', rupee(inv.total_paise)], [],
-    ['#', 'AWB', 'Booked on', 'Order', 'Courier', 'Service', 'Payment', 'Weight (kg)', 'Shipping charge excl. GST (INR)'],
-    ...lines.map((l, i) => [i + 1, l.awb, dayText(l.booked_at), l.order_number, l.courier_name, l.service_name, l.payment_mode === 'cod' ? 'COD' : 'Prepaid', Number(l.chargeable_weight_g || 0) / 1000, rupee(l.shipping_charge_paise)]),
-  ];
-  // Totals row, and a visible difference if the lines do not add up to the invoice subtotal (e.g. a charge was adjusted after the invoice was cut).
-  const linesTotal = lines.reduce((n, l) => n + Number(l.shipping_charge_paise || 0), 0);
-  rows.push(['', 'TOTAL', '', '', '', '', '', '', rupee(linesTotal)]);
-  if (linesTotal !== Number(inv.subtotal_paise)) rows.push(['', 'Difference vs invoice subtotal', '', '', '', '', '', '', rupee(Number(inv.subtotal_paise) - linesTotal)]);
-  await saveRows(rows, `invoice-${fileSafe(inv.invoice_number)}`, format, 'Invoice');
+  // Same shipment-wise annexure (and column order) as the reference invoice sheet; the layout lives in documents/monthlyInvoice.js.
+  const data = await apiFetch(`/v1/seller/invoices/${invoice.id}/lines`);
+  await saveRows(annexureRows(data), `invoice-${fileSafe(data.invoice.invoice_number)}`, format, 'Invoice');
 }
 async function saveCodStatement(cycle, no, format) {
   const { cycle: c, lines } = await apiFetch(`/v1/seller/cod-remittances/${cycle.id}/lines`);
@@ -53,10 +45,10 @@ async function saveCodStatement(cycle, no, format) {
   if (codTotal !== Number(c.cod_collected_paise) || freightTotal !== Number(c.charges_deducted_paise)) rows.push(['', 'Difference vs remittance (statement figures minus listed lines)', '', '', '', '', rupee(Number(c.cod_collected_paise) - codTotal), rupee(Number(c.charges_deducted_paise) - freightTotal)]);
   await saveRows(rows, `cod-statement-${fileSafe(no)}`, format, 'COD statement');
 }
+// The PDF is the printable monthly tax invoice page (browser Print / Save as PDF), so it works without server-side PDF storage.
 async function openInvoicePdf(invoice) {
-  const x = await apiFetch(`/v1/seller/invoices/${invoice.id}/download`);
-  if (x?.status === 'ready' && x.downloadUrl) { window.open(x.downloadUrl, '_blank', 'noopener'); return true; }
-  return false;
+  window.open(`/documents/monthly-invoice?id=${encodeURIComponent(invoice.id)}`, '_blank', 'noopener');
+  return true;
 }
 // Small Excel / CSV (and optional PDF) download buttons for one row; failures are reported instead of failing silently.
 function RowDownloads({ run, pdf }) {
