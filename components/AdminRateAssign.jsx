@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminApi, apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
+import { ZONES, toPaise, kgToG, slabsFromRates, blankSlab, nextSlabStartKg, validateSlabs, buildRatePayload } from '@/lib/rateConfig';
 
 const CARD = { background: 'var(--ops-surface)', border: '1px solid var(--ops-border)', borderRadius: 12, boxShadow: 'var(--ops-shadow)' };
 const FIELD = { height: 34, boxSizing: 'border-box', border: '1px solid var(--ops-border)', borderRadius: 8, padding: '0 9px', background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 13, width: '100%' };
@@ -11,36 +12,14 @@ const TH = { padding: '8px 10px', textAlign: 'center', fontSize: 11, fontWeight:
 const dateOnly = (v) => (v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '');
 const errText = (e, fallback) => (e instanceof ApiError ? e.message : fallback);
 
-// The five lane zones the rating engine uses (same names and order as SwiftCourier's rate card).
-const ZONES = [['within_city', 'Within city'], ['within_state', 'Within state'], ['metro_to_metro', 'Metro to metro'], ['rest_of_india', 'Rest of India'], ['ne_jk', 'North-East & J&K']];
 const PRICE_COLS = [['fwdBase', 'Forward base'], ['fwdAdd', 'Forward additional'], ['rtoBase', 'RTO base'], ['rtoAdd', 'RTO additional']];
-const rupees = (paise) => (paise === null || paise === undefined ? '' : String(Number(paise) / 100));
-const toPaise = (v) => Math.round(Number(v) * 100);
 const grams = (g) => (g >= 1000 ? `${g / 1000} kg` : `${g} g`);
 const money = (paise) => (paise === null || paise === undefined ? '—' : `₹${(Number(paise) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-let slabCounter = 0;
 
 function Btn({ children, onClick, primary, disabled, danger }) {
   return <button type="button" disabled={disabled} onClick={onClick} style={{ minHeight: 34, padding: '0 13px', borderRadius: 8, border: primary ? '1px solid var(--ac, #3877fc)' : '1px solid var(--ops-border)', background: primary ? 'var(--ac, #3877fc)' : 'var(--ops-surface)', color: primary ? '#fff' : danger ? '#B23A2B' : 'var(--ops-heading)', fontSize: 12.5, fontWeight: 720, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, whiteSpace: 'nowrap' }}>{children}</button>;
 }
 const Label = ({ children }) => <label style={{ display: 'grid', gap: 4, fontSize: 12, color: 'var(--ops-muted)', minWidth: 0 }}>{children}</label>;
-
-// One weight slab of a courier service, built from the stored rows (one row per zone). A card that only has the old single 'national' price fills all five zones with it.
-function slabsFromRates(rates) {
-  const byKey = new Map();
-  for (const r of rates) {
-    const key = `${r.service_id}|${r.min_weight_g}`;
-    if (!byKey.has(key)) byKey.set(key, { key: `s${slabCounter++}`, serviceId: r.service_id, minWeightG: r.min_weight_g, baseWeightG: r.base_weight_g, additionalWeightG: r.additional_weight_g, fromKg: String(r.min_weight_g / 1000), baseKg: String(r.base_weight_g / 1000), addKg: String(r.additional_weight_g / 1000), codFee: rupees(r.cod_fee_paise), codPct: String((r.cod_percent_bps || 0) / 100), fuelBps: r.fuel_surcharge_bps || 0, rows: {} });
-    byKey.get(key).rows[r.zone_code] = { fwdBase: rupees(r.base_price_paise), fwdAdd: rupees(r.additional_price_paise), rtoBase: rupees(r.rto_base_price_paise), rtoAdd: rupees(r.rto_additional_price_paise) };
-  }
-  return [...byKey.values()].map((s) => {
-    const zones = {};
-    for (const [z] of ZONES) zones[z] = s.rows[z] || s.rows.national || { fwdBase: '', fwdAdd: '', rtoBase: '', rtoAdd: '' };
-    const { rows, ...rest } = s;
-    return { ...rest, zones };
-  });
-}
-const blankSlab = (serviceId, minWeightG = 0) => ({ key: `s${slabCounter++}`, serviceId, minWeightG, baseWeightG: 500, additionalWeightG: 500, fromKg: String(minWeightG / 1000), baseKg: '0.5', addKg: '0.5', codFee: '', codPct: '', fuelBps: 0, zones: Object.fromEntries(ZONES.map(([z]) => [z, { fwdBase: '', fwdAdd: '', rtoBase: '', rtoAdd: '' }])) });
 
 export default function AdminRateAssign({ sellerId, mode, mobile }) {
   const router = useRouter();
@@ -76,45 +55,15 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
 
   const patchSlab = (key, patch) => setSlabs((all) => all.map((s) => (s.key === key ? { ...s, ...patch } : s)));
   const patchCell = (key, zone, col, value) => setSlabs((all) => all.map((s) => (s.key === key ? { ...s, zones: { ...s.zones, [zone]: { ...s.zones[zone], [col]: value } } } : s)));
-  const kgToG = (v) => Math.round(Number(v) * 1000);
   const serviceOf = (id) => setup.services.find((x) => x.id === id);
-  const validate = () => {
-    if (!slabs.length) return 'Add at least one rate configuration.';
-    const seen = new Set();
-    for (const [n, s] of slabs.entries()) {
-      const svc = serviceOf(s.serviceId);
-      if (!svc) return `Rate Configuration #${n + 1}: choose a courier.`;
-      const where = `Rate Configuration #${n + 1} (${svc.provider_name} ${svc.name})`;
-      if (!(Number(s.baseKg) > 0) || !(Number(s.addKg) > 0)) return `${where}: weight and additional weight must be more than 0.`;
-      if (!(Number(s.fromKg) >= 0)) return `${where}: "slab starts at" weight is not a number.`;
-      const dup = `${s.serviceId}|${kgToG(s.fromKg)}`;
-      if (seen.has(dup)) return `${where}: another configuration already covers this courier from ${s.fromKg} kg (change "Slab starts at" under COD charges and weight slab start).`;
-      seen.add(dup);
-      for (const [z, label] of ZONES) {
-        for (const col of ['fwdBase', 'fwdAdd']) { const v = s.zones[z][col]; if (v === '' || !(Number(v) >= 0)) return `${where}, ${label}: enter the forward ${col === 'fwdBase' ? 'price' : 'additional price'}.`; }
-        for (const col of ['rtoBase', 'rtoAdd']) { const v = s.zones[z][col]; if (v !== '' && !(Number(v) >= 0)) return `${where}, ${label}: the RTO price is not a number.`; }
-      }
-      if (s.codFee !== '' && !(Number(s.codFee) >= 0)) return `${where}: COD charge is not a number.`;
-      if (s.codPct !== '' && !(Number(s.codPct) >= 0 && Number(s.codPct) <= 100)) return `${where}: COD % must be between 0 and 100.`;
-    }
-    return '';
-  };
+  const validate = () => validateSlabs(slabs, setup.services);
 
   const save = async () => {
     const problem = validate();
     if (problem) { showToast(problem, 'error'); return; }
     setBusy(true);
     try {
-      const rates = []; const access = []; const used = new Set(slabs.map((x) => x.serviceId));
-      for (const service of setup.services) if (used.has(service.id)) access.push({ serviceId: service.id, codEnabled: !!offered[service.id]?.cod });
-      for (const s of slabs) {
-        for (const [z] of ZONES) {
-          const c = s.zones[z];
-          rates.push({ serviceId: s.serviceId, zoneCode: z, minWeightG: kgToG(s.fromKg) || 0, baseWeightG: kgToG(s.baseKg), basePricePaise: toPaise(c.fwdBase), additionalWeightG: kgToG(s.addKg), additionalPricePaise: toPaise(c.fwdAdd),
-            codFeePaise: s.codFee === '' ? 0 : toPaise(s.codFee), codPercentBps: s.codPct === '' ? 0 : Math.round(Number(s.codPct) * 100), fuelSurchargeBps: s.fuelBps || 0,
-            rtoBasePricePaise: c.rtoBase === '' ? null : toPaise(c.rtoBase), rtoAdditionalPricePaise: c.rtoAdd === '' ? null : toPaise(c.rtoAdd) });
-        }
-      }
+      const { rates, access, used } = buildRatePayload(slabs, offered, setup.services);
       await apiFetch(`/v1/admin/sellers/${sellerId}/rate-cards`, { method: 'POST', body: { name: cardName.trim().length >= 2 ? cardName.trim() : `Rates for ${setup.seller.legal_name}`, rates, access, replaceAll: true } });
       // A courier that was on for the seller and is now switched off.
       for (const service of setup.services) if (service.access_state === 'enabled' && !used.has(service.id)) await adminApi.setSellerCourierAccess(sellerId, { serviceId: service.id, state: 'disabled', accountMode: 'platform', codEnabled: false, autoAssignEligible: true }).catch(() => {});
@@ -185,8 +134,7 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
   const addConfig = () => setSlabs((all) => [...all, blankSlab('')]);
   const pickCourier = (key, serviceId) => {
     // A second configuration for the same courier is a heavier slab: it starts where the heaviest existing one's first weight ends.
-    const others = slabs.filter((x) => x.key !== key && x.serviceId === serviceId);
-    patchSlab(key, { serviceId, fromKg: others.length ? String(Math.max(...others.map((x) => Number(x.baseKg) || 0))) : '0' });
+    patchSlab(key, { serviceId, fromKg: nextSlabStartKg(slabs, key, serviceId) });
     const svc = serviceOf(serviceId);
     // COD is on by default only for a courier the seller did not have before; an existing choice is kept.
     if (svc) setOffered((o) => ({ ...o, [serviceId]: { on: true, cod: o[serviceId]?.on ? o[serviceId].cod : !!svc.supports_cod } }));
