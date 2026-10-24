@@ -30,7 +30,7 @@ function slabsFromRates(rates) {
   const byKey = new Map();
   for (const r of rates) {
     const key = `${r.service_id}|${r.min_weight_g}`;
-    if (!byKey.has(key)) byKey.set(key, { key: `s${slabCounter++}`, serviceId: r.service_id, minWeightG: r.min_weight_g, baseWeightG: r.base_weight_g, additionalWeightG: r.additional_weight_g, codFee: rupees(r.cod_fee_paise), codPct: String((r.cod_percent_bps || 0) / 100), fuelBps: r.fuel_surcharge_bps || 0, rows: {} });
+    if (!byKey.has(key)) byKey.set(key, { key: `s${slabCounter++}`, serviceId: r.service_id, minWeightG: r.min_weight_g, baseWeightG: r.base_weight_g, additionalWeightG: r.additional_weight_g, fromKg: String(r.min_weight_g / 1000), baseKg: String(r.base_weight_g / 1000), addKg: String(r.additional_weight_g / 1000), codFee: rupees(r.cod_fee_paise), codPct: String((r.cod_percent_bps || 0) / 100), fuelBps: r.fuel_surcharge_bps || 0, rows: {} });
     byKey.get(key).rows[r.zone_code] = { fwdBase: rupees(r.base_price_paise), fwdAdd: rupees(r.additional_price_paise), rtoBase: rupees(r.rto_base_price_paise), rtoAdd: rupees(r.rto_additional_price_paise) };
   }
   return [...byKey.values()].map((s) => {
@@ -40,7 +40,7 @@ function slabsFromRates(rates) {
     return { ...rest, zones };
   });
 }
-const blankSlab = (serviceId, minWeightG = 0) => ({ key: `s${slabCounter++}`, serviceId, minWeightG, baseWeightG: 500, additionalWeightG: 500, codFee: '', codPct: '', fuelBps: 0, zones: Object.fromEntries(ZONES.map(([z]) => [z, { fwdBase: '', fwdAdd: '', rtoBase: '', rtoAdd: '' }])) });
+const blankSlab = (serviceId, minWeightG = 0) => ({ key: `s${slabCounter++}`, serviceId, minWeightG, baseWeightG: 500, additionalWeightG: 500, fromKg: String(minWeightG / 1000), baseKg: '0.5', addKg: '0.5', codFee: '', codPct: '', fuelBps: 0, zones: Object.fromEntries(ZONES.map(([z]) => [z, { fwdBase: '', fwdAdd: '', rtoBase: '', rtoAdd: '' }])) });
 
 export default function AdminRateAssign({ sellerId, mode, mobile }) {
   const router = useRouter();
@@ -76,32 +76,27 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
 
   const patchSlab = (key, patch) => setSlabs((all) => all.map((s) => (s.key === key ? { ...s, ...patch } : s)));
   const patchCell = (key, zone, col, value) => setSlabs((all) => all.map((s) => (s.key === key ? { ...s, zones: { ...s.zones, [zone]: { ...s.zones[zone], [col]: value } } } : s)));
-  const toggle = (service, on) => {
-    setOffered((o) => ({ ...o, [service.id]: { ...(o[service.id] || {}), on } }));
-    if (on && !slabs.some((s) => s.serviceId === service.id)) setSlabs((all) => [...all, blankSlab(service.id)]);
-  };
-
+  const kgToG = (v) => Math.round(Number(v) * 1000);
+  const serviceOf = (id) => setup.services.find((x) => x.id === id);
   const validate = () => {
-    for (const service of setup.services) {
-      if (!offered[service.id]?.on) continue;
-      const mine = slabs.filter((s) => s.serviceId === service.id);
-      if (!mine.length) return `${service.provider_name} ${service.name}: add at least one weight slab.`;
-      const starts = new Set();
-      for (const s of mine) {
-        const where = `${service.provider_name} ${service.name}, slab from ${grams(Number(s.minWeightG) || 0)}`;
-        if (!(Number(s.baseWeightG) > 0) || !(Number(s.additionalWeightG) > 0)) return `${where}: base weight and additional weight must be more than 0.`;
-        if (starts.has(Number(s.minWeightG))) return `${service.provider_name} ${service.name}: two slabs start at the same weight.`;
-        starts.add(Number(s.minWeightG));
-        for (const [z, label] of ZONES) {
-          for (const col of ['fwdBase', 'fwdAdd']) { const v = s.zones[z][col]; if (v === '' || !(Number(v) >= 0)) return `${where}, ${label}: enter the ${col === 'fwdBase' ? 'forward base' : 'forward additional'} price.`; }
-          for (const col of ['rtoBase', 'rtoAdd']) { const v = s.zones[z][col]; if (v !== '' && !(Number(v) >= 0)) return `${where}, ${label}: the RTO price is not a number.`; }
-        }
-        if (s.codFee !== '' && !(Number(s.codFee) >= 0)) return `${where}: COD charge is not a number.`;
-        if (s.codPct !== '' && !(Number(s.codPct) >= 0 && Number(s.codPct) <= 100)) return `${where}: COD % must be between 0 and 100.`;
+    if (!slabs.length) return 'Add at least one rate configuration.';
+    const seen = new Set();
+    for (const [n, s] of slabs.entries()) {
+      const svc = serviceOf(s.serviceId);
+      if (!svc) return `Rate Configuration #${n + 1}: choose a courier.`;
+      const where = `Rate Configuration #${n + 1} (${svc.provider_name} ${svc.name})`;
+      if (!(Number(s.baseKg) > 0) || !(Number(s.addKg) > 0)) return `${where}: weight and additional weight must be more than 0.`;
+      if (!(Number(s.fromKg) >= 0)) return `${where}: "slab starts at" weight is not a number.`;
+      const dup = `${s.serviceId}|${kgToG(s.fromKg)}`;
+      if (seen.has(dup)) return `${where}: another configuration already covers this courier from ${s.fromKg} kg (change "Slab starts at" under COD charges and weight slab start).`;
+      seen.add(dup);
+      for (const [z, label] of ZONES) {
+        for (const col of ['fwdBase', 'fwdAdd']) { const v = s.zones[z][col]; if (v === '' || !(Number(v) >= 0)) return `${where}, ${label}: enter the forward ${col === 'fwdBase' ? 'price' : 'additional price'}.`; }
+        for (const col of ['rtoBase', 'rtoAdd']) { const v = s.zones[z][col]; if (v !== '' && !(Number(v) >= 0)) return `${where}, ${label}: the RTO price is not a number.`; }
       }
+      if (s.codFee !== '' && !(Number(s.codFee) >= 0)) return `${where}: COD charge is not a number.`;
+      if (s.codPct !== '' && !(Number(s.codPct) >= 0 && Number(s.codPct) <= 100)) return `${where}: COD % must be between 0 and 100.`;
     }
-    if (!setup.services.some((s) => offered[s.id]?.on)) return 'Switch on at least one courier service for this seller.';
-    if (cardName.trim().length < 2) return 'Give the rate card a name.';
     return '';
   };
 
@@ -110,22 +105,19 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
     if (problem) { showToast(problem, 'error'); return; }
     setBusy(true);
     try {
-      const rates = []; const access = [];
-      for (const service of setup.services) {
-        if (!offered[service.id]?.on) continue;
-        access.push({ serviceId: service.id, codEnabled: !!offered[service.id].cod });
-        for (const s of slabs.filter((x) => x.serviceId === service.id)) {
-          for (const [z] of ZONES) {
-            const c = s.zones[z];
-            rates.push({ serviceId: service.id, zoneCode: z, minWeightG: Number(s.minWeightG) || 0, baseWeightG: Number(s.baseWeightG), basePricePaise: toPaise(c.fwdBase), additionalWeightG: Number(s.additionalWeightG), additionalPricePaise: toPaise(c.fwdAdd),
-              codFeePaise: s.codFee === '' ? 0 : toPaise(s.codFee), codPercentBps: s.codPct === '' ? 0 : Math.round(Number(s.codPct) * 100), fuelSurchargeBps: s.fuelBps || 0,
-              rtoBasePricePaise: c.rtoBase === '' ? null : toPaise(c.rtoBase), rtoAdditionalPricePaise: c.rtoAdd === '' ? null : toPaise(c.rtoAdd) });
-          }
+      const rates = []; const access = []; const used = new Set(slabs.map((x) => x.serviceId));
+      for (const service of setup.services) if (used.has(service.id)) access.push({ serviceId: service.id, codEnabled: !!offered[service.id]?.cod });
+      for (const s of slabs) {
+        for (const [z] of ZONES) {
+          const c = s.zones[z];
+          rates.push({ serviceId: s.serviceId, zoneCode: z, minWeightG: kgToG(s.fromKg) || 0, baseWeightG: kgToG(s.baseKg), basePricePaise: toPaise(c.fwdBase), additionalWeightG: kgToG(s.addKg), additionalPricePaise: toPaise(c.fwdAdd),
+            codFeePaise: s.codFee === '' ? 0 : toPaise(s.codFee), codPercentBps: s.codPct === '' ? 0 : Math.round(Number(s.codPct) * 100), fuelSurchargeBps: s.fuelBps || 0,
+            rtoBasePricePaise: c.rtoBase === '' ? null : toPaise(c.rtoBase), rtoAdditionalPricePaise: c.rtoAdd === '' ? null : toPaise(c.rtoAdd) });
         }
       }
-      await apiFetch(`/v1/admin/sellers/${sellerId}/rate-cards`, { method: 'POST', body: { name: cardName.trim(), rates, access, replaceAll: true } });
+      await apiFetch(`/v1/admin/sellers/${sellerId}/rate-cards`, { method: 'POST', body: { name: cardName.trim().length >= 2 ? cardName.trim() : `Rates for ${setup.seller.legal_name}`, rates, access, replaceAll: true } });
       // A courier that was on for the seller and is now switched off.
-      for (const service of setup.services) if (service.access_state === 'enabled' && !offered[service.id]?.on) await adminApi.setSellerCourierAccess(sellerId, { serviceId: service.id, state: 'disabled', accountMode: 'platform', codEnabled: false, autoAssignEligible: true }).catch(() => {});
+      for (const service of setup.services) if (service.access_state === 'enabled' && !used.has(service.id)) await adminApi.setSellerCourierAccess(sellerId, { serviceId: service.id, state: 'disabled', accountMode: 'platform', codEnabled: false, autoAssignEligible: true }).catch(() => {});
       showToast('Rates saved. New bookings use them; shipments already booked keep their price.');
       router.push(`/admin/rate-cards/${sellerId}`);
     } catch (e) { showToast(errText(e, 'Rates could not be saved'), 'error'); } finally { setBusy(false); }
@@ -186,65 +178,98 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
     );
   }
 
-  // ---------- assign: editor ----------
+  // ---------- assign: editor (same layout as SwiftCourier's "Shipping Rate Configuration") ----------
+  const IN = { ...FIELD, height: 46, textAlign: 'center', padding: '0 6px', minWidth: 64, borderRadius: 12 };
+  const SUB = { padding: '10px 4px 0', textAlign: 'center', fontSize: 12.5, color: 'var(--ops-muted)', fontWeight: 500 };
+  const services = setup.services;
+  const addConfig = () => setSlabs((all) => [...all, blankSlab('')]);
+  const pickCourier = (key, serviceId) => {
+    // A second configuration for the same courier is a heavier slab: it starts where the heaviest existing one's first weight ends.
+    const others = slabs.filter((x) => x.key !== key && x.serviceId === serviceId);
+    patchSlab(key, { serviceId, fromKg: others.length ? String(Math.max(...others.map((x) => Number(x.baseKg) || 0))) : '0' });
+    const svc = serviceOf(serviceId);
+    // COD is on by default only for a courier the seller did not have before; an existing choice is kept.
+    if (svc) setOffered((o) => ({ ...o, [serviceId]: { on: true, cod: o[serviceId]?.on ? o[serviceId].cod : !!svc.supports_cod } }));
+  };
+  const zoneHead = (zl) => zl.replace('Metro to metro', 'Metro').replace('North-East & J&K', 'NE / J&K');
   return (
     <div style={{ padding: pad }}>
-      {header}
-      <div style={{ ...CARD, padding: 16, marginBottom: 14, display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.2fr 1fr', gap: 14, alignItems: 'end' }}>
-        <Label>Rate card name<input style={FIELD} value={cardName} maxLength={120} onChange={(e) => setCardName(e.target.value)} /></Label>
-        <Label>Or start from another seller&apos;s card
-          <span style={{ display: 'flex', gap: 8 }}>
-            <select style={FIELD} value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}><option value="">Select a seller&apos;s rate card…</option>{cards.filter((c) => c.seller_name !== setup.seller.legal_name).map((c) => <option key={c.id} value={c.id}>{c.seller_name} ({c.nexgo_code}) · {c.name}</option>)}</select>
-            <Btn disabled={!copyFrom || busy} onClick={copyCard}>Copy</Btn>
-          </span>
-        </Label>
-      </div>
-      <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--ops-muted)', lineHeight: 1.55 }}>Switch on each courier service this seller may book and set its prices. Each weight slab has a base weight and an additional weight step; prices are per zone for forward and RTO. Prices exclude GST (18% is added on the invoice). A service that is switched off is not offered to the seller.</p>
+      <div style={{ ...CARD, padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '18px 30px', display: 'flex', gap: 16, alignItems: 'center', borderBottom: '1px solid var(--ops-border)' }}>
+          <span aria-hidden style={{ width: 50, height: 50, borderRadius: '50%', background: 'var(--ac, #3877fc)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 19 }}>{String(setup.seller.legal_name || '?').slice(0, 1).toUpperCase()}</span>
+          <div><b style={{ fontSize: 18, color: 'var(--ops-heading)' }}>{setup.seller.legal_name}</b><div style={{ color: 'var(--ops-muted)', fontSize: 13.5 }}>NEXGO ID: {setup.seller.nexgo_code}</div></div>
+        </div>
+        <div style={{ padding: '26px 30px 30px' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 20 }}>
+            <h2 style={{ margin: 0, fontSize: 26, color: 'var(--ops-heading)' }}>Shipping Rate Configuration</h2>
+            <button type="button" onClick={addConfig} style={{ height: 46, padding: '0 24px', borderRadius: 12, border: '2px solid var(--ac, #3877fc)', background: 'transparent', color: 'var(--ac, #3877fc)', fontWeight: 740, fontSize: 15, cursor: 'pointer' }}>+&nbsp; Add New Configuration</button>
+          </div>
 
-      {byProvider.map(([provider, services]) => (
-        <section key={provider} style={{ ...CARD, padding: 16, marginBottom: 14 }}>
-          <h3 style={{ margin: '0 0 10px', fontSize: 14.5, color: 'var(--ops-heading)' }}>{provider}{services[0]?.aggregator ? <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 600, color: 'var(--ops-muted)' }}>books through {services[0].aggregator}</span> : null}</h3>
-          {services.map((svc) => {
-            const on = !!offered[svc.id]?.on; const mine = slabs.filter((s) => s.serviceId === svc.id);
+          {!slabs.length && <div style={{ border: '1px dashed var(--ops-border)', borderRadius: 12, padding: 28, textAlign: 'center', color: 'var(--ops-muted)' }}>No configuration yet. Click <b>+ Add New Configuration</b>.</div>}
+          {slabs.map((s, n) => {
+            const svc = serviceOf(s.serviceId);
             return (
-              <div key={svc.id} style={{ border: '1px solid var(--ops-border)', borderRadius: 10, padding: 12, marginBottom: 10, background: on ? 'transparent' : 'var(--ops-surface-2, #f6f8fc)' }}>
-                <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 700, fontSize: 13.5, cursor: 'pointer' }}><input type="checkbox" checked={on} onChange={(e) => toggle(svc, e.target.checked)} /> {svc.name}</label>
-                  <span style={{ border: '1px solid var(--ops-border)', borderRadius: 99, padding: '1px 9px', fontSize: 11.5 }}>{svc.type}</span>
-                  {on && <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, cursor: 'pointer' }}><input type="checkbox" checked={!!offered[svc.id]?.cod} disabled={!svc.supports_cod} onChange={(e) => setOffered((o) => ({ ...o, [svc.id]: { ...o[svc.id], cod: e.target.checked } }))} /> Allow COD{!svc.supports_cod ? ' (courier does not support COD)' : ''}</label>}
+              <div key={s.key} style={{ border: '1px solid var(--ops-border)', borderRadius: 12, overflow: 'hidden', marginBottom: 18 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', background: 'var(--ops-surface-2, #f6f8fc)' }}>
+                  <b style={{ fontSize: 15, color: 'var(--ops-heading)', fontWeight: 600 }}>Rate Configuration #{n + 1}</b>
+                  <button type="button" aria-label={`Remove configuration ${n + 1}`} onClick={() => setSlabs((all) => all.filter((x) => x.key !== s.key))} style={{ width: 36, height: 36, borderRadius: '50%', border: 'none', background: '#FDECEC', color: '#D93636', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}>✕</button>
                 </div>
-                {on && mine.map((s) => (
-                  <div key={s.key} style={{ marginTop: 12, border: '1px solid var(--ops-border)', borderRadius: 10, padding: 12 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(5, minmax(0,1fr)) auto', gap: 10, alignItems: 'end' }}>
-                      <Label>From weight (g)<input style={FIELD} inputMode="numeric" value={s.minWeightG} onChange={(e) => patchSlab(s.key, { minWeightG: e.target.value.replace(/\D/g, '') })} /></Label>
-                      <Label>Base weight (g)<input style={FIELD} inputMode="numeric" value={s.baseWeightG} onChange={(e) => patchSlab(s.key, { baseWeightG: e.target.value.replace(/\D/g, '') })} /></Label>
-                      <Label>Additional weight (g)<input style={FIELD} inputMode="numeric" value={s.additionalWeightG} onChange={(e) => patchSlab(s.key, { additionalWeightG: e.target.value.replace(/\D/g, '') })} /></Label>
-                      <Label>COD charge (₹)<input style={FIELD} inputMode="decimal" value={s.codFee} onChange={(e) => patchSlab(s.key, { codFee: e.target.value })} /></Label>
-                      <Label>COD (% of order value)<input style={FIELD} inputMode="decimal" value={s.codPct} onChange={(e) => patchSlab(s.key, { codPct: e.target.value })} /></Label>
-                      <Btn danger onClick={() => setSlabs((all) => all.filter((x) => x.key !== s.key))}>Remove slab</Btn>
-                    </div>
-                    <div style={{ overflowX: 'auto', marginTop: 10 }}>
-                      <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
-                        <thead><tr><th style={{ ...TH, textAlign: 'left' }}>Zone</th>{PRICE_COLS.map(([c, l]) => <th key={c} style={TH}>{l} (₹)</th>)}</tr></thead>
-                        <tbody>{ZONES.map(([z, zl]) => (
-                          <tr key={z}><td style={{ padding: '6px 10px', fontSize: 13, borderTop: '1px solid var(--ops-border)', whiteSpace: 'nowrap' }}>{zl}</td>
-                            {PRICE_COLS.map(([c, l]) => <td key={c} style={{ padding: '5px 6px', borderTop: '1px solid var(--ops-border)' }}><input aria-label={`${zl} ${l}`} style={{ ...FIELD, textAlign: 'center' }} inputMode="decimal" value={s.zones[z][c]} onChange={(e) => patchCell(s.key, z, c, e.target.value)} /></td>)}
-                          </tr>
-                        ))}</tbody>
-                      </table>
-                    </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ borderCollapse: 'collapse', minWidth: 1100, width: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ ...TH, textAlign: 'left', minWidth: 190 }}>Courier</th><th style={{ ...TH, minWidth: 80 }}>Mode</th><th style={{ ...TH, minWidth: 130 }}>Weight (kg)</th>
+                        {ZONES.map(([z, zl]) => <th key={z} colSpan={2} style={TH}>{zoneHead(zl)}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td colSpan={3} />{ZONES.map(([z]) => [<td key={`${z}f`} style={SUB}>Fwd</td>, <td key={`${z}r`} style={SUB}>RTO</td>])}</tr>
+                      <tr>
+                        <td style={{ padding: '6px 10px 4px' }}>
+                          <select style={{ ...IN, textAlign: 'left', width: '100%' }} value={s.serviceId} onChange={(e) => pickCourier(s.key, e.target.value)}>
+                            <option value="">Courier</option>
+                            {services.map((x) => <option key={x.id} value={x.id}>{x.provider_name} · {x.name}</option>)}
+                          </select>
+                        </td>
+                        <td rowSpan={2} style={{ padding: '6px 10px', verticalAlign: 'middle' }}><div style={{ ...IN, display: 'grid', placeItems: 'center', fontSize: 12, minWidth: 54, width: 64, margin: '0 auto' }}>{svc ? String(svc.type).replace(/^./, (c) => c.toUpperCase()) : ''}</div></td>
+                        <td rowSpan={2} style={{ padding: '6px 10px', verticalAlign: 'middle' }}><input aria-label="Weight in kg" style={{ ...IN, width: 110, margin: '0 auto', display: 'block' }} inputMode="decimal" value={s.baseKg} onChange={(e) => patchSlab(s.key, { baseKg: e.target.value })} /></td>
+                        {ZONES.map(([z, zl]) => [
+                          <td key={`${z}f`} style={{ padding: '6px 4px 4px' }}><input aria-label={`${zl} forward first weight`} style={IN} inputMode="decimal" value={s.zones[z].fwdBase} onChange={(e) => patchCell(s.key, z, 'fwdBase', e.target.value)} /></td>,
+                          <td key={`${z}r`} style={{ padding: '6px 4px 4px' }}><input aria-label={`${zl} RTO first weight`} style={IN} inputMode="decimal" value={s.zones[z].rtoBase} onChange={(e) => patchCell(s.key, z, 'rtoBase', e.target.value)} /></td>,
+                        ])}
+                      </tr>
+                      <tr>
+                        <td style={{ padding: '4px 10px 14px' }}><input aria-label="Additional weight in kg" placeholder="Addition" style={{ ...IN, textAlign: 'left', width: '100%' }} inputMode="decimal" value={s.addKg} onChange={(e) => patchSlab(s.key, { addKg: e.target.value })} /></td>
+                        {ZONES.map(([z, zl]) => [
+                          <td key={`${z}f`} style={{ padding: '4px 4px 14px' }}><input aria-label={`${zl} forward additional weight`} style={IN} inputMode="decimal" value={s.zones[z].fwdAdd} onChange={(e) => patchCell(s.key, z, 'fwdAdd', e.target.value)} /></td>,
+                          <td key={`${z}r`} style={{ padding: '4px 4px 14px' }}><input aria-label={`${zl} RTO additional weight`} style={IN} inputMode="decimal" value={s.zones[z].rtoAdd} onChange={(e) => patchCell(s.key, z, 'rtoAdd', e.target.value)} /></td>,
+                        ])}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <details style={{ borderTop: '1px solid var(--ops-border)', padding: '10px 20px' }}>
+                  <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--ops-muted)' }}>COD charges and weight slab start</summary>
+                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', padding: '12px 0 4px', alignItems: 'end' }}>
+                    <Label>COD charge (₹)<input style={{ ...FIELD, width: 110 }} inputMode="decimal" value={s.codFee} onChange={(e) => patchSlab(s.key, { codFee: e.target.value })} /></Label>
+                    <Label>COD (% of order value)<input style={{ ...FIELD, width: 150 }} inputMode="decimal" value={s.codPct} onChange={(e) => patchSlab(s.key, { codPct: e.target.value })} /></Label>
+                    <Label>Slab starts at (kg)<input style={{ ...FIELD, width: 110 }} inputMode="decimal" value={s.fromKg} onChange={(e) => patchSlab(s.key, { fromKg: e.target.value })} /></Label>
+                    <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, paddingBottom: 8, cursor: 'pointer' }}><input type="checkbox" checked={!!svc && !!offered[svc.id]?.cod} disabled={!svc || !svc.supports_cod} onChange={(e) => svc && setOffered((o) => ({ ...o, [svc.id]: { ...o[svc.id], on: true, cod: e.target.checked } }))} /> Allow COD for this courier</label>
                   </div>
-                ))}
-                {on && <div style={{ marginTop: 10 }}><Btn onClick={() => setSlabs((all) => [...all, blankSlab(svc.id, Math.max(0, ...mine.map((s) => Number(s.minWeightG) || 0)) + (mine.length ? 500 : 0))])}>+ Add weight slab</Btn></div>}
+                </details>
               </div>
             );
           })}
-        </section>
-      ))}
+        </div>
+      </div>
 
-      <div style={{ position: 'sticky', bottom: 0, padding: '12px 0', display: 'flex', gap: 10, background: 'var(--ops-bg, transparent)' }}>
+      <div style={{ position: 'sticky', bottom: 0, padding: '12px 0', display: 'flex', gap: 10, alignItems: 'center', background: 'var(--ops-bg, transparent)', flexWrap: 'wrap' }}>
         <Btn primary disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save rates'}</Btn>
         <Btn disabled={busy} onClick={() => router.push('/admin/rate-cards')}>Cancel</Btn>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <select aria-label="Copy another seller's rate card" style={{ ...FIELD, width: 260 }} value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}><option value="">Copy another seller&apos;s rates…</option>{cards.filter((c) => c.seller_name !== setup.seller.legal_name).map((c) => <option key={c.id} value={c.id}>{c.seller_name} ({c.nexgo_code}) · {c.name}</option>)}</select>
+          <Btn disabled={!copyFrom || busy} onClick={copyCard}>Copy</Btn>
+        </span>
       </div>
     </div>
   );
