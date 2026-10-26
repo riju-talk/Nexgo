@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { db } from '../db/client.js';
 import { requireAccountAdmin, requireCommercialAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
 import { sessionCookieOptions } from '../lib/cookies.js';
+import { issueCsrfCookie, clearCsrfCookie } from '../lib/csrf.js';
 import { calculateRate } from '../lib/money.js';
 import { hashSessionToken, newSessionToken } from '../lib/session.js';
 
@@ -370,6 +371,7 @@ export async function adminSellerProfileRoutes(app: FastifyInstance) {
     const opts = { ...sessionCookieOptions(), maxAge: IMPERSONATION_MINUTES * 60 };
     reply.setCookie('nx_admin_return', adminToken, opts);
     reply.setCookie('nx_session', token, opts);
+    issueCsrfCookie(reply, token);
     return { ok: true, sellerName: owner.rows[0].legal_name };
   });
 
@@ -387,7 +389,7 @@ export async function adminSellerProfileRoutes(app: FastifyInstance) {
       `INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id, metadata) VALUES ($1,$2,'impersonation.ended','seller',$3,$4,'{}')`,
       [ctx.seller_id, ctx.admin_user_id, ctx.seller_id, request.id]);
     reply.clearCookie('nx_admin_return', { path: '/' });
-    if (back) reply.setCookie('nx_session', back, sessionCookieOptions()); else reply.clearCookie('nx_session', { path: '/' });
+    if (back) { reply.setCookie('nx_session', back, sessionCookieOptions()); issueCsrfCookie(reply, back); } else { reply.clearCookie('nx_session', { path: '/' }); clearCsrfCookie(reply); }
     return { ok: true, sellerId: ctx.seller_id };
   });
 }

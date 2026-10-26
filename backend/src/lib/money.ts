@@ -23,15 +23,15 @@ export function calculateRate(rate: RateRow, weightG: number, isCod: boolean, or
   const extraSlabs = Math.ceil(extraWeight / rate.additional_weight_g);
   const extraWeightPaise = extraSlabs * rate.additional_price_paise;
   const transportPaise = rate.base_price_paise + extraWeightPaise;
-  const fuelSurchargePaise = Math.round((transportPaise * rate.fuel_surcharge_bps) / 10_000);
+  const fuelSurchargePaise = 0; // the rate card is the price: no hidden surcharge on top of it (client feedback 2026-10-24)
   const codPercentPaise = Math.round((orderValuePaise * (rate.cod_percent_bps ?? 0)) / 10_000);
   const codFeePaise = isCod ? Math.max(rate.cod_fee_paise, codPercentPaise) : 0;
   const totalPaise = transportPaise + fuelSurchargePaise + codFeePaise;
   const gstPaise = Math.round((totalPaise * GST_BPS) / 10_000);
   const rtoExtraWeightPaise = extraSlabs * (rate.rto_additional_price_paise ?? rate.additional_price_paise);
   const rtoTransportPaise = (rate.rto_base_price_paise ?? rate.base_price_paise) + rtoExtraWeightPaise;
-  const rtoFuelPaise = Math.round((rtoTransportPaise * rate.fuel_surcharge_bps) / 10_000);
-  const rtoPaise = rtoTransportPaise + rtoFuelPaise;
+  // An RTO parcel is billed the forward freight plus the RTO freight (then GST on the sum).
+  const rtoPaise = transportPaise + rtoTransportPaise;
   const rtoGstPaise = Math.round((rtoPaise * GST_BPS) / 10_000);
   return { transportPaise, extraWeightPaise, rtoExtraWeightPaise, fuelSurchargePaise, codFeePaise, extraSlabs, totalPaise, gstPaise, totalWithGstPaise: totalPaise + gstPaise, rtoPaise, rtoGstPaise, rtoWithGstPaise: rtoPaise + rtoGstPaise };
 }

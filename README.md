@@ -8,37 +8,37 @@ Multi-courier shipping and logistics platform for Indian sellers: a seller works
 | --- | --- |
 | `app/`, `components/`, `lib/` | Next.js 16 (App Router, React 19) frontend. Screens marked `Live*` call the API; the rest still render from `lib/data.js`. |
 | `backend/` | Fastify + TypeScript API and job worker, PostgreSQL migrations, seed scripts. See `backend/README.md`. |
-| `compose.backend.yml` | Local PostgreSQL, Redis, MinIO and Mailpit. |
+| `compose.yml`, `Dockerfile`, `backend/Dockerfile` | Docker: frontend, API, worker and one-shot migrations; local Postgres/Mailpit/MinIO under `--profile local`. |
+| `.env.example` | The single env file for everything. Copy to `.env`. |
 | `docs/` | Plans, handoff notes, staging checklist and demo runbook (index below). |
 
 ## Run locally
 
-Requires Node 20+ and Docker.
+Requires Node 20+ and either Docker or a local PostgreSQL.
 
 ```bash
-# 1. Infrastructure
-docker compose -f compose.backend.yml up -d
-
-# 2. API (port 4010) and worker
-cp backend/.env.example backend/.env      # then set LOCAL_ENCRYPTION_KEY and LOCAL_ADMIN_PASSWORD
-cd backend && npm install && npm run migrate && npm run seed:admin
-npm run dev                               # second terminal: npm run worker
-
-# 3. Frontend (port 3021 — the API's CORS allow-list expects this origin)
-cd .. && cp .env.example .env.local
-npm install && npm run dev
+cp .env.example .env        # the ONLY env file; fill in the REQUIRED secrets (see comments inside)
+npm install && (cd backend && npm install && npm run migrate)
+(cd backend && npm run dev)  # API on :4010, second terminal: npm run worker
+npm run dev                  # web on :3021 (the API's CORS allow-list expects this origin)
 ```
 
-Open http://localhost:3021 (seller) or http://localhost:3021/admin/login (admin).
+Or the whole stack in Docker (production images, throwaway Postgres + Mailpit + MinIO):
 
-**Development logins** — run `npm run seed:dev` in `backend/` (idempotent, refuses to run in production):
+```bash
+docker compose --profile local up --build      # http://localhost:3021, mail at http://localhost:8025
+```
+
+Deploying: see `docs/PRODUCTION_DEPLOYMENT.md`.
+
+**Development logins** are fixed in the backend (`backend/src/lib/devAccounts.ts`) and created at startup, only when `NODE_ENV=development` and `DATABASE_URL` points at this machine. The UI never shows or pre-fills them.
 
 | Panel | URL | Email | Password |
 | --- | --- | --- | --- |
-| Admin | `/admin/login` | `dev-admin@nexgo.local` | `NexgoDevAdmin#2026` |
-| Seller | `/login` | `dev-seller@nexgo.local` | `NexgoDevSeller#2026` |
+| Admin | `/admin/login` | `admin@nexgo.in` | `Admin@456` |
+| Seller | `/login` | `demo@acmeexports.com` | `Demo@123` |
 
-Override them with `DEV_ADMIN_*` / `DEV_SELLER_*` in `backend/.env`. Local only — never reuse these anywhere deployed. Demo fixtures: `npm run seed:demo-seller`, `seed:demo-data`, `seed:demo-network` and `seed:demo-admin` in `backend/`.
+New sellers register at `/signup`, wait for an admin to approve them under **Admin > Registrations** (the decision is e-mailed), then sign in.
 
 ## Checks
 

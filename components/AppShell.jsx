@@ -12,6 +12,7 @@ import NdrDrawer from './NdrDrawer';
 import Toast from './Toast';
 import AdminShell from './AdminShell';
 import ImpersonationBanner from './ImpersonationBanner';
+import SessionHeartbeat from './SessionHeartbeat';
 
 export default function AppShell({ children }) {
   const pathname = usePathname();
@@ -23,6 +24,7 @@ export default function AppShell({ children }) {
 
   return (
     <div style={{ '--ac': '#3877fc', height: '100vh', minHeight: 0, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: PAPER, color: TEXT }}>
+      <SessionHeartbeat loginPath="/login" />
       <ImpersonationBanner />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <MobileOverlay mobile={mobile} />

@@ -42,7 +42,7 @@ export async function adminMfaRoutes(app: FastifyInstance) {
     if (session === null) return reply.code(401).send({ error: 'MFA_CHALLENGE_INVALID_OR_EXPIRED' });
     if (session === 'invalid_code') return reply.code(401).send({ error: 'INVALID_MFA_CODE' });
     reply.setCookie('nx_session', session.token, sessionCookieOptions());
-    issueCsrfCookie(reply);
+    issueCsrfCookie(reply, session.token);
     return { userId: session.userId, fullName: session.fullName, role: session.role, expiresAt: session.expiresAt };
   });
 

@@ -5,8 +5,8 @@ The local-first API foundation for both seller and platform-admin domains.
 ## Run locally
 
 ```bash
-docker compose -f compose.backend.yml up -d
-cp backend/.env.example backend/.env
+docker compose --profile local up -d postgres mailpit minio
+cp .env.example .env
 cd backend && npm install
 npm run migrate
 npm run seed:admin

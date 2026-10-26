@@ -11,10 +11,11 @@ import * as T from '@/lib/theme';
 import { adminApi } from '@/lib/api';
 import SearchBox from './SearchBox';
 import CommandPalette from './CommandPalette';
+import SessionHeartbeat from './SessionHeartbeat';
 
 const GROUPS = [
   ['Overview', [['Dashboard', 'a-overview', '▦']]],
-  ['Users', [['All sellers', 'a-sellers', '◎'], ['KYC verification', 'a-kyc', '◈'], ['Wallets', 'a-wallets', '₹'], ['Credit limits', 'a-credit', '⊞']]],
+  ['Users', [['Registrations', 'a-registrations', '✓'], ['All sellers', 'a-sellers', '◎'], ['KYC verification', 'a-kyc', '◈'], ['Wallets', 'a-wallets', '₹'], ['Credit limits', 'a-credit', '⊞']]],
   ['Couriers', [['Partners', 'a-couriers', '◌'], ['Rate cards', 'a-rate-cards', '₹'], ['Zone mapping', 'a-zones', '⌘'], ['SLA settings', 'a-sla', '◫'], ['Performance', 'a-performance', '▥']]],
   ['Shipments', [['All orders', 'a-orders', '▤'], ['All shipments', 'a-shipments', '□'], ['NDR centre', 'a-ndr', '!'], ['RTO centre', 'a-rto', '↩'], ['Pickups', 'a-pickups', '⌁']]],
   ['Finance', [['COD settlements', 'a-cod', '₹'], ['Invoices', 'a-invoices', '▤'], ['Credit notes & TDS', 'a-notes', '▥'], ['GST reports', 'a-gst', '▧']]],
@@ -95,6 +96,7 @@ export default function AdminShell({ children }) {
   if (!sessionReady) return <div style={{ minHeight: '100vh', background: 'var(--nx-paper)' }} />;
   return (
     <div style={{ ...opsTheme, height: '100vh', minHeight: 0, overflow: 'hidden', display: 'flex', background: 'var(--ops-bg)', color: 'var(--ops-text)', fontFamily: T.SANS, transition: 'background-color .2s ease, color .2s ease' }}>
+      <SessionHeartbeat loginPath="/admin/login" />
       {mobile && navOpen && <div onClick={() => setNavOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(4,14,30,.36)' }} />}
       <AdminNav mobile={mobile} />
       <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'scroll', overflowX: 'hidden' }}>

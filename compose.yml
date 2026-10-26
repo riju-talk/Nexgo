@@ -1,0 +1,88 @@
+# NEXGO full stack. Every value comes from the single root .env file (copy .env.example to .env first).
+#
+#   docker compose --profile local up --build      # app + throwaway Postgres + Mailpit + MinIO (try it on a laptop)
+#   docker compose up --build                      # app only: DATABASE_URL in .env must point at your database (RDS, Neon, ...)
+#
+# Open http://localhost:3021. Mail sent by the app shows up at http://localhost:8025 when the `local` profile is on.
+name: nexgo
+
+x-app: &app
+  env_file: .env
+  restart: unless-stopped
+  init: true
+
+services:
+  migrate:
+    <<: *app
+    build: { context: ./backend }
+    command: ["node", "dist/db/migrate.js"]
+    restart: "no"
+    environment:
+      NODE_ENV: production
+    depends_on:
+      postgres: { condition: service_healthy, required: false }
+
+  backend:
+    <<: *app
+    build: { context: ./backend }
+    ports: ["${BACKEND_PORT:-4010}:4010"]
+    environment:
+      NODE_ENV: production
+      PORT: "4010"
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    <<: *app
+    build: { context: ./backend }
+    command: ["node", "dist/worker.js"]
+    environment:
+      NODE_ENV: production
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  frontend:
+    <<: *app
+    build:
+      context: .
+      args:
+        BACKEND_URL: ${BACKEND_URL:-http://backend:4010}
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
+    ports: ["${FRONTEND_PORT:-3021}:3021"]
+    depends_on: [backend]
+
+  # --- local-only helpers (profile `local`) ---
+  postgres:
+    profiles: [local]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nexgo}
+      POSTGRES_USER: ${POSTGRES_USER:-nexgo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    ports: ["${NEXGO_PG_PORT:-5432}:5432"]
+    volumes: [nexgo-postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mailpit:
+    profiles: [local]
+    image: axllent/mailpit:latest
+    ports: ["1025:1025", "8025:8025"]
+
+  minio:
+    profiles: [local]
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [nexgo-minio:/data]
+
+volumes:
+  nexgo-postgres:
+  nexgo-minio:

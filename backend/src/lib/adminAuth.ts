@@ -1,6 +1,6 @@
 import type { FastifyRequest } from 'fastify';
 import { db } from '../db/client.js';
-import { hashSessionToken } from './session.js';
+import { hashSessionToken, IDLE_SQL, STALE_SQL } from './session.js';
 
 export type AdminPrincipal = { userId: string; role: string };
 declare module 'fastify' { interface FastifyRequest { adminPrincipal?: AdminPrincipal } }
@@ -8,12 +8,14 @@ declare module 'fastify' { interface FastifyRequest { adminPrincipal?: AdminPrin
 export async function requirePlatformAdmin(request: FastifyRequest) {
   const token = request.cookies.nx_session;
   if (!token) throw Object.assign(new Error('Platform administrator authentication required'), { statusCode: 401 });
-  const result = await db.query<AdminPrincipal>(
-    'SELECT pa.user_id AS "userId", pa.role FROM sessions se JOIN platform_admins pa ON pa.user_id = se.user_id WHERE se.token_hash = $1 AND se.revoked_at IS NULL AND se.expires_at > now() LIMIT 1',
+  const result = await db.query<AdminPrincipal & { stale: boolean; sessionId: string }>(
+    `SELECT pa.user_id AS "userId", pa.role, se.id AS "sessionId", ${STALE_SQL} FROM sessions se JOIN platform_admins pa ON pa.user_id = se.user_id WHERE se.token_hash = $1 AND se.revoked_at IS NULL AND se.expires_at > now() AND ${IDLE_SQL} LIMIT 1`,
     [hashSessionToken(token)],
   );
-  if (!result.rows[0]) throw Object.assign(new Error('Platform administrator authentication required'), { statusCode: 403 });
-  request.adminPrincipal = result.rows[0];
+  if (!result.rows[0]) throw Object.assign(new Error('Platform administrator authentication required'), { statusCode: 401 });
+  const { stale, sessionId, ...principal } = result.rows[0];
+  if (stale) await db.query('UPDATE sessions SET last_seen_at = now() WHERE id = $1', [sessionId]);
+  request.adminPrincipal = principal;
 }
 
 // Commercial changes (couriers, rate cards, pincode rules) are gated to the

@@ -149,7 +149,7 @@ export async function teamRoutes(app: FastifyInstance) {
     });
     if (!session) return reply.code(410).send({ error: 'INVITATION_INVALID_OR_EXPIRED' });
     reply.setCookie('nx_session', session.token, sessionCookieOptions());
-    issueCsrfCookie(reply);
+    issueCsrfCookie(reply, session.token);
     return reply.code(201).send({ sellerId: session.sellerId, role: session.role, expiresAt: session.expiresAt });
   });
 }

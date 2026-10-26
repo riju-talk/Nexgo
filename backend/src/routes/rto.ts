@@ -50,7 +50,7 @@ export async function rtoRoutes(app: FastifyInstance) {
   app.get('/v1/rto/stats', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
     return withSellerTransaction(p.sellerId, async (client) => {
-      const [totals, stageRows, couriers, reasons, weekly, all] = await Promise.all([
+      const [totals, stageRows, couriers, attempts, all] = await Promise.all([
         client.query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE (${STAGE_SQL}) = 'rto_in_transit')::int AS in_transit_back, count(*) FILTER (WHERE (${STAGE_SQL}) = 'rto_delivered')::int AS delivered_back,
                              COALESCE(sum(o.cod_amount_paise) FILTER (WHERE o.payment_mode = 'cod'), 0)::bigint AS cod_paise, COALESCE(sum(s.shipping_charge_paise), 0)::bigint AS freight_paise
                       FROM shipments s JOIN orders o ON o.id = s.order_id
@@ -58,9 +58,8 @@ export async function rtoRoutes(app: FastifyInstance) {
         client.query(`SELECT (${STAGE_SQL}) AS stage, count(*)::int AS n FROM shipments s WHERE s.seller_id = $1 AND s.state = 'rto' GROUP BY 1`, [p.sellerId]),
         client.query(`SELECT cp.code, cp.name, count(*)::int AS shipments, count(*) FILTER (WHERE s.state = 'rto')::int AS rto
                       FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.seller_id = $1 AND s.state <> 'cancelled' GROUP BY cp.code, cp.name ORDER BY cp.name`, [p.sellerId]),
-        client.query(`SELECT COALESCE(n.ndr_reason::text, 'other') AS reason, count(*)::int AS n FROM shipments s LEFT JOIN ndr_cases n ON n.shipment_id = s.id WHERE s.seller_id = $1 AND s.state = 'rto' GROUP BY 1 ORDER BY 2 DESC`, [p.sellerId]),
-        client.query(`SELECT to_char(w, 'DD Mon') AS label, (SELECT count(*) FROM shipments s WHERE s.seller_id = $1 AND s.state = 'rto' AND ${STARTED_SQL} >= w AND ${STARTED_SQL} < w + interval '7 days')::int AS n
-                      FROM generate_series(date_trunc('week', current_date) - interval '7 weeks', date_trunc('week', current_date), interval '1 week') w ORDER BY w`, [p.sellerId]),
+        client.query(`SELECT COALESCE((SELECT max(n.attempt_number) FROM ndr_cases n WHERE n.shipment_id = s.id), 0)::int AS attempts, count(*)::int AS n
+                      FROM shipments s WHERE s.seller_id = $1 AND s.state = 'rto' GROUP BY 1`, [p.sellerId]),
         client.query(`SELECT count(*)::int AS n FROM shipments WHERE seller_id = $1 AND state <> 'cancelled'`, [p.sellerId]),
       ]);
       const t = totals.rows[0]; const shipmentTotal = all.rows[0].n;
@@ -68,8 +67,8 @@ export async function rtoRoutes(app: FastifyInstance) {
         total: t.total, inTransitBack: t.in_transit_back, deliveredBack: t.delivered_back, stages: Object.fromEntries(stageRows.rows.map((r) => [r.stage, r.n])), rtoRatePct: shipmentTotal ? +((t.total / shipmentTotal) * 100).toFixed(1) : 0,
         codReturnedPaise: Number(t.cod_paise), freightOnRtoPaise: Number(t.freight_paise),
         couriers: couriers.rows.map((r) => ({ code: r.code, name: r.name, shipments: r.shipments, rto: r.rto, ratePct: r.shipments ? +((r.rto / r.shipments) * 100).toFixed(1) : 0 })),
-        reasons: reasons.rows.map((r) => ({ reason: r.reason, count: r.n, pct: t.total ? +((r.n / t.total) * 100).toFixed(1) : 0 })),
-        weekly: weekly.rows,
+        // Delivery attempts made before the parcel went back (0 = the courier returned it without an NDR).
+        attempts: [[0, 'No NDR'], [1, '1 attempt'], [2, '2 attempts'], [3, '3 attempts']].map(([k, label]) => ({ label, n: attempts.rows.filter((r) => (k === 3 ? r.attempts >= 3 : r.attempts === k)).reduce((x, r) => x + r.n, 0) })),
       };
     });
   });

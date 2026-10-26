@@ -4,7 +4,7 @@
 
 ## Environment & infrastructure
 
-- [x] Local dev stack reproducible from a clean checkout: `docker compose -f compose.backend.yml up -d` → `npm run migrate` → `npm run dev` + `npm run worker`. Verified 2026-09-13 by running the full sequence against a fresh set of containers.
+- [x] Local dev stack reproducible from a clean checkout: `docker compose --profile local up -d postgres mailpit minio` → `npm run migrate` → `npm run dev` + `npm run worker`. Verified 2026-09-13 by running the full sequence against a fresh set of containers.
 - [ ] Staging environment provisioned on AWS per `AWS_BACKEND_PLAN.md` (RDS Postgres, ECS Fargate, S3, Secrets Manager). **Not started** — this checklist is written to be run again once that environment exists, not a substitute for provisioning it.
 - [ ] Staging environment uses its own database, MinIO/S3 bucket, and Razorpay/courier sandbox credentials — never the values in `backend/.env`. **Blocked on the above.**
 

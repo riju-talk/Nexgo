@@ -53,10 +53,13 @@ import { registerDocs } from './lib/openapi.js';
 import { rtoRoutes } from './routes/rto.js';
 import { billingRoutes } from './routes/billing.js';
 import { adminDisputeRoutes } from './routes/adminDisputes.js';
+import { adminRegistrationRoutes } from './routes/adminRegistrations.js';
+import { ensureDevAccounts } from './lib/devAccounts.js';
 export async function buildApp() {
-const app = Fastify({ logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' }, requestIdHeader: 'x-request-id' });
-registerDocs(app);
-await app.register(helmet, { contentSecurityPolicy: false });
+const app = Fastify({ logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' }, requestIdHeader: 'x-request-id', trustProxy: config.TRUST_PROXY });
+if (config.DOCS_ENABLED) registerDocs(app);
+// The API only serves JSON (the Swagger page loads its assets from a CDN), so the CSP stays off here; the web app sets its own headers.
+await app.register(helmet, { contentSecurityPolicy: false, hsts: config.NODE_ENV === 'production' ? { maxAge: 15552000, includeSubDomains: true } : false });
 await app.register(cookie);
 await app.register(rawBody, { field: 'rawBody', global: false, encoding: 'utf8', runFirst: true });
 await app.register(cors, { origin: config.FRONTEND_ORIGIN, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] });
@@ -84,6 +87,7 @@ app.setErrorHandler((error, request, reply) => {
 });
 
 app.get('/health', async () => ({ status: 'ok', service: 'nexgo-api' }));
+// Liveness for load balancers / container health checks. No auth, no DB: it only says the process is up.
 app.get('/ready', async (_request, reply) => {
   try { await db.query('SELECT 1'); return { status: 'ready' }; }
   catch { return reply.code(503).send({ status: 'not_ready' }); }
@@ -130,6 +134,8 @@ await app.register(adminReportRoutes);
 await app.register(rtoRoutes);
 await app.register(billingRoutes);
 await app.register(adminDisputeRoutes);
+await app.register(adminRegistrationRoutes);
+await ensureDevAccounts(app.log);
 return app;
 }
 

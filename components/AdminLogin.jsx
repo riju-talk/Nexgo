@@ -12,7 +12,7 @@ const METRICS = [['8', 'Courier partners'], ['29,000', 'Serviceable pincodes'], 
 const WHITE_CARD_TOKENS = { '--nx-surface': '#ffffff', '--nx-surface-soft': '#fafbfd', '--nx-border': '#d8e0e7', '--nx-divider': '#e8edf1', '--nx-input-border': '#c6d1da', '--nx-text': '#17212b', '--nx-text-label': '#334454', '--nx-text-secondary': '#647587', '--nx-text-muted': '#8391a0', '--nx-text-faint': '#a5b0ba' };
 
 export default function AdminLogin() {
-  const { nav, vw, theme, toggleTheme, showToast } = useAppState();
+  const { nav, vw, theme, toggleTheme } = useAppState();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,13 +23,6 @@ export default function AdminLogin() {
   const mobile = vw <= T.MOBILE_BREAK;
   const dark = theme === 'dark';
   
-  // Demo admin credentials helper
-  const fillAdminDemo = () => {
-    setEmail('admin@nexgo.in');
-    setPassword('Admin@456');
-    showToast('Admin demo credentials filled! Click Sign In to continue.');
-  };
-
   async function submitPassword(event) {
     event.preventDefault();
     setError(''); setBusy(true);
@@ -38,7 +31,7 @@ export default function AdminLogin() {
       if (result.requiresMfa) { setMfaToken(result.mfaToken); return; }
       nav('a-overview');
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 401 ? 'Incorrect email or password.' : 'Something went wrong. Try again.');
+      setError(err instanceof ApiError && err.status === 401 ? 'Incorrect email or password.' : err instanceof ApiError && err.status === 429 ? 'Too many attempts. Wait a minute and try again.' : 'Something went wrong. Try again.');
     } finally { setBusy(false); }
   }
 
@@ -91,48 +84,6 @@ export default function AdminLogin() {
             <p style={{ margin: '6px 0 0', color: T.TEXT_SECONDARY, fontSize: 13, lineHeight: 1.55 }}>{mfaToken ? 'Enter the 6-digit code from your authenticator app.' : 'Access the NEXGO platform operations workspace.'}</p>
           </div>
           {error && <div style={{ marginTop: 15, padding: '10px 12px', borderRadius: 8, background: 'rgba(178,58,43,.1)', border: '1px solid rgba(178,58,43,.25)', color: '#B23A2B', fontSize: 12.5, fontWeight: 600 }}>{error}</div>}
-          
-          {/* Demo Admin Credentials Banner - Only show if not in MFA mode */}
-          {!mfaToken && (
-            <div style={{ 
-              marginTop: 16, 
-              padding: '11px 13px', 
-              background: 'rgba(56,119,252,.08)', 
-              border: '1px solid rgba(56,119,252,.25)',
-              borderRadius: 9,
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 10
-            }}>
-              <div style={{ fontSize: 16 }}>🔐</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#1a6aa3', marginBottom: 3 }}>Platform Admin Demo</div>
-                <div style={{ fontSize: 11.5, color: T.TEXT_SECONDARY, lineHeight: 1.5, marginBottom: 8 }}>
-                  <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: T.TEXT, marginTop: 3 }}>
-                    <div>Email: <strong>admin@nexgo.in</strong></div>
-                    <div>Password: <strong>Admin@456</strong></div>
-                  </div>
-                </div>
-                <button 
-                  type="button" 
-                  onClick={fillAdminDemo}
-                  style={{ 
-                    height: 26, 
-                    padding: '0 10px', 
-                    border: '1px solid rgba(56,119,252,.4)', 
-                    borderRadius: 6, 
-                    background: 'rgba(56,119,252,.12)', 
-                    color: '#1a6aa3', 
-                    fontSize: 11, 
-                    fontWeight: 700, 
-                    cursor: 'pointer' 
-                  }}
-                >
-                  Fill Admin Demo Credentials
-                </button>
-              </div>
-            </div>
-          )}
           
           {mfaToken ? (
             <form onSubmit={submitMfa} style={{ display: 'grid', gap: 15, marginTop: 20 }}>

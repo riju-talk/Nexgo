@@ -17,7 +17,7 @@ const PAGE_SIZE = 10;
 export default function LiveRto({ mobile }) {
   const { showToast, nav } = useAppState();
   const [stage, setStage] = useState('all'); const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState(EMPTY_FILTERS); const [panel, setPanel] = useState(true);
+  const [filters, setFilters] = useState(EMPTY_FILTERS); const [panel, setPanel] = useState(false);
   const [format, setFormat] = useState('csv'); const [busy, setBusy] = useState(false);
   const [stats, setStats] = useState(null); const [data, setData] = useState({ key: '', items: [], total: 0, pages: 1, error: '' });
 
@@ -62,7 +62,7 @@ export default function LiveRto({ mobile }) {
     } catch (e) { showToast(e.message || 'Manifest failed', 'error'); } finally { setBusy(false); }
   };
 
-  const maxWeek = ok ? Math.max(1, ...stats.weekly.map((w) => w.n)) : 1;
+  const maxAttempts = ok ? Math.max(1, ...stats.attempts.map((a) => a.n)) : 1;
   const pad = mobile ? '14px 12px 42px' : '18px 22px 48px';
   const count = (id) => (!ok ? null : id === 'all' ? stats.total : stats.stages?.[id] || 0);
   return (
@@ -108,7 +108,7 @@ export default function LiveRto({ mobile }) {
           <Pager page={page} pages={data.pages} total={data.total} pageSize={PAGE_SIZE} onPage={setPage} loading={loading} />
         </section>
 
-        <aside style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(3,minmax(0,1fr))', gap: 14 }}>
+        <aside style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(2,minmax(0,1fr))', gap: 14 }}>
           <section style={{ ...CARD, padding: 16 }}>
             <b style={{ color: T.TEXT, fontSize: 14 }}>RTO by courier</b>
             <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
@@ -119,16 +119,11 @@ export default function LiveRto({ mobile }) {
             </div>
           </section>
           <section style={{ ...CARD, padding: 16 }}>
-            <b style={{ color: T.TEXT, fontSize: 14 }}>Why parcels return</b>
-            <div style={{ marginTop: 10, display: 'grid', gap: 9 }}>
-              {ok && stats.reasons.map((r) => <div key={r.reason}><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: T.TEXT_SECONDARY }}><span>{REASONS[r.reason] || titleCase(r.reason)}</span><b style={{ color: T.TEXT }}>{r.count} · {r.pct}%</b></div></div>)}
-              {ok && !stats.reasons.length && <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>No RTO yet.</span>}
-            </div>
-          </section>
-          <section style={{ ...CARD, padding: 16 }}>
-            <b style={{ color: T.TEXT, fontSize: 14 }}>RTO started, last 8 weeks</b>
-            <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-end', gap: 6, height: 90 }}>
-              {ok && stats.weekly.map((w) => <div key={w.label} title={`${w.label}: ${w.n}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}><div style={{ width: '100%', height: `${Math.max(4, (w.n / maxWeek) * 70)}px`, borderRadius: 3, background: '#6D28D9' }} /><small style={{ fontSize: 9.5, color: T.TEXT_MUTED }}>{w.label.split(' ')[0]}</small></div>)}
+            <b style={{ color: T.TEXT, fontSize: 14 }}>NDR attempts before RTO</b>
+            <small style={{ display: 'block', color: T.TEXT_MUTED, marginTop: 2 }}>How many delivery attempts were made before the parcel went back</small>
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-end', gap: 14, height: 110 }}>
+              {ok && stats.attempts.map((a) => <div key={a.label} title={`${a.label}: ${a.n} parcels`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, justifyContent: 'flex-end', height: '100%' }}><b style={{ fontSize: 12, color: T.TEXT }}>{a.n}</b><div style={{ width: '100%', height: `${Math.max(4, (a.n / maxAttempts) * 70)}px`, borderRadius: 3, background: '#6D28D9' }} /><small style={{ fontSize: 10.5, color: T.TEXT_MUTED, textAlign: 'center' }}>{a.label}</small></div>)}
+              {!ok && <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>{stats ? 'Could not load.' : 'Loading…'}</span>}
             </div>
           </section>
         </aside>

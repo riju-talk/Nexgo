@@ -32,7 +32,7 @@ export async function shopifyRoutes(app: FastifyInstance) {
     const shop = parsed.success ? normalizeShop(parsed.data.shop) : null;
     if (!shop) return back(reply, 'error', 'Enter your store address like my-store.myshopify.com (the address ending in .myshopify.com, not your custom domain).');
     const nonce = randomBytes(16).toString('hex');
-    reply.setCookie(NONCE_COOKIE, nonce, { httpOnly: true, sameSite: 'lax', secure: config.NODE_ENV === 'production', path: COOKIE_PATH, maxAge: 600 });
+    reply.setCookie(NONCE_COOKIE, nonce, { httpOnly: true, sameSite: 'lax', secure: config.COOKIE_SECURE, path: COOKIE_PATH, maxAge: 600 });
     const url = new URL(`https://${shop}/admin/oauth/authorize`);
     url.search = new URLSearchParams({ client_id: config.SHOPIFY_CLIENT_ID!, scope: config.SHOPIFY_SCOPES, redirect_uri: redirectUri(), state: signState(request.principal!.sellerId, shop, nonce) }).toString();
     return reply.redirect(url.toString());

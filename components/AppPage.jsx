@@ -85,7 +85,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
   const isEmailScheduler = id === 'email-reports';
   const isNotifyChannels = id === 'wa-api' || id === 'sms-api';
   const isCustomSetting = isTeamRoles || isCodConfirmation || isInvoiceSettings || isEmailScheduler || isNotifyChannels;
-  const isLiveAdminOperations = ['a-kyc', 'a-wallets', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
+  const isLiveAdminOperations = ['a-registrations', 'a-kyc', 'a-wallets', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
   const isLiveWorkspaceTool = ['courier-rules', 'label', 'mis', 'a-tickets', 'abandoned', 'profile', 'support'].includes(id);
   const isLiveAdminReport = ['a-revenue', 'a-sla-report', 'a-analytics', 'a-gst'].includes(id);
   const isAdminDisputes = id === 'a-disputes';

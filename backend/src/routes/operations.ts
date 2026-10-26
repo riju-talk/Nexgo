@@ -286,6 +286,29 @@ export async function operationsRoutes(app: FastifyInstance) {
       return updated.rows[0];
     });
   });
+  // Clone: a fresh, unshipped copy of an order (same consignee, products, parcel and charges) under a new order number "<number>-C1", "-C2" ...
+  app.post('/v1/orders/:orderId/clone', { preHandler: requireSeller }, async (request, reply) => {
+    const p = getPrincipal(request); const orderId = uuid.parse((request.params as { orderId: string }).orderId);
+    const src = await withSellerTransaction(p.sellerId, async (client) => {
+      const o = (await client.query('SELECT o.*, c.full_name, c.email, c.phone, c.address_line_1, c.address_line_2, c.city, c.state, c.pincode, c.company_name, c.alternate_phone, c.landmark FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=$1 AND o.seller_id=$2', [orderId, p.sellerId])).rows[0];
+      if (!o) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      const items = (await client.query('SELECT product_id, sku, name, quantity, unit_price_paise, weight_g, hsn_code FROM order_items WHERE order_id=$1 ORDER BY created_at', [orderId])).rows;
+      const base = String(o.order_number).replace(/-C[0-9]+$/, '');
+      const taken = new Set((await client.query<{ order_number: string }>('SELECT order_number FROM orders WHERE seller_id=$1 AND order_number LIKE $2', [p.sellerId, `${base.replace(/[%_\\]/g, (m) => `\\${m}`)}-C%`])).rows.map((r) => r.order_number));
+      let n = 1; while (taken.has(`${base}-C${n}`)) n += 1;
+      return { o, items, number: `${base}-C${n}` };
+    });
+    const { o } = src; const opt = (v: unknown) => (v === null || v === undefined || v === '' ? undefined : v);
+    const input = orderInput.parse({
+      warehouseId: o.warehouse_id, orderNumber: src.number, orderFlow: o.order_flow, channel: 'single', paymentMode: o.payment_mode, codAmountPaise: Number(o.cod_amount_paise), notes: opt(o.notes),
+      customer: { fullName: o.full_name, email: opt(o.email), phone: o.phone, addressLine1: o.address_line_1, addressLine2: opt(o.address_line_2), city: o.city, state: o.state, pincode: o.pincode, companyName: opt(o.company_name), alternatePhone: opt(o.alternate_phone), landmark: opt(o.landmark) },
+      items: src.items.map((i) => ({ productId: opt(i.product_id), sku: i.sku, name: i.name, hsnCode: opt(i.hsn_code), quantity: i.quantity, unitPricePaise: Number(i.unit_price_paise), weightG: i.weight_g })),
+      package: { weightG: opt(o.total_weight_g), lengthMm: opt(o.package_length_mm), widthMm: opt(o.package_width_mm), heightMm: opt(o.package_height_mm) },
+      charges: { shippingPaise: Number(o.shipping_charges_paise), giftWrapPaise: Number(o.gift_wrap_paise), transactionPaise: Number(o.transaction_charges_paise), otherPaise: Number(o.other_charges_paise), discountPaise: Number(o.discount_paise), taxRateBps: o.tax_rate_bps },
+    });
+    const made = await createOrder(p, request.id, input);
+    return reply.code(201).send({ id: made.id, orderNumber: src.number, nexgoOrderId: made.nexgo_order_id });
+  });
   app.patch('/v1/orders/:orderId/state',{ preHandler: requireSeller }, async (request) => {
     const p = getPrincipal(request); const orderId = uuid.parse((request.params as { orderId: string }).orderId); const { state } = z.object({ state: z.enum(['draft', 'new', 'ready_to_ship', 'booked', 'cancelled', 'returned']) }).parse(request.body);
     return withSellerTransaction(p.sellerId, async (client) => { const current = await client.query<{ state: string }>('SELECT state FROM orders WHERE id=$1 AND seller_id=$2 FOR UPDATE', [orderId, p.sellerId]); if (!current.rows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 }); if (!transitions[current.rows[0].state].includes(state)) throw Object.assign(new Error(`Cannot transition order from ${current.rows[0].state} to ${state}`), { statusCode: 409 }); const updated = await client.query(`UPDATE orders SET state=$1::order_state,cancelled_at=CASE WHEN $1::order_state='cancelled'::order_state THEN now() ELSE cancelled_at END,updated_at=now() WHERE id=$2 RETURNING *`, [state, orderId]); await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.state_changed', targetType: 'order', targetId: orderId, requestId: request.id, metadata: { from: current.rows[0].state, to: state } }); return updated.rows[0]; });

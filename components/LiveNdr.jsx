@@ -76,7 +76,7 @@ function CaseDialog({ row, initialAction, onClose, onDone }) {
           <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
             <label style={{ fontSize: 12.5, fontWeight: 650, color: T.TEXT_LABEL }}>What would you like to do?
               <select style={{ ...FIELD, width: '100%', marginTop: 6 }} value={action} onChange={(e) => setAction(e.target.value)}>
-                <option value="delivery_rescheduled">Schedule redelivery</option><option value="reattempt">Reattempt delivery</option><option value="address_update">Update address</option><option value="customer_contact">Customer contacted — issue sorted</option><option value="rto">Mark as RTO (return to origin)</option>
+                <option value="delivery_rescheduled">Schedule redelivery</option><option value="reattempt">Reattempt delivery</option><option value="address_update">Update address</option><option value="rto">Mark as RTO (return to origin)</option>
               </select></label>
             {action === 'delivery_rescheduled' && <label style={{ fontSize: 12.5, fontWeight: 650, color: T.TEXT_LABEL }}>Redelivery date<input type="date" min={dayInput(0)} style={{ ...FIELD, width: '100%', marginTop: 6 }} value={date} onChange={(e) => setDate(e.target.value)} /></label>}
             {action === 'address_update' && (
@@ -107,7 +107,7 @@ function CaseDialog({ row, initialAction, onClose, onDone }) {
 export default function LiveNdr({ mobile }) {
   const { showToast } = useAppState();
   const [tab, setTab] = useState('all'); const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState(EMPTY_FILTERS); const [panel, setPanel] = useState(true);
+  const [filters, setFilters] = useState(EMPTY_FILTERS); const [panel, setPanel] = useState(false);
   const [reason, setReason] = useState('');
   const [tick, setTick] = useState(0);
   const [data, setData] = useState({ key: '', items: [], total: 0, pages: 1, error: '' });
@@ -180,7 +180,7 @@ export default function LiveNdr({ mobile }) {
           </div>
           <div style={{ padding: '12px 14px 4px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <Btn small onClick={() => setPanel((o) => !o)}>{panel ? 'Hide filters' : `Filters${anyFilter ? ' •' : ''}`}</Btn>
-            <select aria-label="Reason" style={{ ...FIELD, height: 32 }} value={reason} onChange={(e) => { setReason(e.target.value); setPage(1); }}><option value="">All reasons</option>{Object.entries(REASONS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
+            <select aria-label="Reason" style={{ ...FIELD, height: 32 }} value={reason} onChange={(e) => { setReason(e.target.value); setPage(1); }}><option value="">All reasons</option>{Object.entries(REASONS).filter(([id]) => id !== 'incorrect_product').map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
           </div>
           {panel && <ShipmentFilters key={JSON.stringify(filters)} value={filters} onApply={applyFilters} couriers={stats?.couriers || []} mobile={mobile} />}
 

@@ -9,13 +9,9 @@ Two Vercel projects from the same repo:
 
 The frontend never calls the API cross-origin. `next.config.mjs` proxies `/v1/*` to `BACKEND_URL`, so the session and CSRF cookies stay first-party on the frontend domain (no `SameSite=None` or CORS changes needed).
 
-## Test-data deploy (no settings needed)
+## Environment variables (required)
 
-The demo is fully hardcoded: the API defaults to the Neon test database and the frontend defaults to `https://nexgo-zpcx.vercel.app` on Vercel, so **no environment variables are required**. Deploy `backend` and the repo root as two projects and open the frontend.
-
-Demo logins (already in the Neon database; the seed scripts were removed after loading): seller `demo@acmeexports.com` / `Demo@123`, admin `admin@nexgo.in` / `Admin@456`. Label and invoice-PDF actions show a "coming soon" message.
-
-The Neon connection string is committed in `backend/src/config.ts`. That is acceptable only for this throwaway demo: delete the Neon project after review. The sections below are the proper setup for real data.
+Nothing is hardcoded any more. Set these on the `nexgo-api` project before deploying (names and meaning: `.env.example`): `DATABASE_URL`, `FRONTEND_ORIGIN`, `CSRF_SECRET`, `LOCAL_ENCRYPTION_KEY`, `ENCRYPTION_KEY`, `RAZORPAY_WEBHOOK_SECRET`, plus SMTP and courier keys as needed. On `nexgo-web` set `BACKEND_URL` to the API origin; the build fails without it. The previous demo deploy relied on committed defaults, so it stops working until these are set.
 
 ## 1. Create the production database
 

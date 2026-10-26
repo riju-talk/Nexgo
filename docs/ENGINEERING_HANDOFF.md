@@ -9,7 +9,7 @@ production build, not an MVP mock.
 - Branch: `main` (`backend/seller-admin-foundation` has been fully merged).
 - API: Fastify/TypeScript in `backend/`, local port 4010.
 - Local services: PostgreSQL 16, Redis, MinIO, Mailpit in `compose.backend.yml`.
-- Start: `docker compose -f compose.backend.yml up -d`; `cd backend && npm run migrate`;
+- Start: `docker compose --profile local up -d postgres mailpit minio`; `cd backend && npm run migrate`;
   run `npm run dev` and `npm run worker` in separate terminals.
 - Main database is PostgreSQL; AWS target is RDS PostgreSQL. Never replace it with a
   frontend mock database.

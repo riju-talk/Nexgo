@@ -22,14 +22,14 @@ npm run seed:demo-network
 npm run seed:demo-admin
 ```
 
-## Local demonstration accounts
+## Local demonstration accounts (development servers only)
 
 | Workspace | Email | Password |
 | --- | --- | --- |
 | Seller | `demo@acmeexports.com` | `Demo@123` |
 | Platform admin | `admin@nexgo.in` | `Admin@456` |
 
-These are local demo-only accounts. Do not reuse them in a deployed environment.
+These are created by the backend itself (`backend/src/lib/devAccounts.ts`) on a development server with a local database; nothing in the UI shows them. Do not reuse them in a deployed environment.
 
 ## Presentation flow (12 minutes)
 

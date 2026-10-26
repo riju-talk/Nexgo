@@ -92,7 +92,7 @@ export async function adminRoutes(app: FastifyInstance) {
       [admin.user_id, hashSessionToken(token), String(config.SESSION_TTL_DAYS), request.headers['user-agent'] ?? null, request.ip],
     );
     reply.setCookie('nx_session', token, sessionCookieOptions());
-    issueCsrfCookie(reply);
+    issueCsrfCookie(reply, token);
     return { userId: admin.user_id, fullName: admin.full_name, role: admin.role, expiresAt: session.rows[0].expires_at };
   });
 

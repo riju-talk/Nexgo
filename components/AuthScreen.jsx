@@ -35,13 +35,13 @@ export default function AuthScreen({ mode }) {
   const mobile = vw <= MOBILE_BREAK;
   const [form, setForm] = useState({ businessName: '', fullName: '', email: '', password: '', phone: '', confirmPassword: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [notice, setNotice] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    const reason = new URLSearchParams(window.location.search).get('reason');
+    return reason === 'expired' ? 'Your session ended. Please sign in again.' : reason === 'idle' ? 'You were signed out after a period of inactivity.' : '';
+  });
   const set = (name) => (value) => setForm((current) => ({ ...current, [name]: value }));
-  
-  // Demo credentials helper
-  const fillDemo = () => {
-    setForm({ ...form, email: 'demo@acmeexports.com', password: 'Demo@123' });
-    showToast('Demo credentials filled. Click Sign In to continue.');
-  };
   
   const submit = async (event) => {
     event.preventDefault(); setSubmitting(true);
@@ -52,6 +52,8 @@ export default function AuthScreen({ mode }) {
       if (mode === 'signup') {
         if (form.password !== form.confirmPassword) throw new Error('Passwords do not match');
         await apiFetch('/v1/auth/signup', { method: 'POST', body: { businessName: form.businessName, fullName: form.fullName, email: form.email, password: form.password } });
+        // No session yet: an admin has to approve the account first and we e-mail the decision.
+        setSubmitted(true); return;
       }
       if (mode === 'forgot') { await apiFetch('/v1/auth/forgot-password', { method: 'POST', body: { email: form.email } }); showToast('If the account exists, a reset link has been sent.'); return; }
       if (mode === 'reset') {
@@ -62,7 +64,14 @@ export default function AuthScreen({ mode }) {
         showToast('Password reset. Please sign in.'); nav('login'); return;
       }
       nav('dashboard');
-    } catch (error) { showToast(error instanceof ApiError ? error.message : error.message || 'Unable to continue', 'error'); }
+    } catch (error) {
+      const code = error instanceof ApiError ? error.message : '';
+      if (code === 'ACCOUNT_PENDING_APPROVAL') setNotice('Your registration is waiting for admin approval. We will e-mail you as soon as it is approved.');
+      else if (code === 'ACCOUNT_REJECTED') setNotice(`Your registration was not approved${error.body?.reason ? `: ${error.body.reason}` : '.'}`);
+      else if (code === 'INVALID_CREDENTIALS') showToast('Incorrect email or password.', 'error');
+      else if (code === 'EMAIL_ALREADY_REGISTERED') showToast('This email is already registered. Sign in instead.', 'error');
+      else showToast(error instanceof ApiError ? (error.status === 429 ? 'Too many attempts. Wait a minute and try again.' : error.message) : error.message || 'Unable to continue', 'error');
+    }
     finally { setSubmitting(false); }
   };
 
@@ -120,46 +129,7 @@ export default function AuthScreen({ mode }) {
               <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT, textShadow: 'none' }}>Sign in</div>
               <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 4 }}>Access your shipping workspace</div>
               
-              {/* Demo Credentials Banner */}
-              <div style={{ 
-                marginTop: 16, 
-                padding: '11px 13px', 
-                background: 'rgba(56,119,252,.08)', 
-                border: '1px solid rgba(56,119,252,.25)',
-                borderRadius: 9,
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 10
-              }}>
-                <div style={{ fontSize: 16 }}>🚀</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: AUTH_LINK, marginBottom: 3 }}>Demo Access Available</div>
-                  <div style={{ fontSize: 11.5, color: AUTH_SUB, lineHeight: 1.5, marginBottom: 8 }}>
-                    <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: AUTH_TEXT, marginTop: 3 }}>
-                      <div>Email: <strong>demo@acmeexports.com</strong></div>
-                      <div>Password: <strong>Demo@123</strong></div>
-                    </div>
-                  </div>
-                  <button 
-                    type="button" 
-                    onClick={fillDemo}
-                    style={{ 
-                      height: 26, 
-                      padding: '0 10px', 
-                      border: '1px solid rgba(56,119,252,.4)', 
-                      borderRadius: 6, 
-                      background: 'rgba(56,119,252,.12)', 
-                      color: AUTH_LINK, 
-                      fontSize: 11, 
-                      fontWeight: 700, 
-                      cursor: 'pointer' 
-                    }}
-                  >
-                    Fill Demo Credentials
-                  </button>
-                </div>
-              </div>
-              
+              {notice && <div role="status" style={{ marginTop: 14, padding: '10px 12px', borderRadius: 8, background: '#FEF3C7', border: '1px solid #FCD34D', color: '#92400E', fontSize: 12.5, lineHeight: 1.5 }}>{notice}</div>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 16 }}>
                 <Field label="Work email" required value={form.email} onChange={set('email')} placeholder="you@company.com" />
                 <Field label="Password" required type="password" value={form.password} onChange={set('password')} />
@@ -174,7 +144,14 @@ export default function AuthScreen({ mode }) {
               </div>
             </>
           )}
-          {mode === 'signup' && (
+          {mode === 'signup' && submitted && (
+            <div role="status">
+              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT }}>Request received</div>
+              <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 8, lineHeight: 1.6 }}>Thanks, {form.fullName}. Our team reviews every new account. You will get an email at <strong>{form.email}</strong> once it is approved, and then you can sign in.</div>
+              <div style={{ ...PRIMARY_BTN, width: '100%', marginTop: 20 }} onClick={() => nav('login')}>Back to sign in</div>
+            </div>
+          )}
+          {mode === 'signup' && !submitted && (
             <>
               <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT }}>Create account</div>
               <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 4 }}>Set up your seller workspace</div>
