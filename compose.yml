@@ -1,13 +1,15 @@
 # NEXGO full stack. Every value comes from the single root .env file (copy .env.example to .env first).
 #
-#   docker compose --profile local up --build      # app + throwaway Postgres + Mailpit + MinIO (try it on a laptop)
+#   docker compose --profile local up --build      # app + throwaway Postgres + Mailpit (try it on a laptop)
+#   docker compose --profile db up -d --build      # app + Postgres on this machine (small EC2 without RDS)
 #   docker compose up --build                      # app only: DATABASE_URL in .env must point at your database (RDS, Neon, ...)
 #
+# Ports are published on 127.0.0.1 only; put nginx (installed on the host, see deploy/) in front for public traffic.
 # Open http://localhost:3021. Mail sent by the app shows up at http://localhost:8025 when the `local` profile is on.
 name: nexgo
 
 x-app: &app
-  env_file: .env
+  env_file: ${ENV_FILE:-.env}
   restart: unless-stopped
   init: true
 
@@ -25,7 +27,8 @@ services:
   backend:
     <<: *app
     build: { context: ./backend }
-    ports: ["${BACKEND_PORT:-4010}:4010"]
+    # loopback only: the host nginx is the one public entrance
+    ports: ["127.0.0.1:${BACKEND_PORT:-4010}:4010"]
     environment:
       NODE_ENV: production
       PORT: "4010"
@@ -49,12 +52,12 @@ services:
       args:
         BACKEND_URL: ${BACKEND_URL:-http://backend:4010}
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
-    ports: ["${FRONTEND_PORT:-3021}:3021"]
+    ports: ["127.0.0.1:${FRONTEND_PORT:-3021}:3021"]
     depends_on: [backend]
 
   # --- local-only helpers (profile `local`) ---
   postgres:
-    profiles: [local]
+    profiles: [local, db]
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-nexgo}
@@ -73,16 +76,5 @@ services:
     image: axllent/mailpit:latest
     ports: ["1025:1025", "8025:8025"]
 
-  minio:
-    profiles: [local]
-    image: quay.io/minio/minio:latest
-    command: server /data --console-address ':9001'
-    environment:
-      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-}
-      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-}
-    ports: ["9000:9000", "9001:9001"]
-    volumes: [nexgo-minio:/data]
-
 volumes:
   nexgo-postgres:
-  nexgo-minio:

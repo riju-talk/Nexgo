@@ -81,6 +81,9 @@ const schema = z.object({
   DOCS_ENABLED: bool(!production),
   // Development-only logins (lib/devAccounts.ts). Ignored, and refused, in production.
   ENABLE_DEV_ACCOUNTS: bool(true),
+  // The built-in platform admin (lib/bootstrapAdmin.ts). Turn off once real admins exist; RESET puts the built-in password back.
+  ENABLE_BOOTSTRAP_ADMIN: bool(true),
+  BOOTSTRAP_ADMIN_RESET: bool(false),
 });
 
 const parsed = schema.safeParse(process.env);

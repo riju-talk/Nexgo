@@ -55,6 +55,7 @@ import { billingRoutes } from './routes/billing.js';
 import { adminDisputeRoutes } from './routes/adminDisputes.js';
 import { adminRegistrationRoutes } from './routes/adminRegistrations.js';
 import { ensureDevAccounts } from './lib/devAccounts.js';
+import { ensureBootstrapAdmin } from './lib/bootstrapAdmin.js';
 export async function buildApp() {
 const app = Fastify({ logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' }, requestIdHeader: 'x-request-id', trustProxy: config.TRUST_PROXY });
 if (config.DOCS_ENABLED) registerDocs(app);
@@ -135,6 +136,7 @@ await app.register(rtoRoutes);
 await app.register(billingRoutes);
 await app.register(adminDisputeRoutes);
 await app.register(adminRegistrationRoutes);
+await ensureBootstrapAdmin(app.log);
 await ensureDevAccounts(app.log);
 return app;
 }

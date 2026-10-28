@@ -15,12 +15,25 @@ No secret is baked into an image: `.dockerignore` excludes `.env`, and the only 
 
 `.env.example` lists every variable. Locally it is the root `.env` (git-ignored), read by the backend, the frontend build and compose. On AWS the same names go into Secrets Manager / SSM Parameter Store and are injected as container environment variables (real environment variables win over any file). The backend refuses to start in production if a required secret is missing and names the missing variables (never the values). There are no secret defaults in code.
 
-## AWS mapping
+## EC2 with nginx on the host (the setup we use)
 
-- **ECS Fargate (or EKS)**: three services from two images: `web`, `api`, `worker`; run `migrate` as a one-off task before each deploy (`node dist/db/migrate.js`).
-- **ALB** in front: `/v1/*` -> `api`, everything else -> `web`. Same domain, so cookies stay first-party. Build `web` with `NEXT_PUBLIC_API_BASE=` (empty) in that case, or leave the Next server to proxy with `BACKEND_URL=http://api:4010`. Health checks: `GET /health` (api), `GET /login` (web).
-- Set `TRUST_PROXY=true` on the api (real client IPs for rate limits and session logs), `FRONTEND_ORIGIN=https://your.domain`, terminate TLS at the ALB. Cookies are `Secure` in production.
-- **RDS PostgreSQL 14+** (`pgcrypto`, `citext`): `DATABASE_URL=...?sslmode=require`. **S3** for files: use the task IAM role (leave `AWS_ACCESS_KEY_ID/SECRET` empty), `STORAGE_ENABLED=true`. **SES** over SMTP for mail: `SMTP_HOST=email-smtp.<region>.amazonaws.com`, `SMTP_PORT=587`, `SMTP_USER/SMTP_PASSWORD`, verified `MAIL_FROM`.
+Only the app runs in Docker (`web`, `api`, `worker`, one-shot `migrate`). nginx, certbot and the firewall live on the host. Compose publishes the containers on `127.0.0.1` only, so nginx is the single public entrance.
+
+1. **Instance**: Ubuntu 22.04/24.04, t3.small or larger, security group open on 22, 80, 443 only. Point a DNS A record at its Elastic IP.
+2. **Once**: `git clone` the repo, then `sudo bash deploy/ec2/setup.sh` (Docker + Compose plugin, nginx, certbot, ufw). Log out and in so your user can run docker.
+3. **Config**: `cp .env.example .env` and fill it in. For this setup: `NODE_ENV=production`, `FRONTEND_ORIGIN=https://your.domain`, `TRUST_PROXY=true`, `DATABASE_URL` (RDS, or `postgres://USER:PASS@postgres:5432/DB` with `--with-db` below), `BACKEND_URL=http://backend:4010`, fresh `CSRF_SECRET` / `LOCAL_ENCRYPTION_KEY` / `ENCRYPTION_KEY` / `RAZORPAY_WEBHOOK_SECRET`, and the SMTP settings (SES) so approval emails are delivered. `chmod 600 .env`.
+4. **nginx**: `sudo cp deploy/nginx/nexgo.conf /etc/nginx/conf.d/`, replace `app.example.com` with your domain, `sudo certbot --nginx -d your.domain`, `sudo nginx -t && sudo systemctl reload nginx`. (IP only, no domain: use the commented plain-http block and set `COOKIE_SECURE=false`, `FRONTEND_ORIGIN=http://<ip>`.)
+5. **Deploy**: `bash deploy/ec2/deploy.sh` (add `--with-db` for a Postgres container with a named volume; back it up). It builds, runs migrations, starts everything and checks `/health`. Redeploy the same way after `git pull`.
+6. **First sign-in**: `https://your.domain/admin/login` with the built-in admin below, change the password, then approve sellers under Admin > Registrations.
+
+## Built-in admin
+
+`nexgo201@gmail.com` is created at every API start (`backend/src/lib/bootstrapAdmin.ts`, only an argon2id hash is stored in code and in the database, never the password; the initial password was given to the client). An existing account keeps its password, so changing it sticks; `BOOTSTRAP_ADMIN_RESET=true` for one start puts the built-in one back (and signs that admin out everywhere). Because this repo holds the hash of a known password, change it right after the first sign-in and set `ENABLE_BOOTSTRAP_ADMIN=false` once real admins exist. Registration emails go to every platform admin unless `ADMIN_NOTIFY_EMAIL` is set.
+
+## Other AWS pieces
+
+- **RDS PostgreSQL 14+** (`pgcrypto`, `citext`): `DATABASE_URL=...?sslmode=require`. **S3** for files: use the instance IAM role (leave `AWS_ACCESS_KEY_ID/SECRET` empty), `STORAGE_ENABLED=true`. **SES** over SMTP: `SMTP_HOST=email-smtp.<region>.amazonaws.com`, `SMTP_PORT=587`, `SMTP_USER/SMTP_PASSWORD`, verified `MAIL_FROM`.
+- ECS/ALB works too: same images, `/v1/*` to the api, the rest to web.
 
 ## Authentication model
 
