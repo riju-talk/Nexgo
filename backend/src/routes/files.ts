@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { config } from '../config.js';
 import { db, withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
 import { requirePlatformAdmin } from '../lib/adminAuth.js';
-import { storage } from '../lib/storage.js';
+import { assertStorageEnabled, checkStorage, storage } from '../lib/storage.js';
 import { requireSeller } from './seller.js';
 
 const IMAGE_ONLY = ['logo', 'signature'];
@@ -28,9 +27,6 @@ const uploadInput = z.object({
   dataBase64: z.string().min(16).max(Math.ceil((MAX_BYTES * 4) / 3) + 16),
 });
 
-function storageReady() {
-  if (!config.STORAGE_ENABLED) throw Object.assign(new Error('File storage is not connected yet'), { statusCode: 501 });
-}
 function principal(request: FastifyRequest) {
   if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
   return request.principal;
@@ -38,7 +34,7 @@ function principal(request: FastifyRequest) {
 
 export async function fileRoutes(app: FastifyInstance) {
   app.post('/v1/seller/files', { preHandler: requireSeller, bodyLimit: 5 * 1024 * 1024 }, async (request, reply) => {
-    storageReady();
+    assertStorageEnabled();
     const p = principal(request);
     const input = uploadInput.parse(request.body);
     const data = Buffer.from(input.dataBase64, 'base64');
@@ -71,13 +67,16 @@ export async function fileRoutes(app: FastifyInstance) {
   });
 
   app.get('/v1/seller/files/:fileId/url', { preHandler: requireSeller }, async (request, reply) => {
-    storageReady();
+    assertStorageEnabled();
     const p = principal(request);
     const fileId = z.string().uuid().parse((request.params as { fileId: string }).fileId);
     const row = await withSellerTransaction(p.sellerId, async (client) => (await client.query('SELECT storage_key FROM seller_files WHERE id = $1 AND seller_id = $2', [fileId, p.sellerId])).rows[0]);
     if (!row) return reply.code(404).send({ error: 'FILE_NOT_FOUND' });
     return { url: await storage.presignedGetObject(row.storage_key, SIGNED_URL_SECONDS) };
   });
+
+  // Admin: is the bucket reachable for every operation the app needs? Names the failing step and the fix.
+  app.get('/v1/admin/storage/health', { preHandler: requirePlatformAdmin }, async () => checkStorage());
 
   // Admin: every document a seller uploaded.
   app.get('/v1/admin/sellers/:sellerId/files', { preHandler: requirePlatformAdmin }, async (request) => {
@@ -88,7 +87,7 @@ export async function fileRoutes(app: FastifyInstance) {
   });
 
   app.get('/v1/admin/files/:fileId/url', { preHandler: requirePlatformAdmin }, async (request, reply) => {
-    storageReady();
+    assertStorageEnabled();
     const fileId = z.string().uuid().parse((request.params as { fileId: string }).fileId);
     const row = (await db.query<{ storage_key: string; seller_id: string }>('SELECT storage_key, seller_id FROM seller_files WHERE id = $1', [fileId])).rows[0];
     if (!row) return reply.code(404).send({ error: 'FILE_NOT_FOUND' });

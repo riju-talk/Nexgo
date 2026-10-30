@@ -61,7 +61,10 @@ export default function AuthScreen({ mode }) {
         if (!token) throw new Error('This reset link is missing its security token. Request a new one.');
         if (form.password !== form.confirmPassword) throw new Error('Passwords do not match');
         await apiFetch('/v1/auth/reset-password', { method: 'POST', body: { token, password: form.password } });
-        showToast('Password reset. Please sign in.'); nav('login'); return;
+        showToast('Password reset. Please sign in.');
+        // An admin who just set their own password goes back to the admin sign-in, not the seller one.
+        if (new URLSearchParams(window.location.search).get('admin') === '1') { nav('a-login'); return; }
+        nav('login'); return;
       }
       nav('dashboard');
     } catch (error) {
@@ -98,7 +101,7 @@ export default function AuthScreen({ mode }) {
           </div>
           <div style={{ maxWidth: 420 }}>
             <div style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: '#7189AE', fontWeight: 700, marginBottom: 16 }}>Multi-courier shipping platform</div>
-            <div style={{ fontSize: 32, lineHeight: 1.25, fontWeight: 600, letterSpacing: '-.015em' }}>Smarter, faster, easier shipping for your business.</div>
+            <h1 style={{ margin: 0, fontSize: 32, lineHeight: 1.25, fontWeight: 600, letterSpacing: "-.015em" }}>Smarter, faster, easier shipping for your business.</h1>
             <div style={{ fontSize: 13.5, color: '#8298B8', marginTop: 12, lineHeight: 1.6 }}>Compare live rates, book with any courier, and track every shipment in one console.</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 26 }}>
               {['Delhivery', 'Blue Dart', 'Ekart', 'XpressBees', 'Shadowfax'].map((c) => (

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'motion/react';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
@@ -12,6 +13,7 @@ const METRICS = [['8', 'Courier partners'], ['29,000', 'Serviceable pincodes'], 
 const WHITE_CARD_TOKENS = { '--nx-surface': '#ffffff', '--nx-surface-soft': '#fafbfd', '--nx-border': '#d8e0e7', '--nx-divider': '#e8edf1', '--nx-input-border': '#c6d1da', '--nx-text': '#17212b', '--nx-text-label': '#334454', '--nx-text-secondary': '#647587', '--nx-text-muted': '#8391a0', '--nx-text-faint': '#a5b0ba' };
 
 export default function AdminLogin() {
+  const router = useRouter();
   const { nav, vw, theme, toggleTheme } = useAppState();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
@@ -19,6 +21,7 @@ export default function AdminLogin() {
   const [mfaToken, setMfaToken] = useState(null);
   const [mfaCode, setMfaCode] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const mobile = vw <= T.MOBILE_BREAK;
   const dark = theme === 'dark';
@@ -29,9 +32,23 @@ export default function AdminLogin() {
     try {
       const result = await adminApi.login(email, password);
       if (result.requiresMfa) { setMfaToken(result.mfaToken); return; }
+      // Signed in with the e-mailed temporary password: go straight to choosing a new one.
+      if (result.mustChangePassword) { router.push(`/reset-password?token=${encodeURIComponent(result.resetToken)}&admin=1`); return; }
       nav('a-overview');
     } catch (err) {
       setError(err instanceof ApiError && err.status === 401 ? 'Incorrect email or password.' : err instanceof ApiError && err.status === 429 ? 'Too many attempts. Wait a minute and try again.' : 'Something went wrong. Try again.');
+    } finally { setBusy(false); }
+  }
+
+  async function sendTemporaryPassword() {
+    setError(''); setNotice('');
+    if (!/^\S+@\S+\.\S+$/.test(email)) { setError('Enter your work email above first, then choose Forgot password.'); return; }
+    setBusy(true);
+    try {
+      await adminApi.forgotPassword(email);
+      setNotice('If that email belongs to a platform admin, a temporary password has been sent. Sign in with it and you will be asked to set your own.');
+    } catch (err) {
+      setError(err instanceof ApiError && err.status === 429 ? 'Too many requests. Wait a minute and try again.' : 'Something went wrong. Try again.');
     } finally { setBusy(false); }
   }
 
@@ -85,6 +102,8 @@ export default function AdminLogin() {
           </div>
           {error && <div style={{ marginTop: 15, padding: '10px 12px', borderRadius: 8, background: 'rgba(178,58,43,.1)', border: '1px solid rgba(178,58,43,.25)', color: '#B23A2B', fontSize: 12.5, fontWeight: 600 }}>{error}</div>}
           
+          {notice && <div role="status" style={{ marginTop: 15, padding: '10px 12px', borderRadius: 8, background: 'rgba(31,138,76,.1)', border: '1px solid rgba(31,138,76,.25)', color: '#1F6B3D', fontSize: 12.5, lineHeight: 1.5 }}>{notice}</div>}
+
           {mfaToken ? (
             <form onSubmit={submitMfa} style={{ display: 'grid', gap: 15, marginTop: 20 }}>
               <label style={{ display: 'grid', gap: 6 }}><span style={{ color: T.TEXT_LABEL, fontSize: 12.5, fontWeight: 650 }}>6-digit code <span style={{ color: T.RED }}>*</span></span><input aria-label="Verification code" value={mfaCode} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="000000" autoFocus autoComplete="one-time-code" style={{ ...field, fontVariantNumeric: 'tabular-nums', letterSpacing: '.3em', textAlign: 'center' }} /></label>
@@ -95,7 +114,7 @@ export default function AdminLogin() {
             <form onSubmit={submitPassword} style={{ display: 'grid', gap: 15, marginTop: 20 }}>
               <label style={{ display: 'grid', gap: 6 }}><span style={{ color: T.TEXT_LABEL, fontSize: 12.5, fontWeight: 650 }}>Work email <span style={{ color: T.RED }}>*</span></span><input aria-label="Work email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@nexgo.in" autoComplete="email" required style={field} /></label>
               <label style={{ display: 'grid', gap: 6 }}><span style={{ color: T.TEXT_LABEL, fontSize: 12.5, fontWeight: 650 }}>Password <span style={{ color: T.RED }}>*</span></span><span style={{ position: 'relative' }}><input aria-label="Password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" required style={{ ...field, paddingRight: 68 }} /><button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', top: 7, right: 8, height: 28, border: 0, borderRadius: 6, background: 'transparent', color: '#1a6aa3', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>{showPassword ? 'Hide' : 'Show'}</button></span></label>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, color: T.TEXT_SECONDARY, fontSize: 12 }}><span>Restricted to platform staff</span><span style={{ color: '#1a6aa3', fontWeight: 700, cursor: 'pointer' }}>Forgot password?</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, color: T.TEXT_SECONDARY, fontSize: 12 }}><span>Restricted to platform staff</span><button type="button" onClick={sendTemporaryPassword} disabled={busy} style={{ color: '#1a6aa3', fontWeight: 700, cursor: 'pointer', background: 'none', border: 0, padding: 0, fontSize: 12 }}>Forgot password?</button></div>
               <motion.button whileTap={{ scale: .98 }} type="submit" disabled={busy} style={{ height: 41, marginTop: 2, border: 0, borderRadius: 8, background: '#1a6aa3', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy ? .7 : 1, fontSize: 14, fontWeight: 700, boxShadow: '0 9px 18px rgba(15,31,61,.2)' }}>{busy ? 'Signing in…' : 'Sign in to operations'}</motion.button>
             </form>
           )}

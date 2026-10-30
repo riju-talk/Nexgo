@@ -9,7 +9,7 @@ import { audit } from '../lib/audit.js';
 import { calculateRate, paiseToAmount } from '../lib/money.js';
 import { laneZone } from '../lib/zone.js';
 import { requireSeller } from './seller.js';
-import { storage } from '../lib/storage.js';
+import { storage, STORAGE_NOT_CONNECTED } from '../lib/storage.js';
 import { config } from '../config.js';
 import { courierAdapter } from '../couriers/registry.js';
 
@@ -258,7 +258,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
     return { results, cancelled: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, refundedPaise: results.reduce((t, r) => t + (r.refundedPaise ?? 0), 0) };
   });
   app.post('/v1/shipments/:shipmentId/label',{ preHandler: requireSeller }, async (request, reply) => {
-    if (!config.STORAGE_ENABLED) return reply.code(501).send({ error: 'FILE_STORAGE_NOT_CONNECTED', message: 'File storage is not connected yet; this will be available soon.' });
+    if (!config.STORAGE_ENABLED) return reply.code(501).send(STORAGE_NOT_CONNECTED);
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
     const result = await withSellerTransaction(p.sellerId, async (client) => {
       const shipment = await client.query<{ awb: string }>('SELECT awb FROM shipments WHERE id=$1 AND seller_id=$2', [shipmentId, p.sellerId]);
@@ -270,7 +270,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
     return reply.code(202).send(result);
   });
   app.get('/v1/shipments/:shipmentId/label', { preHandler: requireSeller }, async (request, reply) => {
-    if (!config.STORAGE_ENABLED) return reply.code(501).send({ error: 'FILE_STORAGE_NOT_CONNECTED', message: 'File storage is not connected yet; this will be available soon.' });
+    if (!config.STORAGE_ENABLED) return reply.code(501).send(STORAGE_NOT_CONNECTED);
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
     return withSellerTransaction(p.sellerId, async (client) => {
       const doc = await client.query<{ storage_key: string; status: string }>(`SELECT storage_key,status FROM documents WHERE shipment_id=$1 AND seller_id=$2 AND kind='shipping_label' ORDER BY created_at DESC LIMIT 1`, [shipmentId, p.sellerId]);

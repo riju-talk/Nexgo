@@ -1,5 +1,10 @@
-import { redirect } from 'next/navigation';
+import Landing from '@/components/Landing';
 
-export default function RootPage() {
-  redirect('/login');
+export const metadata = {
+  title: { absolute: 'NEXGO: Multi-courier shipping platform for Indian sellers' },
+  alternates: { canonical: '/' },
+};
+
+export default function HomePage() {
+  return <Landing />;
 }

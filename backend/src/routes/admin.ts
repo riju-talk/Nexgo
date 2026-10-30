@@ -6,6 +6,8 @@ import argon2 from 'argon2';
 import { config } from '../config.js';
 import { AGGREGATORS, lorrigoAdapter } from '../couriers/registry.js';
 import { newSessionToken } from '../lib/session.js';
+import { randomInt } from 'node:crypto';
+import { sendMail } from '../lib/mailer.js';
 import { requirePlatformAdmin, requireCommercialAdmin } from '../lib/adminAuth.js';
 import { sessionCookieOptions } from '../lib/cookies.js';
 import { issueCsrfCookie, clearCsrfCookie } from '../lib/csrf.js';
@@ -74,7 +76,17 @@ export async function adminRoutes(app: FastifyInstance) {
        WHERE u.email = $1`, [input.email.toLowerCase()],
     );
     const admin = account.rows[0];
-    if (!admin || !(await argon2.verify(admin.password_hash, input.password))) {
+    if (!admin) return reply.code(401).send({ error: 'INVALID_CREDENTIALS' });
+    if (!(await argon2.verify(admin.password_hash, input.password))) {
+      // Not the real password: it may be the temporary one e-mailed by "Forgot password". That one opens no session;
+      // it is exchanged (once) for a reset token so the admin sets their own password.
+      const temp = await db.query<{ password_hash: string }>('SELECT password_hash FROM admin_temp_passwords WHERE user_id = $1 AND expires_at > now()', [admin.user_id]);
+      if (temp.rows[0] && (await argon2.verify(temp.rows[0].password_hash, input.password))) {
+        await db.query('DELETE FROM admin_temp_passwords WHERE user_id = $1', [admin.user_id]);
+        const resetToken = newSessionToken();
+        await db.query(`INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES ($1,$2, now() + interval '30 minutes')`, [admin.user_id, hashSessionToken(resetToken)]);
+        return { mustChangePassword: true, resetToken };
+      }
       return reply.code(401).send({ error: 'INVALID_CREDENTIALS' });
     }
     // MFA is only enforceable once an admin has actually enrolled a device —
@@ -94,6 +106,27 @@ export async function adminRoutes(app: FastifyInstance) {
     reply.setCookie('nx_session', token, sessionCookieOptions());
     issueCsrfCookie(reply, token);
     return { userId: admin.user_id, fullName: admin.full_name, role: admin.role, expiresAt: session.rows[0].expires_at };
+  });
+
+  // Registered platform admins only. Always answers 202 so the form never reveals who is an admin.
+  app.post('/v1/admin/auth/forgot-password', { config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const { email } = z.object({ email: z.string().email().max(254) }).parse(request.body);
+    const admin = (await db.query<{ user_id: string }>('SELECT pa.user_id FROM platform_admins pa JOIN users u ON u.id = pa.user_id WHERE u.email = $1', [email.toLowerCase()])).rows[0];
+    if (admin) {
+      const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+      const temporary = Array.from({ length: 16 }, () => alphabet[randomInt(alphabet.length)]).join('');
+      await db.query(
+        `INSERT INTO admin_temp_passwords (user_id, password_hash, expires_at) VALUES ($1,$2, now() + interval '30 minutes')
+         ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash, expires_at = EXCLUDED.expires_at, created_at = now()`,
+        [admin.user_id, await argon2.hash(temporary, { type: argon2.argon2id })]);
+      await sendMail(email, 'Your NEXGO admin temporary password',
+        `Your temporary password: ${temporary}
+
+Sign in at ${config.FRONTEND_ORIGIN}/admin/login with this email and the temporary password. You will be taken straight to a page to set your own password. It expires in 30 minutes and works once. Your current password keeps working until you set a new one.
+
+If you did not ask for this, ignore this email.`);
+    }
+    return reply.code(202).send({ accepted: true });
   });
 
   app.post('/v1/admin/auth/logout', { preHandler: requirePlatformAdmin }, async (request, reply) => {

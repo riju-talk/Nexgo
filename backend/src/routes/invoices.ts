@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db, withSellerTransaction, withTransaction } from '../db/client.js';
 import { requireAccountAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
 import { requireSeller } from './seller.js';
-import { storage } from '../lib/storage.js';
+import { storage, STORAGE_NOT_CONNECTED } from '../lib/storage.js';
 import { config } from '../config.js';
 
 const GST_BPS = 1800; // 18%, matches the rate already used across the mock UI
@@ -152,7 +152,7 @@ export async function invoiceRoutes(app: FastifyInstance) {
   });
 
   app.get('/v1/seller/invoices/:invoiceId/download', { preHandler: requireSeller }, async (request, reply) => {
-    if (!config.STORAGE_ENABLED) return reply.code(501).send({ error: 'FILE_STORAGE_NOT_CONNECTED', message: 'File storage is not connected yet; this will be available soon.' });
+    if (!config.STORAGE_ENABLED) return reply.code(501).send(STORAGE_NOT_CONNECTED);
     const p = principal(request);
     const invoiceId = z.string().uuid().parse((request.params as { invoiceId: string }).invoiceId);
     return withSellerTransaction(p.sellerId, async (client) => {

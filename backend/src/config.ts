@@ -54,6 +54,7 @@ const schema = z.object({
   // --- Object storage (S3-compatible; the AWS SDK also reads AWS_* itself) ---
   STORAGE_ENABLED: bool(false),
   STORAGE_BUCKET: z.string().min(3).default('assets'),
+  AWS_REGION: z.string().optional(),
 
   // --- Company details printed on the monthly tax invoice (unset lines are left off) ---
   COMPANY_NAME: z.string().default('NEXGO Logistics Technologies Pvt. Ltd.'),
@@ -84,6 +85,9 @@ const schema = z.object({
   // The built-in platform admin (lib/bootstrapAdmin.ts). Turn off once real admins exist; RESET puts the built-in password back.
   ENABLE_BOOTSTRAP_ADMIN: bool(true),
   BOOTSTRAP_ADMIN_RESET: bool(false),
+  // Developer super admin for testing (lib/bootstrapAdmin.ts). Set both to create it; leave them empty to have none.
+  DEV_SUPERADMIN_EMAIL: z.string().email().optional().or(z.literal('')),
+  DEV_SUPERADMIN_PASSWORD: z.string().min(12).optional().or(z.literal('')),
 });
 
 const parsed = schema.safeParse(process.env);
