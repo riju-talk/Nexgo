@@ -35,7 +35,6 @@ export default function AuthScreen({ mode }) {
   const mobile = vw <= MOBILE_BREAK;
   const [form, setForm] = useState({ businessName: '', fullName: '', email: '', password: '', phone: '', confirmPassword: '' });
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
   const [notice, setNotice] = useState(() => {
     if (typeof window === 'undefined') return '';
     const reason = new URLSearchParams(window.location.search).get('reason');
@@ -44,7 +43,17 @@ export default function AuthScreen({ mode }) {
   const set = (name) => (value) => setForm((current) => ({ ...current, [name]: value }));
   
   const submit = async (event) => {
-    event.preventDefault(); setSubmitting(true);
+    event.preventDefault();
+    if (mode === 'signup') {
+      // Same rules as the API, so the person sees what to fix instead of a generic failure.
+      const problem = form.businessName.trim().length < 3 ? 'Business name must be at least 3 characters.'
+        : form.fullName.trim().length < 2 ? 'Enter your name.'
+        : !/^\S+@\S+\.\S+$/.test(form.email.trim()) ? 'Enter a valid work email.'
+        : form.password.length < 12 ? 'Password must be at least 12 characters.'
+        : form.password !== form.confirmPassword ? 'Passwords do not match.' : '';
+      if (problem) { showToast(problem, 'error'); return; }
+    }
+    setSubmitting(true);
     try {
       if (mode === 'login') {
         await apiFetch('/v1/auth/login', { method: 'POST', body: { email: form.email, password: form.password } });
@@ -68,9 +77,10 @@ export default function AuthScreen({ mode }) {
       nav('dashboard');
     } catch (error) {
       const code = error instanceof ApiError ? error.message : '';
-      if (code === 'INVALID_CREDENTIALS') showToast('Incorrect email or password.', 'error');
-      else if (code === 'EMAIL_ALREADY_REGISTERED') showToast('This email is already registered. Sign in instead.', 'error');
-      else showToast(error instanceof ApiError ? (error.status === 429 ? 'Too many attempts. Wait a minute and try again.' : error.message) : error.message || 'Unable to continue', 'error');
+      const text = code === 'INVALID_CREDENTIALS' ? 'Incorrect email or password.'
+        : code === 'EMAIL_ALREADY_REGISTERED' ? 'This email is already registered. Sign in instead.'
+        : error instanceof ApiError ? (error.status === 429 ? 'Too many attempts. Wait a minute and try again.' : error.message) : error.message || 'Unable to continue';
+      showToast(text, 'error');
     }
     finally { setSubmitting(false); }
   };
@@ -144,14 +154,7 @@ export default function AuthScreen({ mode }) {
               </div>
             </>
           )}
-          {mode === 'signup' && submitted && (
-            <div role="status">
-              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT }}>Request received</div>
-              <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 8, lineHeight: 1.6 }}>Thanks, {form.fullName}. Our team reviews every new account. You will get an email at <strong>{form.email}</strong> once it is approved, and then you can sign in.</div>
-              <div style={{ ...PRIMARY_BTN, width: '100%', marginTop: 20 }} onClick={() => nav('login')}>Back to sign in</div>
-            </div>
-          )}
-          {mode === 'signup' && !submitted && (
+          {mode === 'signup' && (
             <>
               <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT }}>Create account</div>
               <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 4 }}>Set up your seller workspace</div>
@@ -159,7 +162,7 @@ export default function AuthScreen({ mode }) {
                 <Field label="Business name" required value={form.businessName} onChange={set('businessName')} />
                 <Field label="Your name" required value={form.fullName} onChange={set('fullName')} />
                 <Field label="Work email" required value={form.email} onChange={set('email')} />
-                <Field label="Password" required type="password" value={form.password} onChange={set('password')} />
+                <Field label="Password" required type="password" placeholder="At least 12 characters" value={form.password} onChange={set('password')} />
                 <Field label="Confirm password" required type="password" value={form.confirmPassword} onChange={set('confirmPassword')} />
                 <button type="submit" disabled={submitting} style={{ ...PRIMARY_BTN, width: '100%', border: 0, opacity: submitting ? .7 : 1 }}>{submitting ? 'Creating…' : 'Create account'}</button>
                 <div style={{ textAlign: 'center', fontSize: 12, color: AUTH_SUB }}>Already on NEXGO? <span onClick={() => nav('login')} style={{ color: AUTH_LINK, fontWeight: 700, cursor: 'pointer' }}>Sign in</span></div>

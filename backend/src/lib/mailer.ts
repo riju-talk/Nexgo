@@ -8,7 +8,8 @@ const transport = nodemailer.createTransport({
   host: config.SMTP_HOST,
   port: config.SMTP_PORT,
   secure: config.SMTP_SECURE,
-  auth: config.SMTP_USER ? { user: config.SMTP_USER, pass: config.SMTP_PASSWORD ?? '' } : undefined,
+  // Gmail shows app passwords in groups ("abcd efgh ijkl mnop"); the spaces are not part of the password.
+  auth: config.SMTP_USER ? { user: config.SMTP_USER.trim(), pass: (config.SMTP_PASSWORD ?? '').replace(/\s+/g, '') } : undefined,
   connectionTimeout: 5000,
   greetingTimeout: 5000,
   socketTimeout: 8000,
