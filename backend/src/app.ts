@@ -53,7 +53,6 @@ import { registerDocs } from './lib/openapi.js';
 import { rtoRoutes } from './routes/rto.js';
 import { billingRoutes } from './routes/billing.js';
 import { adminDisputeRoutes } from './routes/adminDisputes.js';
-import { adminRegistrationRoutes } from './routes/adminRegistrations.js';
 import { ensureDevAccounts } from './lib/devAccounts.js';
 import { ensureBootstrapAdmin, ensureDeveloperSuperadmin } from './lib/bootstrapAdmin.js';
 export async function buildApp() {
@@ -135,7 +134,6 @@ await app.register(adminReportRoutes);
 await app.register(rtoRoutes);
 await app.register(billingRoutes);
 await app.register(adminDisputeRoutes);
-await app.register(adminRegistrationRoutes);
 await ensureBootstrapAdmin(app.log);
 await ensureDeveloperSuperadmin(app.log);
 await ensureDevAccounts(app.log);

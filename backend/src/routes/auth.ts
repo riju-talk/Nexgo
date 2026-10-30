@@ -7,7 +7,7 @@ import { slugify } from '../lib/slug.js';
 import { hashSessionToken, newSessionToken, startBrowserSession, IDLE_SQL } from '../lib/session.js';
 import { SESSION_COOKIE } from '../lib/cookies.js';
 import { issueCsrfCookie, clearCsrfCookie, csrfTokenValid } from '../lib/csrf.js';
-import { notifyRegistrationReceived } from '../lib/registrationMail.js';
+import { sendRegistrationConfirmation } from '../lib/registrationMail.js';
 
 const signupSchema = z.object({ businessName: z.string().trim().min(3).max(120), fullName: z.string().trim().min(2).max(100), email: z.string().email().max(254), password: z.string().min(12).max(200) });
 const loginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(200) });
@@ -35,7 +35,7 @@ export async function authRoutes(app: FastifyInstance) {
     });
     if (!created) return reply.code(409).send({ error: 'EMAIL_ALREADY_REGISTERED' });
     // Best effort: the request is already stored, a mail outage must not lose the registration.
-    await notifyRegistrationReceived({ businessName: input.businessName, fullName: input.fullName, email: input.email.toLowerCase() });
+    await sendRegistrationConfirmation({ businessName: input.businessName, fullName: input.fullName, email: input.email.toLowerCase() });
     await startBrowserSession(request, reply, created.token, revokeSession);
     return reply.code(201).send({ sellerId: created.sellerId, role: 'owner', expiresAt: created.expiresAt });
   });
@@ -46,9 +46,6 @@ export async function authRoutes(app: FastifyInstance) {
       const found = await client.query<{ id: string; password_hash: string; seller_id: string; role: string; state: string; approval_status: string; approval_rejection_reason: string | null }>('SELECT u.id, u.password_hash, m.seller_id, m.role, s.state, s.approval_status, s.approval_rejection_reason FROM users u JOIN seller_memberships m ON m.user_id = u.id JOIN sellers s ON s.id = m.seller_id WHERE u.email = $1', [input.email.toLowerCase()]);
       const account = found.rows[0];
       if (!account || account.state === 'suspended' || !(await argon2.verify(account.password_hash, input.password))) return { failed: 'INVALID_CREDENTIALS' as const };
-      // Only reached with the right password, so these statuses are not an account-enumeration oracle.
-      if (account.approval_status === 'pending') return { failed: 'ACCOUNT_PENDING_APPROVAL' as const };
-      if (account.approval_status === 'rejected') return { failed: 'ACCOUNT_REJECTED' as const, reason: account.approval_rejection_reason };
       const token = newSessionToken();
       const created = await client.query<{ expires_at: string }>('INSERT INTO sessions (user_id, token_hash, expires_at, user_agent, ip_address) VALUES ($1, $2, now() + ($3 || \' days\')::interval, $4, $5) RETURNING expires_at', [account.id, hashSessionToken(token), String(config.SESSION_TTL_DAYS), request.headers['user-agent'] ?? null, request.ip]);
       return { token, expiresAt: created.rows[0].expires_at, sellerId: account.seller_id, role: account.role };

@@ -68,9 +68,7 @@ export default function AuthScreen({ mode }) {
       nav('dashboard');
     } catch (error) {
       const code = error instanceof ApiError ? error.message : '';
-      if (code === 'ACCOUNT_PENDING_APPROVAL') setNotice('Your registration is waiting for admin approval. We will e-mail you as soon as it is approved.');
-      else if (code === 'ACCOUNT_REJECTED') setNotice(`Your registration was not approved${error.body?.reason ? `: ${error.body.reason}` : '.'}`);
-      else if (code === 'INVALID_CREDENTIALS') showToast('Incorrect email or password.', 'error');
+      if (code === 'INVALID_CREDENTIALS') showToast('Incorrect email or password.', 'error');
       else if (code === 'EMAIL_ALREADY_REGISTERED') showToast('This email is already registered. Sign in instead.', 'error');
       else showToast(error instanceof ApiError ? (error.status === 429 ? 'Too many attempts. Wait a minute and try again.' : error.message) : error.message || 'Unable to continue', 'error');
     }

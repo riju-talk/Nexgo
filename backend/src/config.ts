@@ -74,8 +74,6 @@ const schema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   MAIL_FROM: z.string().default('NEXGO <no-reply@nexgo.local>'),
-  // Who is told when a seller registers and waits for approval (comma separated). Empty = every platform admin on file.
-  ADMIN_NOTIFY_EMAIL: z.string().default(''),
 
   // --- Operations ---
   // Swagger UI / openapi.json. Off in production unless you really want the route table public.
