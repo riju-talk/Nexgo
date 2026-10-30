@@ -27,7 +27,7 @@ const summarize = async (client: Pool | PoolClient, q: Range, sellerId?: string)
   const f = args.length - 2, t = args.length - 1, d = args.length;
   // inWindow(col): the timestamp falls on a day inside the selected window (explicit dates, otherwise the last N days incl. today).
   const inWindow = (col: string) => `((${col} ${IST})::date BETWEEN COALESCE($${f}::date, (now() ${IST})::date - ($${d}::int - 1)) AND COALESCE($${t}::date, (now() ${IST})::date))`;
-  const [orders, shipments, today, spend, trend, states, couriers] = await Promise.all([
+  const [orders, shipments, today, spend, trend, states, couriers, payments] = await Promise.all([
     client.query(`SELECT state::text, count(*)::int AS count FROM orders WHERE ${inWindow('created_at')} ${s} GROUP BY state`, args),
     client.query(`SELECT state::text, count(*)::int AS count FROM shipments WHERE ${inWindow('created_at')} ${s} GROUP BY state`, args),
     client.query(`SELECT count(*)::int AS count FROM orders WHERE (created_at ${IST})::date = (now() ${IST})::date ${s}`, sellerId ? [sellerId] : []),
@@ -48,7 +48,12 @@ const summarize = async (client: Pool | PoolClient, q: Range, sellerId?: string)
       `SELECT cp.name, count(*)::int AS total, count(*) FILTER (WHERE sh.state = 'delivered')::int AS delivered
        FROM shipments sh JOIN courier_providers cp ON cp.id = sh.provider_id
        WHERE ${inWindow('sh.created_at')} AND sh.state <> 'cancelled' AND cp.name NOT ILIKE 'ecom%express%' ${alias('sh')} GROUP BY cp.name ORDER BY total DESC LIMIT 6`, args),
+    // COD vs prepaid: orders (not cancelled) created in the window, with the COD amount to collect and the prepaid order value.
+    client.query<{ mode: string; orders: number; value: string }>(
+      `SELECT payment_mode::text AS mode, count(*)::int AS orders, COALESCE(sum(CASE WHEN payment_mode = 'cod' THEN cod_amount_paise ELSE total_paise END),0)::bigint AS value
+       FROM orders WHERE ${inWindow('created_at')} AND state <> 'cancelled' ${s} GROUP BY payment_mode`, args),
   ]);
+  const payMix = (mode: string) => { const r = payments.rows.find((x) => x.mode === mode); return { orders: r ? Number(r.orders) : 0, valuePaise: r ? Number(r.value) : 0 }; };
   const by = (rows: { state: string; count: number }[]) => Object.fromEntries(rows.map((x) => [x.state, Number(x.count)]));
   const orderBy = by(orders.rows), shipmentBy = by(shipments.rows);
   const totalShipments = Object.entries(shipmentBy).filter(([k]) => k !== 'cancelled').reduce((a, [, b]) => a + b, 0);
@@ -66,6 +71,7 @@ const summarize = async (client: Pool | PoolClient, q: Range, sellerId?: string)
     trend: trend.rows.map((x) => ({ ...x, orders: Number(x.orders), delivered: Number(x.delivered) })),
     stateDelivery: states.rows.map((x) => ({ state: x.state, delivered: Number(x.delivered), total: Number(x.total) })),
     courierMix: couriers.rows.map((x) => ({ name: x.name, total: Number(x.total), delivered: Number(x.delivered) })),
+    paymentMix: { cod: payMix('cod'), prepaid: payMix('prepaid') },
   };
 };
 

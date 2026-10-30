@@ -19,6 +19,8 @@ function GlassSheen() {
 }
 
 const RANGES = [[1, 'Today'], [7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [0, 'Custom range']];
+// Share of COD orders in the selected period (live dashboard data), 0 when there are no orders.
+const codShare = (mix) => { const c = mix?.cod.orders ?? 0; const p = mix?.prepaid.orders ?? 0; return c + p ? Math.round((c / (c + p)) * 100) : 0; };
 const money = (paise) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format((paise || 0) / 100);
 const shortDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—');
 
@@ -297,13 +299,17 @@ export default function DashboardContent({ mobile, narrow, phone }) {
               <div style={{ padding: '13px 18px', borderBottom: `1px solid ${T.DIVIDER}`, fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: T.SECTION_HEAD }}>COD vs. prepaid</div>
               <div style={{ padding: 18 }}>
                 <div style={{ display: 'flex', height: 34, border: `1px solid ${T.BORDER}` }}>
-                  <div style={{ width: '62%', background: T.NAVY, color: '#fff', display: 'flex', alignItems: 'center', padding: '0 10px', fontVariantNumeric: 'tabular-nums', fontSize: 12.5, fontWeight: 600 }}>62% COD</div>
-                  <div style={{ width: '38%', background: T.ACCENT, color: '#FFFFFF', display: 'flex', alignItems: 'center', padding: '0 10px', fontVariantNumeric: 'tabular-nums', fontSize: 12.5, fontWeight: 600 }}>38%</div>
+                  {(live?.paymentMix?.cod.orders ?? 0) + (live?.paymentMix?.prepaid.orders ?? 0) === 0
+                    ? <div style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '0 10px', fontSize: 12.5, color: T.TEXT_MUTED }}>{live ? 'No orders in this period' : 'Loading…'}</div>
+                    : <>
+                      <div style={{ width: `${codShare(live.paymentMix)}%`, background: T.NAVY, color: '#fff', display: 'flex', alignItems: 'center', padding: '0 10px', fontVariantNumeric: 'tabular-nums', fontSize: 12.5, fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap' }}>{codShare(live.paymentMix) >= 12 ? `${codShare(live.paymentMix)}% COD` : ''}</div>
+                      <div style={{ width: `${100 - codShare(live.paymentMix)}%`, background: T.ACCENT, color: '#FFFFFF', display: 'flex', alignItems: 'center', padding: '0 10px', fontVariantNumeric: 'tabular-nums', fontSize: 12.5, fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap' }}>{100 - codShare(live.paymentMix) >= 12 ? `${100 - codShare(live.paymentMix)}%` : ''}</div>
+                    </>}
                 </div>
                 <div style={{ marginTop: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${T.PAPER}`, fontSize: 12 }}><div style={{ color: T.TEXT_SECONDARY }}>COD orders</div><div style={{ fontFamily: T.MONO }}>7,738</div></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${T.PAPER}`, fontSize: 12 }}><div style={{ color: T.TEXT_SECONDARY }}>COD collected</div><div style={{ fontFamily: T.MONO }}>₹41.2L</div></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: 12 }}><div style={{ color: T.TEXT_SECONDARY }}>Prepaid value</div><div style={{ fontFamily: T.MONO }}>₹26.8L</div></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${T.PAPER}`, fontSize: 12 }}><div style={{ color: T.TEXT_SECONDARY }}>COD orders</div><div style={{ fontFamily: T.MONO }}>{(live?.paymentMix?.cod.orders ?? 0).toLocaleString('en-IN')}</div></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${T.PAPER}`, fontSize: 12 }}><div style={{ color: T.TEXT_SECONDARY }}>COD collected</div><div style={{ fontFamily: T.MONO }}>{money(live?.paymentMix?.cod.valuePaise)}</div></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: 12 }}><div style={{ color: T.TEXT_SECONDARY }}>Prepaid value</div><div style={{ fontFamily: T.MONO }}>{money(live?.paymentMix?.prepaid.valuePaise)}</div></div>
                 </div>
               </div>
             </div>
