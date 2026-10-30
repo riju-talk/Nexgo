@@ -16,25 +16,28 @@ const authRateLimit = { rateLimit: { max: 10, timeWindow: '1 minute' } };
 const revokeSession = (hash: string) => db.query('UPDATE sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL', [hash]);
 
 export async function authRoutes(app: FastifyInstance) {
-  // Registration only creates a pending account. No session is issued: a platform admin has to approve it
-  // (POST /v1/admin/registrations/:id/approve), which sends the approval e-mail, and only then can the user sign in.
+  // Registration is instant: the account is approved on creation and the new owner is signed in straight away.
+  // Admins are told by e-mail (informational) and can still suspend a seller later.
   app.post('/v1/auth/signup', { config: authRateLimit }, async (request, reply) => {
     const input = signupSchema.parse(request.body);
     const created = await withTransaction(async (client) => {
       const existing = await client.query('SELECT 1 FROM users WHERE email = $1', [input.email.toLowerCase()]);
       if (existing.rowCount) return null;
       const baseSlug = slugify(input.businessName) || 'seller';
-      const seller = await client.query<{ id: string; slug: string }>('INSERT INTO sellers (legal_name, slug, state, approval_status) VALUES ($1, $2 || \'-\' || substr(gen_random_uuid()::text, 1, 8), \'onboarding\', \'pending\') RETURNING id, slug', [input.businessName, baseSlug]);
+      const seller = await client.query<{ id: string; slug: string }>('INSERT INTO sellers (legal_name, slug, state, approval_status, approval_decided_at) VALUES ($1, $2 || \'-\' || substr(gen_random_uuid()::text, 1, 8), \'onboarding\', \'approved\', now()) RETURNING id, slug', [input.businessName, baseSlug]);
       const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
       const user = await client.query<{ id: string }>('INSERT INTO users (email, password_hash, full_name) VALUES ($1, $2, $3) RETURNING id', [input.email.toLowerCase(), passwordHash, input.fullName]);
       await client.query('INSERT INTO seller_memberships (seller_id, user_id, role) VALUES ($1, $2, \'owner\')', [seller.rows[0].id, user.rows[0].id]);
-      await client.query('INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id) VALUES ($1, $2, \'seller.registration_requested\', \'seller\', $3, $4)', [seller.rows[0].id, user.rows[0].id, seller.rows[0].id, request.id]);
-      return { sellerId: seller.rows[0].id };
+      await client.query('INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id) VALUES ($1, $2, \'seller.registered\', \'seller\', $3, $4)', [seller.rows[0].id, user.rows[0].id, seller.rows[0].id, request.id]);
+      const token = newSessionToken();
+      const session = await client.query<{ expires_at: string }>('INSERT INTO sessions (user_id, token_hash, expires_at, user_agent, ip_address) VALUES ($1, $2, now() + ($3 || \' days\')::interval, $4, $5) RETURNING expires_at', [user.rows[0].id, hashSessionToken(token), String(config.SESSION_TTL_DAYS), request.headers['user-agent'] ?? null, request.ip]);
+      return { sellerId: seller.rows[0].id, token, expiresAt: session.rows[0].expires_at };
     });
     if (!created) return reply.code(409).send({ error: 'EMAIL_ALREADY_REGISTERED' });
     // Best effort: the request is already stored, a mail outage must not lose the registration.
     await notifyRegistrationReceived({ businessName: input.businessName, fullName: input.fullName, email: input.email.toLowerCase() });
-    return reply.code(202).send({ status: 'pending_approval' });
+    await startBrowserSession(request, reply, created.token, revokeSession);
+    return reply.code(201).send({ sellerId: created.sellerId, role: 'owner', expiresAt: created.expiresAt });
   });
 
   app.post('/v1/auth/login', { config: authRateLimit }, async (request, reply) => {

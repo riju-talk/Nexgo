@@ -52,8 +52,7 @@ export default function AuthScreen({ mode }) {
       if (mode === 'signup') {
         if (form.password !== form.confirmPassword) throw new Error('Passwords do not match');
         await apiFetch('/v1/auth/signup', { method: 'POST', body: { businessName: form.businessName, fullName: form.fullName, email: form.email, password: form.password } });
-        // No session yet: an admin has to approve the account first and we e-mail the decision.
-        setSubmitted(true); return;
+        // Registration is instant: the API signs the new owner in, so carry on to the dashboard.
       }
       if (mode === 'forgot') { await apiFetch('/v1/auth/forgot-password', { method: 'POST', body: { email: form.email } }); showToast('If the account exists, a reset link has been sent.'); return; }
       if (mode === 'reset') {

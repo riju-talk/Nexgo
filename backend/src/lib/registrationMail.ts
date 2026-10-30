@@ -14,9 +14,9 @@ export async function notifyRegistrationReceived(input: { businessName: string; 
   const admins = await adminRecipients().catch(() => []);
   await Promise.all([
     ...admins.map((to) => sendMail(to, `New seller registration: ${input.businessName}`,
-      `${input.fullName} <${input.email}> registered ${input.businessName} and is waiting for approval.\n\nReview it in the admin panel: ${config.FRONTEND_ORIGIN}/admin/registrations`)),
-    sendMail(input.email, 'We received your NEXGO registration',
-      `Hi ${input.fullName},\n\nThanks for registering ${input.businessName} on NEXGO. Our team reviews every new account. You will get another email as soon as it is approved, and then you can sign in.\n\nIf you did not register, ignore this email.`),
+      `${input.fullName} <${input.email}> registered ${input.businessName}. The account is active already; no approval is needed.\n\nSeller list: ${config.FRONTEND_ORIGIN}/admin/sellers`)),
+    sendMail(input.email, 'Welcome to NEXGO',
+      `Hi ${input.fullName},\n\nWelcome to NEXGO! ${input.businessName} is ready to use. Sign in any time at ${config.FRONTEND_ORIGIN}/login, then complete your KYC to start shipping.\n\nIf you did not register, ignore this email.`),
   ]);
 }
 
