@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useAppState } from '@/lib/AppStateContext';
 import { apiFetch, ApiError } from '@/lib/api';
+import Toast from './Toast';
 import * as T from '@/lib/theme';
 import { MOBILE_BREAK } from '@/lib/theme';
 
@@ -61,7 +62,10 @@ export default function AuthScreen({ mode }) {
       if (mode === 'signup') {
         if (form.password !== form.confirmPassword) throw new Error('Passwords do not match');
         await apiFetch('/v1/auth/signup', { method: 'POST', body: { businessName: form.businessName, fullName: form.fullName, email: form.email, password: form.password } });
-        // Registration is instant: the API signs the new owner in, so carry on to the dashboard.
+        // The API signs the new owner in; end that session so they sign in on purpose (best effort).
+        await apiFetch('/v1/auth/logout', { method: 'POST' }).catch(() => {});
+        showToast('Account created. A confirmation email is on its way. Please sign in.');
+        nav('login'); return;
       }
       if (mode === 'forgot') { await apiFetch('/v1/auth/forgot-password', { method: 'POST', body: { email: form.email } }); showToast('If the account exists, a reset link has been sent.'); return; }
       if (mode === 'reset') {
@@ -81,6 +85,7 @@ export default function AuthScreen({ mode }) {
         : code === 'EMAIL_ALREADY_REGISTERED' ? 'This email is already registered. Sign in instead.'
         : error instanceof ApiError ? (error.status === 429 ? 'Too many attempts. Wait a minute and try again.' : error.message) : error.message || 'Unable to continue';
       showToast(text, 'error');
+      if (mode === 'signup' && code === 'EMAIL_ALREADY_REGISTERED') nav('login');
     }
     finally { setSubmitting(false); }
   };
@@ -198,6 +203,7 @@ export default function AuthScreen({ mode }) {
           </div>
         </div>
       </div>
+      <Toast />
     </div>
   );
 }
