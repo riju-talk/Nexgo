@@ -19,7 +19,7 @@ const transport = nodemailer.createTransport({
 // password reset or an invite into a 500 (the token is already stored). Returns whether it was sent.
 export async function sendMail(to: string, subject: string, text: string) {
   try {
-    await transport.sendMail({ from: config.MAIL_FROM, to, subject, text });
+    await transport.sendMail({ from: config.MAIL_FROM, to, subject, text: `${text}\n\n--\nThe NEXGO team\n${config.FRONTEND_ORIGIN}` });
     return true;
   } catch (error) {
     console.error('Email could not be sent', { subject, reason: error instanceof Error ? error.message : String(error) });

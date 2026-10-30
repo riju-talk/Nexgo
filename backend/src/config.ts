@@ -73,7 +73,7 @@ const schema = z.object({
   SMTP_SECURE: bool(false), // true = implicit TLS (port 465); false = STARTTLS when the server offers it
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
-  MAIL_FROM: z.string().default('NEXGO <no-reply@nexgo.local>'),
+  MAIL_FROM: z.string().default('NEXGO <no-reply@mynexgo.com>'),
 
   // --- Operations ---
   // Swagger UI / openapi.json. Off in production unless you really want the route table public.
