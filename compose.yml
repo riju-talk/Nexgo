@@ -42,6 +42,8 @@ services:
     command: ["node", "dist/worker.js"]
     environment:
       NODE_ENV: production
+    healthcheck:
+      disable: true   # the worker serves no HTTP; the image check probes the API port
     depends_on:
       migrate: { condition: service_completed_successfully }
 
@@ -52,6 +54,9 @@ services:
       args:
         BACKEND_URL: ${BACKEND_URL:-http://backend:4010}
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
+    environment:
+      PORT: "3021"          # .env has PORT=4010 for the API; Next reads PORT too
+      HOSTNAME: 0.0.0.0
     ports: ["127.0.0.1:${FRONTEND_PORT:-3021}:3021"]
     depends_on: [backend]
 
