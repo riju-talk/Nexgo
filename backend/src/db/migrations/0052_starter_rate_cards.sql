@@ -24,7 +24,7 @@ WHERE rc.name = 'Starter rates (edit in Assign courier & rates)' AND rc.state = 
 ON CONFLICT (rate_card_id, service_id, zone_code, min_weight_g) DO NOTHING;
 
 INSERT INTO seller_courier_access (seller_id, service_id, state, cod_enabled)
-SELECT DISTINCT rc.seller_id, r.service_id, 'enabled', true
+SELECT DISTINCT rc.seller_id, r.service_id, 'enabled'::courier_access_state, true
 FROM rate_cards rc JOIN rate_card_rates r ON r.rate_card_id = rc.id
 WHERE rc.name = 'Starter rates (edit in Assign courier & rates)' AND rc.state = 'active' AND rc.seller_id IS NOT NULL
 ON CONFLICT (seller_id, service_id) DO NOTHING;
