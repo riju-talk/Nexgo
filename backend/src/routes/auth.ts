@@ -29,15 +29,13 @@ export async function authRoutes(app: FastifyInstance) {
       const user = await client.query<{ id: string }>('INSERT INTO users (email, password_hash, full_name) VALUES ($1, $2, $3) RETURNING id', [input.email.toLowerCase(), passwordHash, input.fullName]);
       await client.query('INSERT INTO seller_memberships (seller_id, user_id, role) VALUES ($1, $2, \'owner\')', [seller.rows[0].id, user.rows[0].id]);
       await client.query('INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id) VALUES ($1, $2, \'seller.registered\', \'seller\', $3, $4)', [seller.rows[0].id, user.rows[0].id, seller.rows[0].id, request.id]);
-      const token = newSessionToken();
-      const session = await client.query<{ expires_at: string }>('INSERT INTO sessions (user_id, token_hash, expires_at, user_agent, ip_address) VALUES ($1, $2, now() + ($3 || \' days\')::interval, $4, $5) RETURNING expires_at', [user.rows[0].id, hashSessionToken(token), String(config.SESSION_TTL_DAYS), request.headers['user-agent'] ?? null, request.ip]);
-      return { sellerId: seller.rows[0].id, token, expiresAt: session.rows[0].expires_at };
+      return { sellerId: seller.rows[0].id };
     });
     if (!created) return reply.code(409).send({ error: 'EMAIL_ALREADY_REGISTERED' });
-    // Best effort: the request is already stored, a mail outage must not lose the registration.
-    await sendRegistrationConfirmation({ businessName: input.businessName, fullName: input.fullName, email: input.email.toLowerCase() });
-    await startBrowserSession(request, reply, created.token, revokeSession);
-    return reply.code(201).send({ sellerId: created.sellerId, role: 'owner', expiresAt: created.expiresAt });
+    // Not awaited: a slow mail server must never delay the response (sendMail logs its own errors, never throws).
+    void sendRegistrationConfirmation({ businessName: input.businessName, fullName: input.fullName, email: input.email.toLowerCase() }).catch(() => {});
+    // No session: the sign-up page sends the new owner to the sign-in page.
+    return reply.code(201).send({ sellerId: created.sellerId, role: 'owner' });
   });
 
   app.post('/v1/auth/login', { config: authRateLimit }, async (request, reply) => {

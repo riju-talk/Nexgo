@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAppState } from '@/lib/AppStateContext';
 import { apiFetch, ApiError } from '@/lib/api';
@@ -36,6 +36,7 @@ export default function AuthScreen({ mode }) {
   const mobile = vw <= MOBILE_BREAK;
   const [form, setForm] = useState({ businessName: '', fullName: '', email: '', password: '', phone: '', confirmPassword: '' });
   const [submitting, setSubmitting] = useState(false);
+  const inFlight = useRef(false);
   const [notice, setNotice] = useState(() => {
     if (typeof window === 'undefined') return '';
     const reason = new URLSearchParams(window.location.search).get('reason');
@@ -45,6 +46,8 @@ export default function AuthScreen({ mode }) {
   
   const submit = async (event) => {
     event.preventDefault();
+    // A ref, not state: state only updates after a re-render, so a fast double click would send two requests.
+    if (inFlight.current) return;
     if (mode === 'signup') {
       // Same rules as the API, so the person sees what to fix instead of a generic failure.
       const problem = form.businessName.trim().length < 3 ? 'Business name must be at least 3 characters.'
@@ -54,6 +57,7 @@ export default function AuthScreen({ mode }) {
         : form.password !== form.confirmPassword ? 'Passwords do not match.' : '';
       if (problem) { showToast(problem, 'error'); return; }
     }
+    inFlight.current = true;
     setSubmitting(true);
     try {
       if (mode === 'login') {
@@ -62,8 +66,6 @@ export default function AuthScreen({ mode }) {
       if (mode === 'signup') {
         if (form.password !== form.confirmPassword) throw new Error('Passwords do not match');
         await apiFetch('/v1/auth/signup', { method: 'POST', body: { businessName: form.businessName, fullName: form.fullName, email: form.email, password: form.password } });
-        // The API signs the new owner in; end that session so they sign in on purpose (best effort).
-        await apiFetch('/v1/auth/logout', { method: 'POST' }).catch(() => {});
         showToast('Account created. A confirmation email is on its way. Please sign in.');
         nav('login'); return;
       }
@@ -87,7 +89,7 @@ export default function AuthScreen({ mode }) {
       showToast(text, 'error');
       if (mode === 'signup' && code === 'EMAIL_ALREADY_REGISTERED') nav('login');
     }
-    finally { setSubmitting(false); }
+    finally { inFlight.current = false; setSubmitting(false); }
   };
 
   return (
