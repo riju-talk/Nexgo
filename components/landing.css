@@ -20,8 +20,9 @@ html:has(.lp) { scroll-behavior: smooth; scroll-padding-top: 84px; }
 .lp-nav .lp-wrap { display: flex; align-items: center; justify-content: space-between; height: 72px; gap: 24px; }
 .lp-logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 21px; letter-spacing: -.02em; }
 .lp-logo.light { color: #fff; }
-.lp-mark { width: 34px; height: 34px; border-radius: 10px; background: var(--blue); color: #fff; display: grid; place-items: center; box-shadow: 0 4px 10px rgba(56, 119, 252, .35); }
-.lp-mark svg { width: 20px; height: 20px; }
+.lp-logo-img { height: 30px; width: auto; display: block; }
+.lp-mark { width: 38px; height: 38px; border-radius: 10px; background: #fff; display: grid; place-items: center; }
+.lp-mark img { width: 26px; height: auto; display: block; }
 .lp-links { display: flex; gap: 6px; font-size: 15px; font-weight: 600; color: var(--mute); }
 .lp-links a { padding: 8px 14px; border-radius: 9px; transition: background .15s ease, color .15s ease; }
 .lp-links a:hover { color: var(--ink); background: var(--page); }
@@ -244,7 +245,9 @@ html:has(.lp) { scroll-behavior: smooth; scroll-padding-top: 84px; }
 .lp-band .lp-hero-cta { justify-content: center; }
 
 /* ---------- footer ---------- */
-.lp-foot { background: #fff; padding: 64px 0 36px; font-size: 14.5px; color: var(--mute); }
+.lp-foot { background: #fff; padding: 64px 0 36px; font-size: 14.5px; color: #3d4f73; border-top: 1px solid var(--line); }
+.lp-foot nav a { color: #2a3a5c; }
+.lp-legal { color: #51628a; }
 .lp-foot-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 40px; }
 .lp-foot p { margin: 14px 0 0; max-width: 300px; line-height: 1.6; }
 .lp-foot nav { display: grid; gap: 12px; align-content: start; font-weight: 600; }

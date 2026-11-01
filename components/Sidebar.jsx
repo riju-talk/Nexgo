@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 import { apiFetch } from '@/lib/api';
+import NMark from './NMark';
 import { useSellerSession, initialsOf } from '@/lib/useSellerSession';
 
 const SB_WIDTH = 272;
@@ -153,7 +154,7 @@ export default function Sidebar({ activeId, mobile }) {
         onClick={() => nav('dashboard')}
         style={{ height: 68, flex: '0 0 68px', display: 'flex', alignItems: 'center', gap: 10, padding: '0 16px', borderBottom: '1px solid var(--nx-side-edge)', cursor: 'pointer', background: 'var(--nx-side-bg)' }}
       >
-        <div style={{ width: 31, height: 31, background: T.ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, color: '#FFFFFF', borderRadius: 9, clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
+        <NMark size={34} />
         <div style={{ minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 750, letterSpacing: '.13em', color: 'var(--nx-side-text)', lineHeight: 1 }}>NEXGO</div></div>
         {!mobile && <div style={{ marginLeft: 'auto' }}><CollapseControl collapsed={false} onClick={(event) => { event.stopPropagation(); toggleSidebar(); }} /></div>}
       </motion.div>

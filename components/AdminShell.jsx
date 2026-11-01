@@ -11,6 +11,7 @@ import * as T from '@/lib/theme';
 import { adminApi } from '@/lib/api';
 import SearchBox from './SearchBox';
 import CommandPalette from './CommandPalette';
+import NMark from './NMark';
 import SessionHeartbeat from './SessionHeartbeat';
 
 const GROUPS = [
@@ -36,7 +37,7 @@ function AdminNav({ mobile }) {
       style={{ width: 272, flex: '0 0 272px', position: mobile ? 'fixed' : 'sticky', left: 0, top: 0, height: '100vh', zIndex: 70, overflowY: 'auto', background: 'var(--nx-side-grad)', color: 'var(--nx-side-text)', borderRight: mobile ? 'none' : '1px solid var(--nx-side-edge)', boxShadow: mobile && visible ? '0 20px 54px rgba(8,20,40,.35)' : 'none' }}
     >
       <Link href={pathFor('a-overview')} onClick={() => mobile && setNavOpen(false)} style={{ height: 68, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--nx-side-edge)', textDecoration: 'none', color: 'var(--nx-side-text)' }}>
-        <div style={{ width: 31, height: 31, borderRadius: 9, display: 'grid', placeItems: 'center', background: T.ACCENT, color: '#FFFFFF', fontWeight: 850, fontSize: 13, clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
+        <NMark size={34} />
         <div><div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '.13em', lineHeight: 1 }}>NEXGO</div><div style={{ marginTop: 4, fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nx-side-label)' }}>Operations</div></div>
       </Link>
       <nav style={{ padding: '14px 8px 12px' }}>

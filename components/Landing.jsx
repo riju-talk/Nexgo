@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { Manrope } from 'next/font/google';
 import './landing.css';
 
@@ -60,8 +61,14 @@ const FAQ_JSON_LD = JSON.stringify({
 function Logo({ light }) {
   return (
     <Link href="/" className={`lp-logo${light ? ' light' : ''}`} aria-label="NEXGO home">
-      <span className="lp-mark"><svg viewBox="0 0 24 24" {...ICON} strokeWidth={2.8}><path d="M6 19V5l12 14V5" /></svg></span>
-      NEXGO
+      {light ? (
+        <>
+          <span className="lp-mark"><Image src="/nexgo-mark.png" alt="" width={428} height={364} /></span>
+          NEXGO
+        </>
+      ) : (
+        <Image src="/nexgo-logo.png" alt="NEXGO" width={1757} height={364} priority className="lp-logo-img" />
+      )}
     </Link>
   );
 }

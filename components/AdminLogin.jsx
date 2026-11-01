@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'motion/react';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
+import NMark from './NMark';
 import { adminApi, ApiError } from '@/lib/api';
 
 const METRICS = [['8', 'Courier partners'], ['29,000', 'Serviceable pincodes'], ['99.4%', 'Platform availability']];
@@ -74,7 +75,7 @@ export default function AdminLogin() {
 
       {!mobile && <section style={{ position: 'relative', zIndex: 1, minHeight: '100vh', padding: '48px 52px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', background: dark ? 'rgba(8,19,39,.76)' : 'rgba(12,26,51,.65)', backdropFilter: 'blur(7px)', color: '#fff' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 27, height: 27, display: 'grid', placeItems: 'center', background: T.ACCENT, color: '#FFFFFF', fontSize: 13, fontWeight: 850, clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
+          <NMark size={30} />
           <div><div style={{ fontSize: 15, fontWeight: 800, letterSpacing: '.13em' }}>NEXGO</div><div style={{ marginTop: 3, fontSize: 10, color: '#9BB0CA', fontWeight: 750, letterSpacing: '.1em', textTransform: 'uppercase' }}>Platform operations</div></div>
         </div>
 
@@ -95,7 +96,7 @@ export default function AdminLogin() {
       <section style={{ position: 'relative', zIndex: 1, minHeight: '100vh', padding: mobile ? 20 : 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <motion.button whileTap={{ scale: .94 }} onClick={toggleTheme} aria-label="Toggle colour mode" style={{ position: 'absolute', top: mobile ? 18 : 24, right: mobile ? 18 : 24, width: 37, height: 37, border: '1px solid var(--nx-glass-border)', borderRadius: 10, background: 'var(--nx-glass-1)', backdropFilter: 'blur(14px)', color: T.ACCENT, cursor: 'pointer', fontSize: 16 }}>{dark ? '☾' : '☀'}</motion.button>
         <div style={{ width: 'min(100%, 400px)', padding: mobile ? '29px 26px 26px' : '32px 34px 29px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow: '0 1px 1px rgba(15,23,42,.05), 0 24px 60px rgba(6,12,10,.35)', ...WHITE_CARD_TOKENS }}>
-          {mobile && <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><div style={{ width: 26, height: 26, display: 'grid', placeItems: 'center', background: T.ACCENT, color: '#FFFFFF', fontSize: 12, fontWeight: 850, clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div><div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '.13em', color: T.TEXT }}>NEXGO</div></div>}
+          {mobile && <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><NMark size={28} /><div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '.13em', color: T.TEXT }}>NEXGO</div></div>}
           <div style={{ marginTop: mobile ? 25 : 0 }}>
             <div style={{ color: T.TEXT, fontSize: 23, lineHeight: 1.12, letterSpacing: '-.02em', fontWeight: 750 }}>{mfaToken ? 'Verification code' : 'Admin sign in'}</div>
             <p style={{ margin: '6px 0 0', color: T.TEXT_SECONDARY, fontSize: 13, lineHeight: 1.55 }}>{mfaToken ? 'Enter the 6-digit code from your authenticator app.' : 'Access the NEXGO platform operations workspace.'}</p>
