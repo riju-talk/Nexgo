@@ -14,13 +14,13 @@ const SWITCHER = [
 
 const FIELD = { height: 38, border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, display: 'flex', alignItems: 'center', padding: '0 12px', fontSize: 13.5, color: T.TEXT };
 // The sign-in card is solid white, so these are the dark-on-white text colours.
-const AUTH_TEXT = '#0F1F3D';
+const AUTH_TEXT = '#0b1f44';
 const AUTH_SUB = '#334155';
 const AUTH_MUTED = '#64748B';
-const AUTH_LINK = '#1a6aa3';
+const AUTH_LINK = '#2b62d9';
 const FIELD_LABEL = { fontSize: 12.5, fontWeight: 700, color: AUTH_SUB, marginBottom: 6, display: 'flex', gap: 3 };
 const REQUIRED = <span style={{ color: '#DC2626' }}>*</span>;
-const PRIMARY_BTN = { height: 40, borderRadius: 8, background: '#1a6aa3', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 4 };
+const PRIMARY_BTN = { height: 46, borderRadius: 11, background: '#3877fc', boxShadow: '0 1px 2px rgba(11,31,68,.2), 0 6px 16px rgba(56,119,252,.28)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 4 };
 
 function Field({ label, required, value, onChange, type = 'text', placeholder }) {
   return (
@@ -93,53 +93,50 @@ export default function AuthScreen({ mode }) {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.05fr .95fr', position: 'relative' }}>
-      <div
-        style={{
-          position: 'absolute', inset: 0, zIndex: 0,
-          backgroundImage: [
-            'linear-gradient(rgba(3,10,20,.55), rgba(3,10,20,.55))',
-            'url(/login-port.jpg)',
-          ].join(', '),
-          backgroundSize: 'cover',
-          backgroundPosition: 'center 42%',
-          backgroundRepeat: 'no-repeat',
-          pointerEvents: 'none',
-        }}
-      />
+    <div style={{ minHeight: '100vh', display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.05fr .95fr', position: 'relative', background: '#f6f8fc' }}>
       {!mobile && (
-        <div style={{ position: 'relative', zIndex: 1, background: 'rgba(12,26,51,.62)', backdropFilter: 'blur(6px)', padding: '48px 52px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', color: '#fff' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 26, height: 26, background: 'var(--nx-brand-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#fff', clipPath: 'polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)' }}>N</div>
-            <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '.13em' }}>NEXGO</div>
-          </div>
-          <div style={{ maxWidth: 420 }}>
-            <div style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: '#7189AE', fontWeight: 700, marginBottom: 16 }}>Multi-courier shipping platform</div>
-            <h1 style={{ margin: 0, fontSize: 32, lineHeight: 1.25, fontWeight: 600, letterSpacing: "-.015em" }}>Smarter, faster, easier shipping for your business.</h1>
-            <div style={{ fontSize: 13.5, color: '#8298B8', marginTop: 12, lineHeight: 1.6 }}>Compare live rates, book with any courier, and track every shipment in one console.</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 26 }}>
-              {['Delhivery', 'Blue Dart', 'Ekart', 'XpressBees', 'Shadowfax'].map((c) => (
-                <div key={c} style={{ fontSize: 11.5, fontWeight: 600, color: '#C7D2E2', border: '1px solid rgba(255,255,255,.16)', borderRadius: 20, padding: '5px 11px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 5, height: 5, borderRadius: 3, background: '#3877fc' }} />{c}
+        <div style={{ position: 'relative', zIndex: 1, background: '#0b1f44', padding: '48px 56px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', color: '#fff', overflow: 'hidden' }}>
+          <Link href="/" aria-label="NEXGO home" style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#fff', textDecoration: 'none' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: '#3877fc', display: 'grid', placeItems: 'center' }}>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 19V5l12 14V5" /></svg>
+            </div>
+            <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '-.02em' }}>NEXGO</div>
+          </Link>
+          <div style={{ maxWidth: 460 }}>
+            <div style={{ fontSize: 12, letterSpacing: '.12em', textTransform: 'uppercase', color: '#8fb0ff', fontWeight: 800, marginBottom: 18 }}>Multi-courier shipping platform</div>
+            <h1 style={{ margin: 0, fontSize: 40, lineHeight: 1.1, fontWeight: 800, letterSpacing: '-.035em' }}>Ship anywhere from one console.</h1>
+            <div style={{ fontSize: 16.5, color: '#b6c6e6', marginTop: 16, lineHeight: 1.6 }}>Compare live rates, book with any courier, and track every parcel and COD rupee in one place.</div>
+            <div style={{ marginTop: 30, display: 'grid', gap: 14 }}>
+              {['Live courier rates for any pincode pair', 'Bulk upload or Shopify sync, labels in one click', 'NDR actions and COD remittance, tracked end to end', 'GST invoices and statements in Excel or CSV'].map((t) => (
+                <div key={t} style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 15, fontWeight: 600, color: '#e6eefc' }}>
+                  <span style={{ flex: 'none', width: 22, height: 22, borderRadius: '50%', background: '#3877fc', display: 'grid', placeItems: 'center' }}>
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 12.5l4 4 8-9" /></svg>
+                  </span>{t}
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 32, marginTop: 30 }}>
-              <div><div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>8</div><div style={{ fontSize: 12, color: '#8298B8', marginTop: 4 }}>Courier partners</div></div>
-              <div><div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>29,000</div><div style={{ fontSize: 12, color: '#8298B8', marginTop: 4 }}>Serviceable pincodes</div></div>
-              <div><div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>94.6%</div><div style={{ fontSize: 12, color: '#8298B8', marginTop: 4 }}>Delivery rate</div></div>
+            <div aria-hidden="true" style={{ marginTop: 34, background: '#12295a', border: '1px solid #1d3a73', borderRadius: 16, padding: '16px 18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, fontWeight: 700, color: '#8fa6cf' }}><span>Rate comparison</span><span style={{ background: 'rgba(255,255,255,.12)', color: '#b8ccff', padding: '3px 9px', borderRadius: 99, fontSize: 10.5, letterSpacing: '.06em' }}>SAMPLE</span></div>
+              <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+                {[['Courier A', 'Cheapest · 3 days', '₹52', true], ['Courier B', 'Fastest · 2 days', '₹64', false]].map(([n, s, pr, best]) => (
+                  <div key={n} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 11, border: best ? '1.5px solid #3877fc' : '1.5px solid #1d3a73', background: best ? 'rgba(56,119,252,.16)' : 'transparent' }}>
+                    <div><div style={{ fontWeight: 700, fontSize: 14 }}>{n}</div><div style={{ fontSize: 12, color: '#8fa6cf', fontWeight: 600 }}>{s}</div></div>
+                    <div style={{ fontWeight: 800, fontSize: 17, fontVariantNumeric: 'tabular-nums' }}>{pr}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-          <div style={{ fontSize: 11.5, color: '#5F779C' }}>© 2026 NEXGO Logistics Technologies Pvt. Ltd. · India</div>
+          <div style={{ fontSize: 12.5, color: '#7f93bb' }}>© 2026 NEXGO Logistics Technologies Pvt. Ltd. · India</div>
         </div>
       )}
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
         <div style={{
-          width: '100%', maxWidth: 400,
+          width: '100%', maxWidth: 420,
           background: '#FFFFFF',
-          border: '1px solid #E2E8F0', borderRadius: 16,
-          boxShadow: '0 24px 70px rgba(0,0,0,.34)',
-          padding: '32px 34px 30px',
+          border: '1px solid #dfe6f2', borderRadius: 20,
+          boxShadow: '0 2px 4px rgba(11,31,68,.06), 0 24px 56px rgba(11,31,68,.12)',
+          padding: '34px 36px 30px',
         }}>
           <form onSubmit={submit}>{mode === 'login' && (
             <>
