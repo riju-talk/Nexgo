@@ -24,7 +24,7 @@ export const metadata = {
   applicationName: SITE_NAME,
   keywords: ['multi-courier shipping', 'courier aggregator India', 'shipping rate calculator', 'order tracking', 'NDR management', 'COD remittance', 'e-commerce logistics'],
   openGraph: { type: 'website', siteName: SITE_NAME, locale: 'en_IN', url: '/', title: SITE_TITLE, description: SITE_DESCRIPTION },
-  twitter: { card: 'summary', title: SITE_TITLE, description: SITE_DESCRIPTION },
+  twitter: { card: 'summary_large_image', title: SITE_TITLE, description: SITE_DESCRIPTION },
   robots: { index: true, follow: true },
 };
 
@@ -37,6 +37,7 @@ const ORG_JSON_LD = JSON.stringify({
   name: SITE_NAME,
   legalName: 'NEXGO Logistics Technologies Pvt. Ltd.',
   url: SITE_URL,
+  logo: `${SITE_URL}/nexgo-mark.png`,
   description: SITE_DESCRIPTION,
   areaServed: 'IN',
 }).replace(/</g, '\\u003c');
