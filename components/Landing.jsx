@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import { Manrope } from 'next/font/google';
+import { SiteHeader, SiteFooter } from '@/components/SiteChrome';
 import './landing.css';
 
 const display = Manrope({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-display' });
@@ -25,7 +25,11 @@ const I = {
   store: <><path d="M4 9l1.5-5h13L20 9" /><path d="M4 9a2.5 2.5 0 005 0 2.5 2.5 0 006 0 2.5 2.5 0 005 0" /><path d="M5 12v8h14v-8" /></>,
   shield: <><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6l8-3z" /><path d="M9 12l2 2 4-4" /></>,
   arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
-  menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
+  file: <><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z" /><path d="M14 3v5h5M9 13h6M9 17h6" /></>,
+  lock: <><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 018 0v4" /></>,
+  cookie: <><path d="M21 12a9 9 0 11-9-9 3 3 0 003 3 3 3 0 003 3 3 3 0 003 3z" /><path d="M9 10h.01M8 15h.01M13 14h.01M15 18h.01" /></>,
+  code: <><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16" /></>,
+  refund: <><path d="M3 12a9 9 0 109-9 9 9 0 00-6.7 3" /><path d="M3 4v4h4M12 8v8M9.5 10.5c.5-1 1.5-1.5 2.5-1.5 1.5 0 2.5.8 2.5 2s-1 1.7-2.5 2-2.5.8-2.5 2 1 2 2.5 2c1 0 2-.5 2.5-1.5" /></>,
   check: <><path d="M6 12.5l4 4 8-9" /></>,
 };
 
@@ -52,57 +56,81 @@ const FAQ = [
   { q: 'Do I get GST invoices?', a: 'Yes. Tax invoices split IGST or CGST + SGST by state, and monthly invoices, credit notes and shipping charges export to Excel or CSV for your accountant.' },
 ];
 
+const POLICY_CARDS = [
+  {
+    icon: I.file, title: 'Terms & Conditions', href: '/terms',
+    text: 'The ground rules for using NEXGO.',
+    points: [
+      'NEXGO is the platform; independent courier partners carry and deliver.',
+      'You own the accuracy of addresses, contents, weight and packaging.',
+      'Charges use the higher of dead and volumetric weight.',
+      'Prohibited goods, fraud and misuse can lead to suspension.',
+    ],
+  },
+  {
+    icon: I.lock, title: 'Privacy Policy', href: '/privacy-policy',
+    text: 'What we collect and how it is protected.',
+    points: [
+      'Account, KYC, shipment, payment and technical data, only to run your shipping.',
+      'Sender and receiver details go to the courier you pick, for pickup and delivery.',
+      'Ask to access, correct or delete your data, or raise a grievance.',
+      'Reasonable technical and organisational safeguards, with retention limits.',
+    ],
+  },
+  {
+    icon: I.cookie, title: 'Cookie Policy', href: '/cookie-policy',
+    text: 'Essential and optional cookies, explained.',
+    points: [
+      'Essential cookies keep you signed in and your account secure.',
+      'Functional, analytics, performance and marketing cookies are optional.',
+      'Change your choices later, or control cookies in your browser.',
+      'Blocking everything can stop parts of the dashboard working.',
+    ],
+  },
+  {
+    icon: I.refund, title: 'Refund & Cancellation', href: '/refund-policy',
+    text: 'When a charge comes back to you.',
+    points: [
+      'Cancel before pickup and eligible prepaid shipping charges are reversed.',
+      'After pickup, RTO, COD and weight charges generally stay payable.',
+      'Failed bookings and duplicate payments are reversed, credited to the wallet or refunded.',
+      'Requests are reviewed case by case; promotional credits are not cash.',
+    ],
+  },
+  {
+    icon: I.box, title: 'Shipping SOP', href: '/shipping-sop',
+    text: 'How to prepare and hand over a parcel.',
+    points: [
+      'KYC is needed before services like COD are activated.',
+      'Pack to suit the product; label clearly, one AWB per package.',
+      'Weight and size disputes need photos and must be raised in time.',
+      'COD can be held for incomplete KYC, wrong bank details or dues.',
+    ],
+  },
+  {
+    icon: I.code, title: 'API Terms of Use', href: '/api-terms',
+    text: 'The rules for integrating by API.',
+    points: [
+      'Keep keys and secrets private; report any leak at once.',
+      'Respect rate limits; use idempotency keys and handle repeated webhooks.',
+      'No scraping, circumvention or security testing without written approval.',
+      'You must be allowed to send your customers’ data to NEXGO.',
+    ],
+  },
+];
+
 const FAQ_JSON_LD = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
   mainEntity: FAQ.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })),
 }).replace(/</g, '\\u003c');
 
-function Logo({ light }) {
-  return (
-    <Link href="/" className={`lp-logo${light ? ' light' : ''}`} aria-label="NEXGO home">
-      {light ? (
-        <>
-          <span className="lp-mark"><Image src="/nexgo-mark.png" alt="" width={428} height={364} /></span>
-          NEXGO
-        </>
-      ) : (
-        <Image src="/nexgo-logo.png" alt="NEXGO" width={1757} height={364} priority className="lp-logo-img" />
-      )}
-    </Link>
-  );
-}
-
 export default function Landing() {
   return (
     <div className={`lp ${display.variable}`}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: FAQ_JSON_LD }} />
 
-      <header className="lp-nav">
-        <div className="lp-wrap">
-          <Logo />
-          <nav className="lp-links" aria-label="Sections">
-            <a href="#features">Features</a>
-            <a href="#how">How it works</a>
-            <a href="#money">COD &amp; billing</a>
-            <a href="#faq">FAQ</a>
-          </nav>
-          <div className="lp-cta">
-            <Link href="/login" className="lp-btn ghost nav-signin">Sign in</Link>
-            <Link href="/signup" className="lp-btn primary">Get started</Link>
-            <details className="lp-menu">
-              <summary aria-label="Open menu"><Icon>{I.menu}</Icon></summary>
-              <div className="lp-menu-panel">
-                <a href="#features">Features</a>
-                <a href="#how">How it works</a>
-                <a href="#money">COD &amp; billing</a>
-                <a href="#faq">FAQ</a>
-                <Link href="/login">Sign in</Link>
-              </div>
-            </details>
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main>
         {/* HERO */}
@@ -310,8 +338,32 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* POLICIES */}
+        <section className="lp-section alt" id="policies">
+          <div className="lp-wrap">
+            <div className="lp-head center">
+              <span className="lp-eyebrow">Policies &amp; trust</span>
+              <h2>The rules, written down plainly.</h2>
+              <p className="lp-lead">The key points of every NEXGO policy at a glance. Open any policy in full whenever you need it.</p>
+            </div>
+            <div className="lp-pol-grid">
+              {POLICY_CARDS.map((c) => (
+                <article className="lp-pol" key={c.title}>
+                  <div className="lp-ico soft"><Icon>{c.icon}</Icon></div>
+                  <h3>{c.title}</h3>
+                  <p className="lp-pol-sub">{c.text}</p>
+                  <ul>{c.points.map((p) => <li key={p}>{p}</li>)}</ul>
+                  {c.href ? (
+                    <Link href={c.href} className="lp-link">Read the full policy <Icon size={18}>{I.arrow}</Icon></Link>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* FAQ */}
-        <section className="lp-section alt" id="faq">
+        <section className="lp-section" id="faq">
           <div className="lp-wrap lp-faq-wrap">
             <div className="lp-head">
               <span className="lp-eyebrow">FAQ</span>
@@ -342,28 +394,7 @@ export default function Landing() {
         </section>
       </main>
 
-      <footer className="lp-foot">
-        <div className="lp-wrap lp-foot-grid">
-          <div>
-            <Logo />
-            <p>Multi-courier shipping, COD and billing for Indian sellers.</p>
-          </div>
-          <nav aria-label="Product">
-            <h5>Product</h5>
-            <a href="#features">Features</a>
-            <a href="#how">How it works</a>
-            <a href="#money">COD &amp; billing</a>
-            <a href="#faq">FAQ</a>
-          </nav>
-          <nav aria-label="Account">
-            <h5>Account</h5>
-            <Link href="/login">Sign in</Link>
-            <Link href="/signup">Create account</Link>
-            <Link href="/forgot-password">Forgot password</Link>
-          </nav>
-        </div>
-        <div className="lp-wrap lp-legal">© 2026 NEXGO Logistics Technologies Pvt. Ltd. · India</div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
