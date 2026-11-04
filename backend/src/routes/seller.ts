@@ -1,7 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { db } from '../db/client.js';
+import { db, withTransaction } from '../db/client.js';
 import { hashSessionToken, IDLE_SQL, STALE_SQL } from '../lib/session.js';
 import { requiredPermission } from '../lib/permissions.js';
+import { AGREEMENT_VERSION, loadOnboardingState } from '../lib/onboarding.js';
+import { audit } from '../lib/audit.js';
 
 type Principal = { userId: string; sellerId: string; role: string; permissions: string[] | null };
 type SessionRow = Principal & { stale: boolean; sessionId: string };
@@ -28,6 +30,18 @@ export async function sellerRoutes(app: FastifyInstance) {
   app.get('/v1/seller/me', { preHandler: requireSeller }, async (request) => {
     const principal = request.principal!;
     const result = await db.query('SELECT s.id, s.legal_name, s.slug, s.state, s.created_at, u.full_name, u.email, m.role, m.permissions FROM sellers s JOIN seller_memberships m ON m.seller_id = s.id JOIN users u ON u.id = m.user_id WHERE s.id = $1 AND u.id = $2', [principal.sellerId, principal.userId]);
-    return result.rows[0];
+    // Onboarding progress drives the gate in the web app (agreement first, then KYC).
+    return { ...result.rows[0], onboarding: await loadOnboardingState(principal.sellerId), agreementVersion: AGREEMENT_VERSION };
+  });
+
+  // The owner accepts the seller agreement once per version; the time, user and version are kept as evidence.
+  app.post('/v1/seller/agreement', { preHandler: requireSeller }, async (request, reply) => {
+    const principal = request.principal!;
+    if (principal.role !== 'owner') throw Object.assign(new Error('Only the account owner can accept the agreement'), { statusCode: 403 });
+    await withTransaction(async (client) => {
+      await client.query('UPDATE sellers SET agreement_accepted_at = now(), agreement_accepted_by = $2, agreement_version = $3 WHERE id = $1', [principal.sellerId, principal.userId, AGREEMENT_VERSION]);
+      await audit(client, { sellerId: principal.sellerId, actorUserId: principal.userId, action: 'agreement.accepted', targetType: 'seller', targetId: principal.sellerId, requestId: request.id, metadata: { version: AGREEMENT_VERSION } });
+    });
+    return reply.code(201).send({ accepted: true, version: AGREEMENT_VERSION });
   });
 }

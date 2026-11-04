@@ -8,7 +8,7 @@ import * as T from '@/lib/theme';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-glass-border)', borderRadius: 12, boxShadow: '0 2px 8px rgba(15,31,61,.05)' };
 const KYC_LABEL = { verified: 'VERIFIED', pending_review: 'UNDER REVIEW', rejected: 'REJECTED', unsubmitted: 'KYC NOT SUBMITTED' };
-const DOC_LABELS = { kyc_pan: 'PAN card', kyc_aadhaar: 'Aadhaar', kyc_aadhaar_front: 'Aadhaar (front)', kyc_aadhaar_back: 'Aadhaar (back)', kyc_gst: 'GST certificate', kyc_bank: 'Cancelled cheque / bank statement' };
+const DOC_LABELS = { kyc_pan: 'PAN card', kyc_aadhaar: 'Aadhaar', kyc_aadhaar_front: 'Aadhaar (front)', kyc_aadhaar_back: 'Aadhaar (back)', kyc_id_front: 'ID proof (front)', kyc_id_back: 'ID proof (back)', kyc_gst: 'GST certificate', kyc_bank: 'Cancelled cheque / bank statement' };
 
 // Real KYC + document state for the profile page (no placeholder values).
 function useKycAndFiles() {
@@ -24,7 +24,7 @@ function useKycAndFiles() {
 export function ProfileStatus({ identity, mobile }) {
   const { kyc } = useKycAndFiles();
   if (!kyc) return null;
-  const rows = [['Email', true], ['PAN', !!kyc.pan], ['Aadhaar', !!kyc.aadhaar_last4], ['GST', kyc.gst_applicable === false ? true : !!kyc.gstin], ['Bank', !!kyc.bank_ifsc]];
+  const rows = [['Email', true], ['PAN', !!kyc.pan], ['ID proof', !!(kyc.id_proof_last4 || kyc.aadhaar_last4)], ['GST', kyc.gst_applicable === false ? true : !!kyc.gstin], ['Bank', !!kyc.bank_ifsc]];
   const since = identity?.created_at ? new Date(identity.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : null;
   return (
     <section style={{ ...CARD, padding: 0, marginBottom: 13, overflow: 'hidden' }}>

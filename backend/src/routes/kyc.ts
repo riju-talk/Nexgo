@@ -5,6 +5,7 @@ import { audit } from '../lib/audit.js';
 import { encryptSecret, maskAccountNumber } from '../lib/crypto.js';
 import { requireAccountAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
 import { requireSeller } from './seller.js';
+import { ID_PROOF_TYPES, idLast4, idNumberProblem } from '../lib/idProof.js';
 
 function principal(request: FastifyRequest) {
   if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
@@ -16,8 +17,9 @@ const kycBase = z.object({
   gstin: z.string().trim().toUpperCase().regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, 'Enter a valid 15-character GSTIN').optional().or(z.literal('').transform(() => undefined)),
   pan: z.string().trim().toUpperCase().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, 'Enter a valid 10-character PAN'),
   panHolderName: z.string().trim().min(2, 'Name on PAN is required').max(150),
-  // The full Aadhaar number is validated here but only its last 4 digits are ever stored.
-  aadhaarNumber: z.string().trim().transform((v) => v.replace(/[\s-]/g, '')).pipe(z.string().regex(/^[2-9][0-9]{11}$/, 'Enter a valid 12-digit Aadhaar number')),
+  // Any verifiable government ID. The full number is validated here but only its last 4 characters are stored.
+  idProofType: z.enum(ID_PROOF_TYPES).default('aadhaar'),
+  idNumber: z.string().trim().min(5, 'Enter your ID number').max(30),
   entityType: z.enum(['individual', 'proprietorship', 'partnership', 'private_limited', 'llp', 'public_limited']),
   registeredAddress: z.string().trim().min(10).max(500),
   bankAccountHolder: z.string().trim().min(2).max(150),
@@ -25,6 +27,8 @@ const kycBase = z.object({
   bankIfsc: z.string().trim().toUpperCase().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, 'Enter a valid IFSC code'),
 });
 const kycSubmission = kycBase.superRefine((v, ctx) => {
+  const idProblem = idNumberProblem(v.idProofType, v.idNumber);
+  if (idProblem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: idProblem, path: ['idNumber'] });
   if (v.gstApplicable && !v.gstin) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter your GSTIN, or mark GST as not applicable', path: ['gstin'] });
 });
 
@@ -66,16 +70,21 @@ export async function kycRoutes(app: FastifyInstance) {
       if (current.rows[0] && ['pending_review', 'verified'].includes(current.rows[0].status)) {
         throw Object.assign(new Error(`KYC cannot be resubmitted while its status is ${current.rows[0].status}`), { statusCode: 409 });
       }
+      // The scans are uploaded to the bucket first; a submission without them cannot be reviewed.
+      const scans = await client.query<{ purpose: string }>("SELECT DISTINCT purpose FROM seller_files WHERE seller_id = $1 AND purpose IN ('kyc_pan', 'kyc_id_front', 'kyc_aadhaar_front')", [p.sellerId]);
+      const have = new Set(scans.rows.map((r) => r.purpose));
+      if (!have.has('kyc_pan')) throw Object.assign(new Error('Upload a scanned copy of your PAN card first'), { statusCode: 400 });
+      if (!have.has('kyc_id_front') && !have.has('kyc_aadhaar_front')) throw Object.assign(new Error('Upload a scanned copy of your identity proof first'), { statusCode: 400 });
       const result = await client.query(
-        `INSERT INTO seller_kyc (seller_id, gstin, pan, entity_type, registered_address, bank_account_holder, bank_account_number_encrypted, bank_ifsc, key_reference, aadhaar_last4, gst_applicable, pan_holder_name, status, submitted_at, rejection_reason, reviewed_at, reviewed_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending_review',now(),NULL,NULL,NULL)
+        `INSERT INTO seller_kyc (seller_id, gstin, pan, entity_type, registered_address, bank_account_holder, bank_account_number_encrypted, bank_ifsc, key_reference, aadhaar_last4, gst_applicable, pan_holder_name, id_proof_type, id_proof_last4, status, submitted_at, rejection_reason, reviewed_at, reviewed_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'pending_review',now(),NULL,NULL,NULL)
          ON CONFLICT (seller_id) DO UPDATE SET gstin=EXCLUDED.gstin, pan=EXCLUDED.pan, entity_type=EXCLUDED.entity_type,
            registered_address=EXCLUDED.registered_address, bank_account_holder=EXCLUDED.bank_account_holder,
            bank_account_number_encrypted=EXCLUDED.bank_account_number_encrypted, bank_ifsc=EXCLUDED.bank_ifsc,
-           key_reference=EXCLUDED.key_reference, aadhaar_last4=EXCLUDED.aadhaar_last4, gst_applicable=EXCLUDED.gst_applicable, pan_holder_name=EXCLUDED.pan_holder_name, status='pending_review', submitted_at=now(),
+           key_reference=EXCLUDED.key_reference, aadhaar_last4=EXCLUDED.aadhaar_last4, id_proof_type=EXCLUDED.id_proof_type, id_proof_last4=EXCLUDED.id_proof_last4, gst_applicable=EXCLUDED.gst_applicable, pan_holder_name=EXCLUDED.pan_holder_name, status='pending_review', submitted_at=now(),
            rejection_reason=NULL, reviewed_at=NULL, reviewed_by=NULL, updated_at=now()
          RETURNING *`,
-        [p.sellerId, input.gstApplicable ? input.gstin : null, input.pan, input.entityType, input.registeredAddress, input.bankAccountHolder, ciphertext, input.bankIfsc, keyReference, input.aadhaarNumber.slice(-4), input.gstApplicable, input.panHolderName ?? null],
+        [p.sellerId, input.gstApplicable ? input.gstin : null, input.pan, input.entityType, input.registeredAddress, input.bankAccountHolder, ciphertext, input.bankIfsc, keyReference, input.idProofType === 'aadhaar' ? idLast4(input.idNumber) : null, input.gstApplicable, input.panHolderName ?? null, input.idProofType, idLast4(input.idNumber)],
       );
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'kyc.submitted', targetType: 'seller_kyc', targetId: p.sellerId, requestId: request.id, metadata: { bankAccountMasked: maskAccountNumber(input.bankAccountNumber) } });
       return result.rows[0];
@@ -86,7 +95,7 @@ export async function kycRoutes(app: FastifyInstance) {
   app.get('/v1/admin/kyc', { preHandler: requirePlatformAdmin }, async (request) => {
     const status = z.enum(['unsubmitted', 'pending_review', 'verified', 'rejected']).optional().parse((request.query as { status?: string }).status);
     const result = await db.query(
-      `SELECT k.seller_id, k.gstin, k.gst_applicable, k.pan, k.pan_holder_name, k.aadhaar_last4, k.entity_type, k.registered_address, k.bank_account_holder, k.bank_ifsc,
+      `SELECT k.seller_id, k.gstin, k.gst_applicable, k.pan, k.pan_holder_name, k.aadhaar_last4, k.id_proof_type, k.id_proof_last4, k.entity_type, k.registered_address, k.bank_account_holder, k.bank_ifsc,
               k.status, k.rejection_reason, k.submitted_at, k.reviewed_at, s.legal_name AS seller_name
        FROM seller_kyc k JOIN sellers s ON s.id = k.seller_id
        WHERE $1::kyc_status IS NULL OR k.status = $1

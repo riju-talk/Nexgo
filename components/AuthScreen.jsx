@@ -91,7 +91,7 @@ export default function AuthScreen({ mode }) {
       if (mode === 'signup') {
         if (form.password !== form.confirmPassword) throw new Error('Passwords do not match');
         await apiFetch('/v1/auth/signup', { method: 'POST', body: { fullName: form.fullName, email: form.email, password: form.password } });
-        showToast('Account created. A confirmation email is on its way. Please sign in.');
+        showToast(`Welcome ${form.fullName.trim()}! Your account is created and a confirmation email is on its way. Please sign in.`);
         nav('login'); return;
       }
       if (mode === 'forgot') { await apiFetch('/v1/auth/forgot-password', { method: 'POST', body: { email: form.email } }); showToast('If the account exists, a reset link has been sent.'); return; }

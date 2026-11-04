@@ -13,6 +13,7 @@ import Toast from './Toast';
 import AdminShell from './AdminShell';
 import ImpersonationBanner from './ImpersonationBanner';
 import SessionHeartbeat from './SessionHeartbeat';
+import OnboardingGate from './OnboardingGate';
 
 export default function AppShell({ children }) {
   const pathname = usePathname();
@@ -31,7 +32,7 @@ export default function AppShell({ children }) {
         <Sidebar activeId={activeId} mobile={mobile} />
         <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'scroll', overflowX: 'hidden', background: 'var(--nx-workspace-bg)' }}>
           <TopBar activeId={activeId} mobile={mobile} />
-          {children}
+          <OnboardingGate mobile={mobile}>{children}</OnboardingGate>
         </div>
         <NdrDrawer />
         <CommandPalette />

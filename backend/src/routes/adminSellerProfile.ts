@@ -89,7 +89,7 @@ export async function adminSellerProfileRoutes(app: FastifyInstance) {
               s.kam_name, s.account_opened_by, s.wallet_debit_limit_paise, s.wallet_debit_approval_paise, s.wallet_debit_approved_by,
               owner.full_name AS owner_name, owner.email AS owner_email,
               (SELECT w.phone FROM warehouses w WHERE w.seller_id = s.id ORDER BY w.created_at LIMIT 1) AS mobile,
-              COALESCE(k.status, 'unsubmitted') AS kyc_status, k.gstin, k.gst_applicable, k.pan, k.pan_holder_name, k.aadhaar_last4, k.entity_type, k.registered_address,
+              COALESCE(k.status, 'unsubmitted') AS kyc_status, k.gstin, k.gst_applicable, k.pan, k.pan_holder_name, k.aadhaar_last4, k.id_proof_type, k.id_proof_last4, k.entity_type, k.registered_address,
               k.bank_account_holder, COALESCE(k.bank_ifsc, ba.ifsc_code) AS bank_ifsc, ba.bank_name, ba.account_type AS bank_account_type, (k.bank_account_number_encrypted IS NOT NULL OR ba.id IS NOT NULL) AS has_bank_account, k.submitted_at, k.reviewed_at, rv.full_name AS kyc_reviewed_by,
               (SELECT ${BALANCE_SQL} FROM wallet_entries e WHERE e.seller_id = s.id) AS wallet_balance_paise,
               (SELECT count(*)::int FROM orders o WHERE o.seller_id = s.id) AS order_count,

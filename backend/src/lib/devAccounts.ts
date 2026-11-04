@@ -1,3 +1,4 @@
+import { AGREEMENT_VERSION } from './onboarding.js';
 import { config } from '../config.js';
 import { withTransaction } from '../db/client.js';
 
@@ -34,6 +35,9 @@ export async function ensureDevAccounts(log: { info: (m: string) => void; warn: 
         `INSERT INTO sellers (legal_name, slug, state, approval_status, approval_decided_at) VALUES ($1, 'acme-exports-dev', 'active', 'approved', now()) ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug RETURNING id`,
         [DEV_SELLER.businessName]);
       await client.query(`INSERT INTO seller_memberships (seller_id, user_id, role) VALUES ($1,$2,'owner') ON CONFLICT DO NOTHING`, [seller.rows[0].id, sellerUser.rows[0].id]);
+      // The demo seller is past the onboarding gate (no storage bucket is needed to try the app locally).
+      await client.query(`UPDATE sellers SET agreement_accepted_at = now(), agreement_accepted_by = $2, agreement_version = $3 WHERE id = $1`, [seller.rows[0].id, sellerUser.rows[0].id, AGREEMENT_VERSION]);
+      await client.query(`INSERT INTO seller_kyc (seller_id, pan, status, submitted_at, reviewed_at) VALUES ($1, 'ABCDE1234F', 'verified', now(), now()) ON CONFLICT (seller_id) DO NOTHING`, [seller.rows[0].id]);
       log.info(`Dev seller created: ${DEV_SELLER.email}`);
     }
 

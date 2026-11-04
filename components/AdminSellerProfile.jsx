@@ -243,7 +243,7 @@ function PocEditor({ sellerId, p, onSaved }) {
   </form>;
 }
 
-const DOC_LABELS = { kyc_pan: 'PAN card', kyc_aadhaar: 'Aadhaar', kyc_aadhaar_front: 'Aadhaar (front)', kyc_aadhaar_back: 'Aadhaar (back)', kyc_gst: 'GST certificate', kyc_bank: 'Cancelled cheque / bank statement', logo: 'Invoice logo', signature: 'Invoice signature' };
+const DOC_LABELS = { kyc_pan: 'PAN card', kyc_aadhaar: 'Aadhaar', kyc_aadhaar_front: 'Aadhaar (front)', kyc_aadhaar_back: 'Aadhaar (back)', kyc_id_front: 'ID proof (front)', kyc_id_back: 'ID proof (back)', kyc_gst: 'GST certificate', kyc_bank: 'Cancelled cheque / bank statement', logo: 'Invoice logo', signature: 'Invoice signature' };
 
 function Documents({ sellerId }) {
   const { showToast } = useAppState();

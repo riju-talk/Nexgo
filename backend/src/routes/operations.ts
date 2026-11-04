@@ -7,6 +7,7 @@ import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
 import { volumetricWeightG } from '../lib/money.js';
 import { requireSeller } from './seller.js';
+import { requireOnboarded } from '../lib/onboarding.js';
 
 const uuid = z.string().uuid();
 const pincode = z.string().regex(/^\d{6}$/);
@@ -222,13 +223,13 @@ export async function operationsRoutes(app: FastifyInstance) {
     }
     return inputs.map((i) => out.get(i.orderNumber)!);
   });
-  app.post('/v1/orders', { preHandler: requireSeller }, async (request, reply) => {
+  app.post('/v1/orders', { preHandler: [requireSeller, requireOnboarded('order')] }, async (request, reply) => {
     const input = orderInput.parse(request.body);
     return reply.code(201).send(await createOrder(getPrincipal(request), request.id, input));
   });
   // Bulk upload: up to 50 orders per request instead of one request per order (the API allows 300 requests a minute, so a 5,000-order sheet
   // would otherwise take more than 15 minutes). Each order is validated and saved on its own: one bad order never blocks the others.
-  app.post('/v1/orders/bulk', { preHandler: requireSeller }, async (request) => {
+  app.post('/v1/orders/bulk', { preHandler: [requireSeller, requireOnboarded('order')] }, async (request) => {
     const { orders } = z.object({ orders: z.array(z.unknown()).min(1).max(50) }).parse(request.body);
     const p = getPrincipal(request);
     const results: { index: number; ok: boolean; id?: string; existing?: boolean; error?: string }[] = [];

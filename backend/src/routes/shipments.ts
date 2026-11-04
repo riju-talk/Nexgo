@@ -9,6 +9,7 @@ import { audit } from '../lib/audit.js';
 import { calculateRate, paiseToAmount } from '../lib/money.js';
 import { laneZone } from '../lib/zone.js';
 import { requireSeller } from './seller.js';
+import { requireOnboarded } from '../lib/onboarding.js';
 import { storage, STORAGE_NOT_CONNECTED } from '../lib/storage.js';
 import { config } from '../config.js';
 import { courierAdapter } from '../couriers/registry.js';
@@ -169,7 +170,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
     return withSellerTransaction(p.sellerId, async (client) => { const shipment = await client.query('SELECT * FROM shipments WHERE id=$1 AND seller_id=$2', [shipmentId, p.sellerId]); if (!shipment.rows[0]) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 }); const events = await client.query('SELECT state,occurred_at,location,description,source FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at DESC', [shipmentId]); return { ...shipment.rows[0], events: events.rows }; });
   });
-  app.post('/v1/shipments/book', { preHandler: requireSeller }, async (request, reply) => {
+  app.post('/v1/shipments/book', { preHandler: [requireSeller, requireOnboarded('ship')] }, async (request, reply) => {
     const input = bookingInput.parse(request.body); const p = principal(request); const key = request.headers['idempotency-key'];
     if (typeof key !== 'string' || key.length < 16 || key.length > 200) throw Object.assign(new Error('A 16-200 character Idempotency-Key header is required'), { statusCode: 400 });
     const result = await withSellerTransaction(p.sellerId, (client) => bookInTx(client, p, request.id, input, key));
@@ -178,7 +179,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
   });
   // Courier allocation by the seller's priority list (Settings > Courier rules: priority 1, 2, 3 ...). For each order the first courier
   // service that is serviceable and bookable wins; unlisted couriers are tried last. Orders nobody can take come back with the reason.
-  app.post('/v1/shipments/auto-assign', { preHandler: requireSeller }, async (request) => {
+  app.post('/v1/shipments/auto-assign', { preHandler: [requireSeller, requireOnboarded('ship')] }, async (request) => {
     // providerCode (+ optional serviceCode): the seller picked one courier for all these orders; nothing else is tried. Without it, the priority list decides.
     const { orderIds, providerCode, serviceCode } = z.object({ orderIds: z.array(uuid).min(1).max(100), providerCode: z.string().regex(/^[a-z0-9-]{2,64}$/).optional(), serviceCode: z.string().regex(/^[a-z0-9-]{2,64}$/).optional() }).parse(request.body);
     const p = principal(request);
