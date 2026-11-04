@@ -43,19 +43,19 @@ export async function authRoutes(app: FastifyInstance) {
   app.post('/v1/auth/login', { config: authRateLimit }, async (request, reply) => {
     const input = loginSchema.parse(request.body);
     const result = await withTransaction(async (client) => {
-      const found = await client.query<{ id: string; password_hash: string; seller_id: string; role: string; state: string; approval_status: string; approval_rejection_reason: string | null }>('SELECT u.id, u.password_hash, m.seller_id, m.role, s.state, s.approval_status, s.approval_rejection_reason FROM users u JOIN seller_memberships m ON m.user_id = u.id JOIN sellers s ON s.id = m.seller_id WHERE u.email = $1', [input.email.toLowerCase()]);
+      const found = await client.query<{ id: string; full_name: string; password_hash: string; seller_id: string; role: string; state: string; approval_status: string; approval_rejection_reason: string | null }>('SELECT u.id, u.full_name, u.password_hash, m.seller_id, m.role, s.state, s.approval_status, s.approval_rejection_reason FROM users u JOIN seller_memberships m ON m.user_id = u.id JOIN sellers s ON s.id = m.seller_id WHERE u.email = $1', [input.email.toLowerCase()]);
       const account = found.rows[0];
       if (!account || account.state === 'suspended' || !(await argon2.verify(account.password_hash, input.password))) return { failed: 'INVALID_CREDENTIALS' as const };
       const token = newSessionToken();
       const created = await client.query<{ expires_at: string }>('INSERT INTO sessions (user_id, token_hash, expires_at, user_agent, ip_address) VALUES ($1, $2, now() + ($3 || \' days\')::interval, $4, $5) RETURNING expires_at', [account.id, hashSessionToken(token), String(config.SESSION_TTL_DAYS), request.headers['user-agent'] ?? null, request.ip]);
-      return { token, expiresAt: created.rows[0].expires_at, sellerId: account.seller_id, role: account.role };
+      return { token, expiresAt: created.rows[0].expires_at, sellerId: account.seller_id, role: account.role, fullName: account.full_name };
     });
     if ('failed' in result) {
       if (result.failed === 'INVALID_CREDENTIALS') return reply.code(401).send({ error: 'INVALID_CREDENTIALS' });
       return reply.code(403).send({ error: result.failed, ...('reason' in result && result.reason ? { reason: result.reason } : {}) });
     }
     await startBrowserSession(request, reply, result.token, revokeSession);
-    return { sellerId: result.sellerId, role: result.role, expiresAt: result.expiresAt };
+    return { sellerId: result.sellerId, role: result.role, fullName: result.fullName, expiresAt: result.expiresAt };
   });
 
   // Heartbeat: the app calls this on a timer. It answers "is this sign-in still good?" for sellers and admins alike

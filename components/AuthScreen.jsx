@@ -85,7 +85,8 @@ export default function AuthScreen({ mode }) {
     setSubmitting(true);
     try {
       if (mode === 'login') {
-        await apiFetch('/v1/auth/login', { method: 'POST', body: { email: form.email, password: form.password } });
+        const session = await apiFetch('/v1/auth/login', { method: 'POST', body: { email: form.email, password: form.password } });
+        showToast(session?.fullName ? `Welcome ${session.fullName}` : 'Welcome back');
       }
       if (mode === 'signup') {
         if (form.password !== form.confirmPassword) throw new Error('Passwords do not match');
