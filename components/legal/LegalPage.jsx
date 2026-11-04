@@ -1,11 +1,9 @@
 import Link from 'next/link';
-import { Manrope } from 'next/font/google';
 import { SiteHeader, SiteFooter } from '@/components/SiteChrome';
 import { COMPANY, POLICIES } from '@/lib/legal/company';
 import '@/components/landing.css';
 import './legal.css';
 
-const display = Manrope({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-display' });
 
 // Replaces a known [PLACEHOLDER] with the configured company detail, or highlights it so it is not missed.
 function Rich({ text }) {
@@ -62,7 +60,7 @@ function Block({ b }) {
 export default function LegalPage({ doc, slug, highlights = [], lead }) {
   const others = POLICIES.filter((p) => p.href !== `/${slug}`);
   return (
-    <div className={`lp ${display.variable}`}>
+    <div className="lp">
       <SiteHeader base="/" />
       <main>
         <section className="lg-hero">

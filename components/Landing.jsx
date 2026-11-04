@@ -1,9 +1,7 @@
 import Link from 'next/link';
-import { Manrope } from 'next/font/google';
 import { SiteHeader, SiteFooter } from '@/components/SiteChrome';
 import './landing.css';
 
-const display = Manrope({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-display' });
 
 // Shared stroke style for the inline line icons (colour comes from CSS `currentColor`).
 const ICON = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
@@ -127,7 +125,7 @@ const FAQ_JSON_LD = JSON.stringify({
 
 export default function Landing() {
   return (
-    <div className={`lp ${display.variable}`}>
+    <div className="lp">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: FAQ_JSON_LD }} />
 
       <SiteHeader />
