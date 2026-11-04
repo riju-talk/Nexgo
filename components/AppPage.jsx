@@ -43,6 +43,8 @@ import LiveWarehouse from './LiveWarehouse';
 import LiveRateCalculator from './LiveRateCalculator';
 import LivePincodeServiceability from './LivePincodeServiceability';
 import LiveTrack from './LiveTrack';
+import LiveCourierZones from './LiveCourierZones';
+import LiveCourierPerformance from './LiveCourierPerformance';
 import ComingSoon from './ComingSoon';
 import PageContainer from './PageContainer';
 
@@ -92,6 +94,8 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
   const isAdminNotes = id === 'a-notes';
   const isSellerProfile = id === 'a-seller-profile';
   const isAdminRates = id === 'a-rate-cards' || id === 'a-rate-view' || id === 'a-rate-assign';
+  const isCourierZones = id === 'a-zones';
+  const isCourierPerformance = id === 'a-performance';
   // Admin screens that have no backend yet say so instead of showing sample figures.
   const ADMIN_SOON = { 'a-escalations': 'Escalations', 'a-credit': 'Credit limits', 'a-live-chat': 'Live chat', 'a-system': 'System settings', 'a-api': 'API management', 'a-roles': 'Role permissions' };
   const isAdminSoon = id in ADMIN_SOON;
@@ -118,6 +122,8 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isAdminNotes && <LiveAdminNotes mobile={mobile} />}
         {isAdminSoon && <ComingSoon mobile={mobile} name={ADMIN_SOON[id]} blurb="This admin screen is not connected to live data yet, so it shows nothing rather than sample numbers." back="a-overview" backLabel="Back to dashboard" />}
         {isSellerProfile && <AdminSellerProfile sellerId={sellerId} />}
+        {isCourierZones && <LiveCourierZones mobile={mobile} />}
+        {isCourierPerformance && <LiveCourierPerformance mobile={mobile} />}
         {id === 'a-rate-cards' && <AdminRateCards mobile={mobile} />}
         {(id === 'a-rate-view' || id === 'a-rate-assign') && <AdminRateAssign sellerId={sellerId} mode={id === 'a-rate-assign' ? 'assign' : 'view'} mobile={mobile} />}
         {isRateCard && <LiveRateCard mobile={mobile} />}
