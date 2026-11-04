@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
-import { ONBOARDING_EVENT, isBlocked, onboardingStep } from '@/lib/onboarding';
+import { ONBOARDING_EVENT, isBlocked, kycProgress, onboardingStep } from '@/lib/onboarding';
 import * as T from '@/lib/theme';
 import { BLUE, Btn, CARD } from './Kit';
 import LiveKyc from './LiveKyc';
@@ -12,12 +12,27 @@ import LiveKyc from './LiveKyc';
 // The documents the seller agrees to. Each opens the real page in a new tab.
 const POLICIES = [['Terms of Service', '/terms'], ['Privacy Policy', '/privacy-policy'], ['Shipping SOP', '/shipping-sop'], ['Refund & Cancellation Policy', '/refund-policy']];
 
-function Steps({ step }) {
-  const items = [['agreement', '1. Accept agreement'], ['kyc', '2. Verify your business']];
+/** "Set up your account" card: progress bar plus the three KYC steps. Shown on every page until KYC is verified. */
+function KycProgress({ me, mobile }) {
+  const progress = kycProgress(me);
+  if (!progress) return null;
+  const { steps, done, total } = progress;
   return (
-    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-      {items.map(([id, label]) => <span key={id} style={{ fontSize: 12.5, fontWeight: 700, padding: '6px 12px', borderRadius: 20, background: id === step ? BLUE : 'transparent', color: id === step ? '#fff' : T.TEXT_MUTED, border: `1px solid ${id === step ? BLUE : T.BORDER}` }}>{label}</span>)}
-    </div>
+    <section aria-label="KYC progress" style={{ ...CARD, margin: mobile ? '12px 12px 0' : '16px 24px 0', padding: mobile ? 14 : '16px 20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <strong style={{ fontSize: 15, color: T.TEXT, whiteSpace: 'nowrap' }}>Set up your NEXGO account</strong>
+        <div style={{ flex: 1, height: 6, borderRadius: 3, background: T.BORDER }}><div style={{ width: `${(done / total) * 100}%`, height: '100%', borderRadius: 3, background: BLUE }} /></div>
+        <span style={{ fontSize: 13, fontWeight: 700, color: T.TEXT_SECONDARY }}>{done}/{total}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : `repeat(${total}, 1fr)`, gap: mobile ? 10 : 16, marginTop: 14 }}>
+        {steps.map((s) => (
+          <div key={s.id} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <span style={{ width: 22, height: 22, borderRadius: '50%', flex: 'none', display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 800, background: s.state === 'done' ? '#16A34A' : 'transparent', color: s.state === 'done' ? '#fff' : T.TEXT_MUTED, border: s.state === 'done' ? 'none' : `2px solid ${s.state === 'current' ? BLUE : T.BORDER}` }}>{s.state === 'done' ? '✓' : ''}</span>
+            <span><span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: T.TEXT }}>{s.label}</span><span style={{ display: 'block', fontSize: 12, color: s.state === 'done' ? '#16A34A' : T.TEXT_MUTED }}>{s.state === 'done' ? 'Completed' : s.hint}</span></span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -63,15 +78,17 @@ export default function OnboardingGate({ children, mobile }) {
   const step = onboardingStep(me);
   if (isBlocked(step, pathname)) {
     return (
-      <div style={{ padding: mobile ? '14px 12px 42px' : '22px 24px 48px' }}>
-        <Steps step={step} />
-        {step === 'agreement' ? <Agreement me={me} onAccepted={load} /> : <LiveKyc mobile={mobile} />}
-      </div>
+      <>
+        <KycProgress me={me} mobile={mobile} />
+        <div style={{ padding: mobile ? '14px 12px 42px' : '22px 24px 48px' }}>
+          {step === 'agreement' ? <Agreement me={me} onAccepted={load} /> : <LiveKyc mobile={mobile} />}
+        </div>
+      </>
     );
   }
   return (
     <>
-      {step === 'review' && <div role="status" style={{ padding: '9px 20px', background: '#FEF3C7', borderBottom: '1px solid #FCD34D', color: '#92400E', fontSize: 13 }}>Your KYC is under review. You can create orders now; booking shipments opens once we verify your documents.</div>}
+      <KycProgress me={me} mobile={mobile} />
       {children}
     </>
   );
