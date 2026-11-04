@@ -8,6 +8,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import Toast from './Toast';
 import * as T from '@/lib/theme';
 import { MOBILE_BREAK } from '@/lib/theme';
+import { signupProblem } from '@/lib/authRules';
 
 const SWITCHER = [
   ['Login', 'login'], ['Sign up', 'signup'], ['Forgot password', 'forgot'], ['Reset password', 'reset'],
@@ -23,11 +24,38 @@ const FIELD_LABEL = { fontSize: 12.5, fontWeight: 700, color: AUTH_SUB, marginBo
 const REQUIRED = <span style={{ color: '#DC2626' }}>*</span>;
 const PRIMARY_BTN = { height: 40, borderRadius: 8, background: '#1a6aa3', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 4 };
 
+/**
+ * One labelled input. Password fields get a Show/Hide toggle so people can check what they typed
+ * (sign in, register and reset all share this component).
+ */
 function Field({ label, required, value, onChange, type = 'text', placeholder }) {
+  const [revealed, setRevealed] = useState(false);
+  const isPassword = type === 'password';
   return (
     <div>
       <div style={FIELD_LABEL}>{label}{required && REQUIRED}</div>
-      <input aria-label={label} type={type} value={value} onChange={(e) => onChange?.(e.target.value)} placeholder={placeholder} style={{ ...FIELD, width: '100%', outline: 'none' }} />
+      <div style={{ position: 'relative' }}>
+        <input
+          aria-label={label}
+          type={isPassword && revealed ? 'text' : type}
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
+          placeholder={placeholder}
+          autoComplete={isPassword ? 'current-password' : undefined}
+          style={{ ...FIELD, width: '100%', outline: 'none', paddingRight: isPassword ? 56 : 12 }}
+        />
+        {isPassword && (
+          <button
+            type="button"
+            onClick={() => setRevealed((shown) => !shown)}
+            aria-label={revealed ? `Hide ${label}` : `Show ${label}`}
+            aria-pressed={revealed}
+            style={{ position: 'absolute', right: 8, top: 0, height: '100%', border: 0, background: 'transparent', color: AUTH_LINK, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+          >
+            {revealed ? 'Hide' : 'Show'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -35,7 +63,7 @@ function Field({ label, required, value, onChange, type = 'text', placeholder })
 export default function AuthScreen({ mode }) {
   const { vw, nav, showToast } = useAppState();
   const mobile = vw <= MOBILE_BREAK;
-  const [form, setForm] = useState({ businessName: '', fullName: '', email: '', password: '', phone: '', confirmPassword: '' });
+  const [form, setForm] = useState({ fullName: '', email: '', password: '', phone: '', confirmPassword: '' });
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
   const [notice, setNotice] = useState(() => {
@@ -50,12 +78,7 @@ export default function AuthScreen({ mode }) {
     // A ref, not state: state only updates after a re-render, so a fast double click would send two requests.
     if (inFlight.current) return;
     if (mode === 'signup') {
-      // Same rules as the API, so the person sees what to fix instead of a generic failure.
-      const problem = form.businessName.trim().length < 3 ? 'Business name must be at least 3 characters.'
-        : form.fullName.trim().length < 2 ? 'Enter your name.'
-        : !/^\S+@\S+\.\S+$/.test(form.email.trim()) ? 'Enter a valid work email.'
-        : form.password.length < 12 ? 'Password must be at least 12 characters.'
-        : form.password !== form.confirmPassword ? 'Passwords do not match.' : '';
+      const problem = signupProblem(form);
       if (problem) { showToast(problem, 'error'); return; }
     }
     inFlight.current = true;
@@ -66,7 +89,7 @@ export default function AuthScreen({ mode }) {
       }
       if (mode === 'signup') {
         if (form.password !== form.confirmPassword) throw new Error('Passwords do not match');
-        await apiFetch('/v1/auth/signup', { method: 'POST', body: { businessName: form.businessName, fullName: form.fullName, email: form.email, password: form.password } });
+        await apiFetch('/v1/auth/signup', { method: 'POST', body: { fullName: form.fullName, email: form.email, password: form.password } });
         showToast('Account created. A confirmation email is on its way. Please sign in.');
         nav('login'); return;
       }
@@ -170,7 +193,6 @@ export default function AuthScreen({ mode }) {
               <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT }}>Create account</div>
               <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 4 }}>Set up your seller workspace</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 15, marginTop: 22 }}>
-                <Field label="Business name" required value={form.businessName} onChange={set('businessName')} />
                 <Field label="Your name" required value={form.fullName} onChange={set('fullName')} />
                 <Field label="Work email" required value={form.email} onChange={set('email')} />
                 <Field label="Password" required type="password" placeholder="At least 12 characters" value={form.password} onChange={set('password')} />

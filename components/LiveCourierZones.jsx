@@ -65,6 +65,8 @@ export default function LiveCourierZones({ mobile }) {
         }
       })
       .catch(() => {});
+    // Runs once on mount; picking a courier loads its lanes through its own handler.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

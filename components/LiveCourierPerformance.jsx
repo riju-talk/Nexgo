@@ -74,6 +74,8 @@ export default function LiveCourierPerformance({ mobile }) {
     })();
 
     return () => { live = false; };
+    // Refetch is keyed on `key` (the filter signature); the other values are already part of it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
   const exportData = async () => {

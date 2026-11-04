@@ -8,75 +8,155 @@ import rawBody from 'fastify-raw-body';
 import { ZodError } from 'zod';
 import { config } from './config.js';
 import { db } from './db/client.js';
+import { requireCsrfHeader } from './lib/csrf.js';
+import { authRoutes } from './routes/auth.js';
+import { sellerRoutes } from './routes/seller.js';
+import { adminRoutes } from './routes/admin.js';
+import { adminMfaRoutes } from './routes/adminMfa.js';
+import { adminOperationsRoutes } from './routes/adminOperations.js';
+import { fileRoutes } from './routes/files.js';
+import { emailScheduleRoutes } from './routes/emailSchedules.js';
+import { codConfirmationRoutes } from './routes/codConfirmation.js';
+import { adminSellerProfileRoutes, impersonationAudit, impersonationGuard } from './routes/adminSellerProfile.js';
+import { adminVisibilityRoutes } from './routes/adminVisibility.js';
+import { kycRoutes } from './routes/kyc.js';
+import { teamRoutes } from './routes/team.js';
+import { passwordResetRoutes } from './routes/passwordReset.js';
+import { sessionRoutes } from './routes/sessions.js';
+import { shippingRoutes } from './routes/shipping.js';
+import { operationsRoutes } from './routes/operations.js';
+import { shipmentRoutes } from './routes/shipments.js';
+import { trackingRoutes } from './routes/tracking.js';
+import { exceptionRoutes } from './routes/exceptions.js';
+import { walletRoutes } from './routes/wallet.js';
+import { walletRechargeRoutes } from './routes/walletRecharge.js';
+import { invoiceRoutes } from './routes/invoices.js';
+import { codRemittanceRoutes } from './routes/codRemittance.js';
+import { integrationRoutes } from './routes/integrations.js';
+import { shopifyRoutes } from './routes/shopify.js';
+import { shopifyComplianceRoutes } from './routes/shopifyCompliance.js';
+import { searchRoutes } from './routes/search.js';
+import { lorrigoWebhookRoutes } from './routes/lorrigoWebhook.js';
+import { pickupRoutes } from './routes/pickups.js';
+import { analyticsRoutes } from './routes/analytics.js';
+import { workspaceRoutes } from './routes/workspace.js';
+import { locationRoutes } from './routes/locations.js';
+import { billingExtrasRoutes } from './routes/billingExtras.js';
+import { ndrRoutes } from './routes/ndr.js';
+import { weightDisputeRoutes } from './routes/weightDisputes.js';
+import { bankAccountRoutes } from './routes/bankAccounts.js';
+import { partnerRoutes } from './routes/partners.js';
+import courierZonesRoutes from './routes/courierZones.js';
+import courierSLARoutes from './routes/courierSLA.js';
+import courierPerformanceRoutes from './routes/courierPerformance.js';
+
+import { reportRoutes } from './routes/reports.js';
+import { adminReportRoutes } from './routes/adminReports.js';
 import { registerDocs } from './lib/openapi.js';
-
+import { rtoRoutes } from './routes/rto.js';
+import { billingRoutes } from './routes/billing.js';
+import { adminDisputeRoutes } from './routes/adminDisputes.js';
+import { ensureDevAccounts } from './lib/devAccounts.js';
+import { ensureBootstrapAdmin, ensureDeveloperSuperadmin } from './lib/bootstrapAdmin.js';
 export async function buildApp() {
-  const app = Fastify({
-    logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' },
-    requestIdHeader: 'x-request-id',
-    trustProxy: config.TRUST_PROXY
-  });
+const app = Fastify({ logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' }, requestIdHeader: 'x-request-id', trustProxy: config.TRUST_PROXY });
+if (config.DOCS_ENABLED) registerDocs(app);
+// The API only serves JSON (the Swagger page loads its assets from a CDN), so the CSP stays off here; the web app sets its own headers.
+await app.register(helmet, { contentSecurityPolicy: false, hsts: config.NODE_ENV === 'production' ? { maxAge: 15552000, includeSubDomains: true } : false });
+await app.register(cookie);
+await app.register(rawBody, { field: 'rawBody', global: false, encoding: 'utf8', runFirst: true });
+await app.register(cors, { origin: config.FRONTEND_ORIGIN, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] });
+// Global ceiling blunts scraping/abuse; auth endpoints below get a much
+// tighter per-route limit since those are the actual brute-force surface.
+await app.register(rateLimit, { global: true, max: 300, timeWindow: '1 minute' });
+app.addHook('onRequest', requireCsrfHeader);
+// Live figures (Track, dashboard) must never come from a browser or CDN cache.
+app.addHook('onSend', async (_req, reply) => { reply.header('Cache-Control', 'no-store'); });
+app.addHook('preHandler', impersonationGuard);
+app.addHook('onResponse', impersonationAudit);
 
-  if (config.DOCS_ENABLED) registerDocs(app);
+app.setErrorHandler((error, request, reply) => {
+  if (error instanceof ZodError) return reply.code(400).send({ error: 'VALIDATION_ERROR', details: error.flatten() });
+  // Database constraint failures are caller mistakes, not server faults: report them plainly.
+  const dbCode = (error as { code?: string }).code;
+  if (dbCode === '23505') return reply.code(409).send({ error: 'This record already exists (a duplicate name or reference).' });
+  if (dbCode === '23514') return reply.code(400).send({ error: (error as Error).message || 'This value is not allowed.' });
+  // `expose` marks 5xx errors we raise on purpose with a seller-safe reason (courier / storefront outage, missing configuration).
+  if ((error as { statusCode?: number }).statusCode && ((error as { statusCode?: number }).statusCode! < 500 || (error as { expose?: boolean }).expose)) {
+    return reply.code((error as { statusCode: number }).statusCode).send({ error: (error as Error).message });
+  }
+  request.log.error(error);
+  return reply.code((error as { statusCode?: number }).statusCode || 500).send({ error: 'INTERNAL_ERROR' });
+});
 
-  await app.register(helmet, {
-    contentSecurityPolicy: false,
-    hsts: config.NODE_ENV === 'production' ? { maxAge: 15552000, includeSubDomains: true } : false
-  });
-  await app.register(cookie);
-  await app.register(rawBody, { field: 'rawBody', global: false, encoding: 'utf8', runFirst: true });
-  await app.register(cors, { origin: config.FRONTEND_ORIGIN, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] });
-  await app.register(rateLimit, { global: true, max: 300, timeWindow: '1 minute' });
-
-  app.setErrorHandler((error, request, reply) => {
-    if (error instanceof ZodError) {
-      return reply.code(400).send({ error: 'VALIDATION_ERROR', details: error.flatten() });
-    }
-
-    const dbCode = (error as { code?: string }).code;
-    if (dbCode === '23505') return reply.code(409).send({ error: 'This record already exists (a duplicate name or reference).' });
-    if (dbCode === '23514') return reply.code(400).send({ error: (error as Error).message || 'This value is not allowed.' });
-
-    if ((error as { statusCode?: number }).statusCode && ((error as { statusCode?: number }).statusCode! < 500 || (error as { expose?: boolean }).expose)) {
-      return reply.code((error as { statusCode: number }).statusCode).send({ error: (error as Error).message });
-    }
-
-    request.log.error(error);
-    return reply.code((error as { statusCode?: number }).statusCode || 500).send({ error: 'INTERNAL_ERROR' });
-  });
-
-  app.get('/health', async () => ({ status: 'ok', service: 'nexgo-api' }));
-  app.get('/ready', async (_request, reply) => {
-    try {
-      await db.query('SELECT 1');
-      return { status: 'ready' };
-    } catch {
-      return reply.code(503).send({ status: 'not_ready' });
-    }
-  });
-
-  // Routes would be registered here if they existed
-  // Current implementation uses services instead of traditional routes
-
-  return app;
+app.get('/health', async () => ({ status: 'ok', service: 'nexgo-api' }));
+// Liveness for load balancers / container health checks. No auth, no DB: it only says the process is up.
+app.get('/ready', async (_request, reply) => {
+  try { await db.query('SELECT 1'); return { status: 'ready' }; }
+  catch { return reply.code(503).send({ status: 'not_ready' }); }
+});
+await app.register(authRoutes);
+await app.register(sellerRoutes);
+await app.register(shippingRoutes);
+await app.register(operationsRoutes);
+await app.register(shipmentRoutes);
+await app.register(trackingRoutes);
+await app.register(exceptionRoutes);
+await app.register(walletRoutes);
+await app.register(walletRechargeRoutes);
+await app.register(invoiceRoutes);
+await app.register(codRemittanceRoutes);
+await app.register(integrationRoutes);
+await app.register(shopifyRoutes);
+await app.register(shopifyComplianceRoutes);
+await app.register(searchRoutes);
+await app.register(lorrigoWebhookRoutes);
+await app.register(pickupRoutes);
+await app.register(analyticsRoutes);
+await app.register(workspaceRoutes);
+await app.register(locationRoutes);
+await app.register(billingExtrasRoutes);
+await app.register(teamRoutes);
+await app.register(passwordResetRoutes);
+await app.register(sessionRoutes);
+await app.register(adminRoutes);
+await app.register(adminMfaRoutes);
+await app.register(adminOperationsRoutes);
+await app.register(adminSellerProfileRoutes);
+await app.register(fileRoutes);
+await app.register(emailScheduleRoutes);
+await app.register(codConfirmationRoutes);
+await app.register(adminVisibilityRoutes);
+await app.register(kycRoutes);
+await app.register(ndrRoutes);
+await app.register(weightDisputeRoutes);
+await app.register(bankAccountRoutes);
+await app.register(partnerRoutes);
+await app.register(reportRoutes);
+await app.register(adminReportRoutes);
+await app.register(rtoRoutes);
+await app.register(billingRoutes);
+await app.register(adminDisputeRoutes);
+await app.register(courierZonesRoutes);
+await app.register(courierSLARoutes);
+await app.register(courierPerformanceRoutes);
+await ensureBootstrapAdmin(app.log);
+await ensureDeveloperSuperadmin(app.log);
+await ensureDevAccounts(app.log);
+return app;
 }
 
 // Vercel runs this file as the serverless entrypoint (it auto-detects `app`), so it must default-export a
 // request handler. The Fastify instance is built once per warm container and reused. Local dev uses local.ts.
 let ready: Promise<FastifyInstance> | undefined;
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  ready ??= buildApp().then(async (app) => {
-    await app.ready();
-    return app;
-  });
+  ready ??= buildApp().then(async (app) => { await app.ready(); return app; });
   try {
     const app = await ready;
     app.server.emit('request', req, res);
   } catch (error) {
     ready = undefined;
     console.error('API failed to start', error);
-    res.statusCode = 500;
-    res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ error: 'API_START_FAILED' }));
+    res.statusCode = 500; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ error: 'API_START_FAILED' }));
   }
 }
