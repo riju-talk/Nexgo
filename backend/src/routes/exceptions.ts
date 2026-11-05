@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { chargeRtoOnce } from '../lib/shipmentEffects.js';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
@@ -18,6 +19,7 @@ export async function exceptionRoutes(app: FastifyInstance) {
       const next = input.action === 'reattempt' ? 'reattempt_requested' : 'rto_requested'; const shipmentState = input.action === 'reattempt' ? 'in_transit' : 'rto';
       const result = await client.query(`UPDATE ndr_cases SET state=$1::ndr_state,resolved_at=now(),updated_at=now() WHERE id=$2 RETURNING *`, [next, caseId]);
       await client.query('UPDATE shipments SET state=$1::shipment_state,updated_at=now() WHERE id=$2', [shipmentState, current.rows[0].shipment_id]);
+      if (shipmentState === 'rto') await chargeRtoOnce(client, p.sellerId, current.rows[0].shipment_id);
       await client.query(`INSERT INTO shipment_events (shipment_id,state,occurred_at,description,source) VALUES ($1,$2::shipment_state,now(),$3,'manual')`, [current.rows[0].shipment_id, shipmentState, input.note ?? `Seller requested ${input.action}`]);
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: `ndr.${input.action}_requested`, targetType: 'ndr_case', targetId: caseId, requestId: request.id }); return result.rows[0];
     });

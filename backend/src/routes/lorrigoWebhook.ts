@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { PoolClient } from 'pg';
 import { config } from '../config.js';
 import { withTransaction } from '../db/client.js';
+import { applyShipmentStateEffects } from '../lib/shipmentEffects.js';
 import { isProgressionAllowed, type CanonicalShipmentState } from '../lib/courier.js';
 
 // Lorrigo pushes every tracking change to the URL saved in its dashboard (Webhooks), with the token we chose in the x-api-key header.
@@ -37,6 +38,7 @@ async function applyEvent(tx: PoolClient, s: Shipment, m: Mapped, at: string, lo
   if (m.rto) await tx.query("UPDATE shipments SET rto_status=$1, rto_delivered_at=CASE WHEN $1='delivered' THEN COALESCE(rto_delivered_at,$3::timestamptz) ELSE rto_delivered_at END WHERE id=$2", [m.rto, s.id, at]);
   if (m.state === 'ndr') await tx.query("INSERT INTO ndr_cases (seller_id,shipment_id,reason_code,reason_detail,ndr_reason,courier_notes) VALUES ($1,$2,'courier_ndr',$3,'other',$3) ON CONFLICT (shipment_id) DO NOTHING", [s.seller_id, s.id, description.slice(0, 500)]);
   s.state = m.state;
+  await applyShipmentStateEffects(tx, s.seller_id, s.id, m.state); // RTO freight billed once, NDR case closed on delivery / return
 }
 
 // Accepts { data: {...} }, { data: [...] }, a flat { awb, ... } or a bare array, so a change in Lorrigo's envelope cannot silently drop updates.

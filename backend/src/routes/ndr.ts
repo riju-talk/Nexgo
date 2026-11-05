@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
 import { pushNdrToCourier } from '../lib/ndrCourier.js';
+import { chargeRtoOnce } from '../lib/shipmentEffects.js';
 import { requireSeller } from './seller.js';
 
 const uuid = z.string().uuid();
@@ -218,6 +219,7 @@ export async function ndrRoutes(app: FastifyInstance) {
             rto_initiated_at = CASE WHEN $1 = 'rto' THEN COALESCE(rto_initiated_at, now()) ELSE rto_initiated_at END
         WHERE id = $2
       `, [shipmentState, current.rows[0].shipment_id]);
+      if (shipmentState === 'rto') await chargeRtoOnce(client, p.sellerId, current.rows[0].shipment_id); // return freight, once
 
       // Add shipment event
       await client.query(`
@@ -310,6 +312,7 @@ export async function ndrRoutes(app: FastifyInstance) {
                 rto_initiated_at = CASE WHEN $1 = 'rto' THEN COALESCE(rto_initiated_at, now()) ELSE rto_initiated_at END
             WHERE id = $2
           `, [shipmentState, current.rows[0].shipment_id]);
+          if (shipmentState === 'rto') await chargeRtoOnce(client, p.sellerId, current.rows[0].shipment_id);
 
           shipmentOf.set(caseId, current.rows[0].shipment_id);
           results.push({ caseId, success: true });
