@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { onboardingProblem } from '../../../src/lib/onboardingRules.js';
 
-const state = (agreementAccepted: boolean, kycStatus: string) => ({ agreementAccepted, kycStatus });
+const state = (agreementAccepted: boolean, kycStatus: string) => ({ agreementAccepted, kycStatus, kycEnforced: true });
 
 describe('onboarding gate', () => {
   it('blocks everything until the agreement is accepted', () => {
@@ -23,5 +23,12 @@ describe('onboarding gate', () => {
     expect(onboardingProblem(state(true, 'unsubmitted'), 'ship')).toBe('KYC_REQUIRED');
     expect(onboardingProblem(state(true, 'rejected'), 'ship')).toBe('KYC_REQUIRED');
     expect(onboardingProblem(state(true, 'verified'), 'ship')).toBeNull();
+  });
+
+  it('does not block on KYC when the gate is switched off (ENFORCE_KYC_GATE=false)', () => {
+    for (const kyc of ['unsubmitted', 'pending_review', 'rejected', 'verified']) for (const level of ['order', 'ship'] as const) {
+      expect(onboardingProblem({ agreementAccepted: true, kycStatus: kyc, kycEnforced: false }, level)).toBeNull();
+      expect(onboardingProblem({ agreementAccepted: false, kycStatus: kyc, kycEnforced: false }, level)).toBe('AGREEMENT_REQUIRED');
+    }
   });
 });

@@ -1,4 +1,5 @@
 import type { FastifyRequest } from 'fastify';
+import { config } from '../config.js';
 import { db } from '../db/client.js';
 import { AGREEMENT_VERSION, ONBOARDING_MESSAGES, onboardingProblem, type OnboardingLevel, type OnboardingState } from './onboardingRules.js';
 
@@ -11,7 +12,7 @@ export async function loadOnboardingState(sellerId: string): Promise<OnboardingS
        FROM sellers s LEFT JOIN seller_kyc k ON k.seller_id = s.id WHERE s.id = $1`,
     [sellerId, AGREEMENT_VERSION]);
   const row = result.rows[0];
-  return { agreementAccepted: !!row?.accepted, kycStatus: row?.kyc_status ?? 'unsubmitted' };
+  return { agreementAccepted: !!row?.accepted, kycStatus: row?.kyc_status ?? 'unsubmitted', kycEnforced: config.ENFORCE_KYC_GATE };
 }
 
 /** Fastify preHandler factory: put it after `requireSeller`. Answers 403 with a stable `error` code the UI keys on. */

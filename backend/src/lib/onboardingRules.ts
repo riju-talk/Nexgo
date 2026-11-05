@@ -4,7 +4,7 @@
  *   level 'ship'  : agreement accepted AND KYC verified by an admin                     -> may book shipments
  */
 export type OnboardingLevel = 'order' | 'ship';
-export type OnboardingState = { agreementAccepted: boolean; kycStatus: string };
+export type OnboardingState = { agreementAccepted: boolean; kycStatus: string; kycEnforced?: boolean };
 
 /** Current agreement text version. Bump it to make every seller accept again. */
 export const AGREEMENT_VERSION = '2026-11';
@@ -19,6 +19,7 @@ export const ONBOARDING_MESSAGES: Record<OnboardingProblem, string> = {
 
 export function onboardingProblem(state: OnboardingState, level: OnboardingLevel): OnboardingProblem | null {
   if (!state.agreementAccepted) return 'AGREEMENT_REQUIRED';
+  if (!state.kycEnforced) return null; // ENFORCE_KYC_GATE is off: KYC is collected and reviewed, but never blocks work
   if (level === 'order' && !['pending_review', 'verified'].includes(state.kycStatus)) return 'KYC_REQUIRED';
   if (level === 'ship' && state.kycStatus !== 'verified') return state.kycStatus === 'pending_review' ? 'KYC_NOT_VERIFIED' : 'KYC_REQUIRED';
   return null;

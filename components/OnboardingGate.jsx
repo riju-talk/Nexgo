@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
@@ -11,6 +12,8 @@ import LiveKyc from './LiveKyc';
 
 // The documents the seller agrees to. Each opens the real page in a new tab.
 const POLICIES = [['Terms of Service', '/terms'], ['Privacy Policy', '/privacy-policy'], ['Shipping SOP', '/shipping-sop'], ['Refund & Cancellation Policy', '/refund-policy']];
+
+const kycNeedsAction = (me) => ['unsubmitted', 'rejected'].includes(me?.onboarding?.kycStatus);
 
 /** "Set up your account" card: progress bar plus the three KYC steps. Shown on every page until KYC is verified. */
 function KycProgress({ me, mobile }) {
@@ -32,6 +35,7 @@ function KycProgress({ me, mobile }) {
           </div>
         ))}
       </div>
+      {kycNeedsAction(me) && <div style={{ marginTop: 14 }}><Link href="/settings/kyc" style={{ color: BLUE, fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>{me.onboarding.kycStatus === 'rejected' ? 'Fix and resubmit your KYC →' : 'Add your KYC documents →'}</Link></div>}
     </section>
   );
 }
@@ -50,7 +54,7 @@ function Agreement({ me, onAccepted }) {
   return (
     <section style={{ ...CARD, padding: 22, maxWidth: 680 }}>
       <h2 style={{ margin: 0, fontSize: 19, color: T.TEXT }}>Welcome{me?.full_name ? `, ${me.full_name}` : ''}</h2>
-      <p style={{ margin: '8px 0 14px', color: T.TEXT_SECONDARY, fontSize: 13.5, lineHeight: 1.6 }}>Before you create orders we need you to accept the NEXGO seller agreement and verify your business. It takes a few minutes and keeps every seller on the platform genuine.</p>
+      <p style={{ margin: '8px 0 14px', color: T.TEXT_SECONDARY, fontSize: 13.5, lineHeight: 1.6 }}>Before you create orders we need you to accept the NEXGO seller agreement. You can add your PAN, ID proof and bank details afterwards from Settings → KYC. It takes a few minutes and keeps every seller on the platform genuine.</p>
       <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
         {POLICIES.map(([label, href]) => <a key={href} href={href} target="_blank" rel="noreferrer" style={{ color: BLUE, fontSize: 13.5, fontWeight: 650, textDecoration: 'none' }}>{label} ↗</a>)}
       </div>
