@@ -83,7 +83,8 @@ app.setErrorHandler((error, request, reply) => {
   if (dbCode === '23514') return reply.code(400).send({ error: (error as Error).message || 'This value is not allowed.' });
   // `expose` marks 5xx errors we raise on purpose with a seller-safe reason (courier / storefront outage, missing configuration).
   if ((error as { statusCode?: number }).statusCode && ((error as { statusCode?: number }).statusCode! < 500 || (error as { expose?: boolean }).expose)) {
-    return reply.code((error as { statusCode: number }).statusCode).send({ error: (error as Error).message });
+    const errCode = (error as { code?: unknown }).code;
+    return reply.code((error as { statusCode: number }).statusCode).send({ error: (error as Error).message, ...(typeof errCode === 'string' && /^[A-Z_]+$/.test(errCode) ? { code: errCode } : {}) });
   }
   request.log.error(error);
   return reply.code((error as { statusCode?: number }).statusCode || 500).send({ error: 'INTERNAL_ERROR' });

@@ -11,7 +11,7 @@ export const AGREEMENT_VERSION = '2026-11';
 
 export type OnboardingProblem = 'AGREEMENT_REQUIRED' | 'KYC_REQUIRED' | 'KYC_NOT_VERIFIED';
 
-const MESSAGES: Record<OnboardingProblem, string> = {
+export const ONBOARDING_MESSAGES: Record<OnboardingProblem, string> = {
   AGREEMENT_REQUIRED: 'Accept the NEXGO seller agreement before continuing.',
   KYC_REQUIRED: 'Submit your KYC details before creating orders.',
   KYC_NOT_VERIFIED: 'Your KYC is still being verified. You can book shipments once it is approved.',

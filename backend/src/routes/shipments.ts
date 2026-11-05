@@ -26,6 +26,12 @@ async function pushTrackingForShipment(sellerId: string, orderId: string, awb: s
   await pushTracking(sellerId, orderId, awb, row.rows[0]?.name ?? 'NEXGO', row.rows[0]?.id);
 }
 
+// Columns that are NEXGO/aggregator internals (price snapshot with the aggregator name and its shipment id, idempotency key, internal ids). Sellers never need them, and the browser's Network tab shows every response.
+const INTERNAL_SHIPMENT_FIELDS = ['quote_snapshot', 'idempotency_key', 'provider_shipment_id', 'channel_fulfillment_id', 'provider_id', 'service_id'] as const;
+export function publicShipment<T extends Record<string, unknown>>(row: T): Omit<T, (typeof INTERNAL_SHIPMENT_FIELDS)[number]> {
+  const copy: Record<string, unknown> = { ...row }; for (const f of INTERNAL_SHIPMENT_FIELDS) delete copy[f]; return copy as Omit<T, (typeof INTERNAL_SHIPMENT_FIELDS)[number]>;
+}
+
 // One booking, inside the caller's seller transaction (wallet-checked, idempotent on the key).
 async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
     const previous = await client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]); if (previous.rows[0]) return { shipment: previous.rows[0], replay: true };
@@ -78,7 +84,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
        JOIN courier_providers cp ON cp.id=s.provider_id JOIN courier_services cs ON cs.id=s.service_id
        LEFT JOIN LATERAL (SELECT count(*)::int AS products, COALESCE(sum(quantity),0)::int AS quantity, string_agg(name, ', ' ORDER BY name) AS product_names FROM order_items WHERE order_id=o.id) it ON true
        LEFT JOIN LATERAL (SELECT description, location, occurred_at FROM shipment_events WHERE shipment_id=s.id ORDER BY occurred_at DESC LIMIT 1) ev ON true
-       WHERE s.seller_id=$1 ORDER BY s.created_at DESC LIMIT 2000`, [p.sellerId])).rows, p, 'shipments.view_customer'),
+       WHERE s.seller_id=$1 ORDER BY s.created_at DESC LIMIT 2000`, [p.sellerId])).rows.map(publicShipment), p, 'shipments.view_customer'),
       // Orders that never got a courier (booking failed, or no courier could be assigned): the "Failed" tab, to fix and re-assign.
       failed: maskCustomerRows((await client.query(
       `SELECT o.id, o.order_number, o.nexgo_order_id, o.channel, o.state AS order_state, o.payment_mode, o.cod_amount_paise, o.subtotal_paise, o.total_weight_g, o.created_at,
@@ -168,14 +174,14 @@ export async function shipmentRoutes(app: FastifyInstance) {
   });
   app.get('/v1/shipments/:shipmentId', { preHandler: requireSeller }, async (request) => {
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
-    return withSellerTransaction(p.sellerId, async (client) => { const shipment = await client.query('SELECT * FROM shipments WHERE id=$1 AND seller_id=$2', [shipmentId, p.sellerId]); if (!shipment.rows[0]) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 }); const events = await client.query('SELECT state,occurred_at,location,description,source FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at DESC', [shipmentId]); return { ...shipment.rows[0], events: events.rows }; });
+    return withSellerTransaction(p.sellerId, async (client) => { const shipment = await client.query('SELECT * FROM shipments WHERE id=$1 AND seller_id=$2', [shipmentId, p.sellerId]); if (!shipment.rows[0]) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 }); const events = await client.query('SELECT state,occurred_at,location,description,source FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at DESC', [shipmentId]); return { ...publicShipment(shipment.rows[0]), events: events.rows }; });
   });
   app.post('/v1/shipments/book', { preHandler: [requireSeller, requireOnboarded('ship')] }, async (request, reply) => {
     const input = bookingInput.parse(request.body); const p = principal(request); const key = request.headers['idempotency-key'];
     if (typeof key !== 'string' || key.length < 16 || key.length > 200) throw Object.assign(new Error('A 16-200 character Idempotency-Key header is required'), { statusCode: 400 });
     const result = await withSellerTransaction(p.sellerId, (client) => bookInTx(client, p, request.id, input, key));
     if (!result.replay) await pushTrackingForShipment(p.sellerId, result.shipment.order_id, result.shipment.awb);
-    return reply.code(result.replay ? 200 : 201).send(result);
+    return reply.code(result.replay ? 200 : 201).send({ ...result, shipment: publicShipment(result.shipment) });
   });
   // Courier allocation by the seller's priority list (Settings > Courier rules: priority 1, 2, 3 ...). For each order the first courier
   // service that is serviceable and bookable wins; unlisted couriers are tried last. Orders nobody can take come back with the reason.

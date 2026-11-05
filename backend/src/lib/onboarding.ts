@@ -1,6 +1,6 @@
 import type { FastifyRequest } from 'fastify';
 import { db } from '../db/client.js';
-import { AGREEMENT_VERSION, onboardingProblem, type OnboardingLevel, type OnboardingState } from './onboardingRules.js';
+import { AGREEMENT_VERSION, ONBOARDING_MESSAGES, onboardingProblem, type OnboardingLevel, type OnboardingState } from './onboardingRules.js';
 
 export { AGREEMENT_VERSION } from './onboardingRules.js';
 
@@ -19,7 +19,7 @@ export function requireOnboarded(level: OnboardingLevel) {
   return async (request: FastifyRequest) => {
     if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
     const problem = onboardingProblem(await loadOnboardingState(request.principal.sellerId), level);
-    if (problem) throw Object.assign(new Error(problem), { statusCode: 403, code: problem });
+    if (problem) throw Object.assign(new Error(ONBOARDING_MESSAGES[problem]), { statusCode: 403, code: problem }); // readable text for the seller, stable code for the UI
   };
 }
 
