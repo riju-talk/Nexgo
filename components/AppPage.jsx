@@ -48,6 +48,7 @@ const LiveRateCalculator = dynamic(() => import('./LiveRateCalculator'));
 const LivePincodeServiceability = dynamic(() => import('./LivePincodeServiceability'));
 const LiveTrack = dynamic(() => import('./LiveTrack'));
 const LiveCourierZones = dynamic(() => import('./LiveCourierZones'));
+const AdminAuditTrail = dynamic(() => import('./AdminAuditTrail'));
 const LiveCourierSla = dynamic(() => import('./LiveCourierSla'));
 const LiveCourierPerformance = dynamic(() => import('./LiveCourierPerformance'));
 const ComingSoon = dynamic(() => import('./ComingSoon'));
@@ -92,6 +93,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
   const isEmailScheduler = id === 'email-reports';
   const isNotifyChannels = id === 'wa-api' || id === 'sms-api';
   const isCustomSetting = isTeamRoles || isCodConfirmation || isInvoiceSettings || isEmailScheduler || isNotifyChannels;
+  const isAdminAudit = id === 'a-audit';
   const isLiveAdminOperations = ['a-kyc', 'a-wallets', 'a-cod', 'a-invoices', 'a-jobs', 'a-audit'].includes(id);
   const isLiveWorkspaceTool = ['courier-rules', 'label', 'mis', 'a-tickets', 'abandoned', 'profile', 'support'].includes(id);
   const isLiveAdminReport = ['a-revenue', 'a-sla-report', 'a-analytics', 'a-gst'].includes(id);
@@ -148,7 +150,8 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isInvoiceSettings && <LiveInvoiceSettings mobile={mobile} />}
         {isEmailScheduler && <LiveEmailScheduler mobile={mobile} />}
         {isNotifyChannels && <LiveNotifyChannels initialTab={id === 'sms-api' ? 'sms' : 'whatsapp'} mobile={mobile} />}
-        {isLiveAdminOperations && <LiveAdminOperations activeId={id} mobile={mobile} />}
+        {isLiveAdminOperations && !isAdminAudit && <LiveAdminOperations activeId={id} mobile={mobile} />}
+        {isAdminAudit && <AdminAuditTrail mobile={mobile} />}
         {isLiveAdminReport && <LiveAdminReports activeId={id} mobile={mobile} />}
         {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
         {hasTable && !isNew && !isNdr && !isWeight && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isLiveAdminOperations && !isCustomSetting && <TablePage activeId={id} mobile={mobile} phone={phone} />}

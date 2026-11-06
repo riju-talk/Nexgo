@@ -8,17 +8,28 @@ export async function adminVisibilityRoutes(app: FastifyInstance) {
     const q = z.object({
       sellerId: z.string().uuid().optional(),
       action: z.string().trim().max(120).optional(),
-      limit: z.coerce.number().int().min(1).max(200).default(100),
+      actor: z.string().trim().max(200).optional(),
+      from: z.string().date().optional(),
+      to: z.string().date().optional(),
+      before: z.string().datetime().optional(), // cursor: only rows older than this (the created_at of the last row already shown)
+      limit: z.coerce.number().int().min(1).max(500).default(100),
     }).parse(request.query);
+    // actor_kind tells a reader at a glance who acted: a platform admin, a seller's user, the admin-creation API, or the system itself.
     const result = await db.query(
-      `SELECT a.id, a.action, a.target_type, a.target_id, a.metadata, a.created_at,
-              s.legal_name AS seller_name, u.email AS actor_email
+      `SELECT a.id, a.action, a.target_type, a.target_id, a.metadata, a.created_at, a.request_id,
+              s.legal_name AS seller_name, u.email AS actor_email, u.full_name AS actor_name, pa.role AS actor_role,
+              CASE WHEN pa.user_id IS NOT NULL THEN 'admin' WHEN u.id IS NOT NULL THEN 'seller'
+                   WHEN a.metadata->>'via' = 'api' THEN 'api' ELSE 'system' END AS actor_kind
        FROM audit_events a
        LEFT JOIN sellers s ON s.id = a.seller_id
        LEFT JOIN users u ON u.id = a.actor_user_id
+       LEFT JOIN platform_admins pa ON pa.user_id = a.actor_user_id
        WHERE ($1::uuid IS NULL OR a.seller_id = $1) AND ($2::text IS NULL OR a.action ILIKE '%' || $2 || '%')
-       ORDER BY a.created_at DESC LIMIT $3`,
-      [q.sellerId ?? null, q.action ?? null, q.limit],
+         AND ($3::text IS NULL OR u.email ILIKE '%' || $3 || '%')
+         AND ($4::date IS NULL OR a.created_at >= $4::date) AND ($5::date IS NULL OR a.created_at < $5::date + 1)
+         AND ($6::timestamptz IS NULL OR a.created_at < $6::timestamptz)
+       ORDER BY a.created_at DESC LIMIT $7`,
+      [q.sellerId ?? null, q.action ?? null, q.actor ?? null, q.from ?? null, q.to ?? null, q.before ?? null, q.limit],
     );
     return { items: result.rows };
   });

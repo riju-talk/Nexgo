@@ -25,7 +25,7 @@ export async function adminReportRoutes(app: FastifyInstance) {
       db.query(`SELECT
         (SELECT COALESCE(sum(subtotal_paise),0) FROM invoices WHERE status='issued' AND issued_at>=current_date-interval '29 days') AS invoiced,
         (SELECT COALESCE(sum(gst_paise),0) FROM invoices WHERE status='issued' AND issued_at>=current_date-interval '29 days') AS gst,
-        (SELECT COALESCE(sum(amount_paise),0) FROM wallet_entries WHERE entry_type='credit' AND created_at>=current_date-interval '29 days') AS recharged,
+        (SELECT COALESCE(sum(amount_paise),0) FROM wallet_entries WHERE entry_type='credit' AND reference_type='wallet_recharge' AND created_at>=current_date-interval '29 days') AS recharged,
         (SELECT count(*) FROM shipments WHERE state<>'cancelled' AND booked_at>=current_date-interval '29 days') AS shipments`),
       db.query(`SELECT s.legal_name,count(*)::int AS shipments,COALESCE(sum(sh.shipping_charge_paise),0) AS v FROM shipments sh JOIN sellers s ON s.id=sh.seller_id WHERE sh.state<>'cancelled' AND sh.booked_at>=current_date-interval '29 days' GROUP BY s.legal_name ORDER BY v DESC LIMIT 15`),
     ]);

@@ -10,6 +10,7 @@ import { randomInt } from 'node:crypto';
 import { sendMail } from '../lib/mailer.js';
 import { requirePlatformAdmin, requireCommercialAdmin } from '../lib/adminAuth.js';
 import { sessionCookieOptions } from '../lib/cookies.js';
+import { auditAdminLogin } from '../lib/adminWriteAudit.js';
 import { issueCsrfCookie, clearCsrfCookie } from '../lib/csrf.js';
 
 const AGGREGATOR_LABEL: Record<(typeof AGGREGATORS)[number], string> = { lorrigo: 'Lorrigo' };
@@ -76,7 +77,7 @@ export async function adminRoutes(app: FastifyInstance) {
        WHERE u.email = $1`, [input.email.toLowerCase()],
     );
     const admin = account.rows[0];
-    if (!admin) return reply.code(401).send({ error: 'INVALID_CREDENTIALS' });
+    if (!admin) { await auditAdminLogin(request, 'failed', input.email, null); return reply.code(401).send({ error: 'INVALID_CREDENTIALS' }); }
     if (!(await argon2.verify(admin.password_hash, input.password))) {
       // Not the real password: it may be the temporary one e-mailed by "Forgot password". That one opens no session;
       // it is exchanged (once) for a reset token so the admin sets their own password.
@@ -87,6 +88,7 @@ export async function adminRoutes(app: FastifyInstance) {
         await db.query(`INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES ($1,$2, now() + interval '30 minutes')`, [admin.user_id, hashSessionToken(resetToken)]);
         return { mustChangePassword: true, resetToken };
       }
+      await auditAdminLogin(request, 'failed', input.email, admin.user_id);
       return reply.code(401).send({ error: 'INVALID_CREDENTIALS' });
     }
     // MFA is only enforceable once an admin has actually enrolled a device —
@@ -105,6 +107,7 @@ export async function adminRoutes(app: FastifyInstance) {
     );
     reply.setCookie('nx_session', token, sessionCookieOptions());
     issueCsrfCookie(reply, token);
+    await auditAdminLogin(request, 'success', input.email, admin.user_id);
     return { userId: admin.user_id, fullName: admin.full_name, role: admin.role, expiresAt: session.rows[0].expires_at };
   });
 

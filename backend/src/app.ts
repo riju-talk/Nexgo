@@ -19,6 +19,7 @@ import { fileRoutes } from './routes/files.js';
 import { emailScheduleRoutes } from './routes/emailSchedules.js';
 import { codConfirmationRoutes } from './routes/codConfirmation.js';
 import { adminSellerProfileRoutes, impersonationAudit, impersonationGuard } from './routes/adminSellerProfile.js';
+import { adminWriteAudit } from './lib/adminWriteAudit.js';
 import { adminVisibilityRoutes } from './routes/adminVisibility.js';
 import { kycRoutes } from './routes/kyc.js';
 import { kycSectionRoutes } from './routes/kycSections.js';
@@ -76,6 +77,7 @@ app.addHook('onRequest', requireCsrfHeader);
 app.addHook('onSend', async (_req, reply) => { reply.header('Cache-Control', 'no-store'); });
 app.addHook('preHandler', impersonationGuard);
 app.addHook('onResponse', impersonationAudit);
+app.addHook('onResponse', adminWriteAudit);
 
 app.setErrorHandler((error, request, reply) => {
   if (error instanceof ZodError) return reply.code(400).send({ error: 'VALIDATION_ERROR', details: error.flatten() });
