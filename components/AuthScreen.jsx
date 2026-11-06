@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import NMark from './NMark';
 import { useAppState } from '@/lib/AppStateContext';
@@ -70,6 +70,8 @@ export default function AuthScreen({ mode: requestedMode }) {
   // /reset-password opened without the e-mailed token has nothing to reset: ask for the e-mail address instead.
   const [hasResetToken] = useState(() => typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('token'));
   const mode = requestedMode === 'reset' && !hasResetToken ? 'forgot' : requestedMode;
+  // The reset page only exists for the emailed link. Opened without one, it sends the person to the separate Forgot password page (e-mail first).
+  useEffect(() => { if (requestedMode === 'reset' && !hasResetToken) nav('forgot'); }, [requestedMode, hasResetToken, nav]);
   const set = (name) => (value) => setForm((current) => ({ ...current, [name]: value }));
   
   const submit = async (event) => {
@@ -93,7 +95,7 @@ export default function AuthScreen({ mode: requestedMode }) {
         showToast(`Welcome ${form.fullName.trim()}! Your account is ready.`);
         nav('dashboard'); return;
       }
-      if (mode === 'forgot') { await apiFetch('/v1/auth/forgot-password', { method: 'POST', body: { email: form.email } }); showToast('If the account exists, a reset link has been sent.'); return; }
+      if (mode === 'forgot') { await apiFetch('/v1/auth/forgot-password', { method: 'POST', body: { email: form.email } }); showToast(`If ${form.email.trim()} is registered, a reset link is on its way. Open it from your email to choose a new password.`); return; }
       if (mode === 'reset') {
         const token = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('token');
         if (!token) throw new Error('This reset link is missing its security token. Request a new one.');
