@@ -34,8 +34,25 @@ export function publicShipment<T extends Record<string, unknown>>(row: T): Omit<
 }
 
 // One booking, inside the caller's seller transaction (wallet-checked, idempotent on the key).
-export async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
-    const previous = await client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]); if (previous.rows[0]) return { shipment: previous.rows[0], replay: true };
+const noFunds = () => Object.assign(new Error('Insufficient wallet balance. Recharge your wallet to book this shipment.'), { statusCode: 402 });
+/** True when the wallet (plus the seller's overdraft limit) cannot cover this amount. */
+async function fundsShort(client: PoolClient, sellerId: string, amountPaise: number) {
+  const balance = await client.query<{ balance_paise: string }>(`SELECT COALESCE(SUM(CASE WHEN entry_type IN ('credit','release') THEN amount_paise WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END),0)::bigint AS balance_paise FROM wallet_entries WHERE seller_id=$1`, [sellerId]);
+  const debitLimit = Number((await client.query<{ l: string }>('SELECT wallet_debit_limit_paise AS l FROM sellers WHERE id=$1', [sellerId])).rows[0]?.l ?? 0);
+  return Number(balance.rows[0].balance_paise) + debitLimit < amountPaise;
+}
+
+/**
+ * A booking in three steps, so no database connection is held while the courier works (a booking is several seconds at the aggregator):
+ *   1. prepareBooking  (quick, reads only)      price, courier rules, a first look at the wallet, everything the courier needs
+ *   2. callCourier     (slow, NO connection)    the aggregator books the parcel
+ *   3. completeBooking (quick, all the writes)  wallet lock, funds re-checked, shipment + debit + events in one transaction
+ * bookDetached() runs the three; bookInTx() runs them on one caller-owned connection (kept for callers that already have one).
+ */
+export type BookingContext = { input: z.infer<typeof bookingInput>; key: string; zone: string; selection: Rate; price: ReturnType<typeof calculateRate>; details: Awaited<ReturnType<typeof loadBookingDetails>> };
+
+export async function prepareBooking(client: PoolClient, p: ReturnType<typeof principal>, input: z.infer<typeof bookingInput>, key: string): Promise<{ replay: true; shipment: Record<string, unknown> } | { replay: false; ctx: BookingContext }> {
+    const previous = await client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]); if (previous.rows[0]) return { replay: true as const, shipment: previous.rows[0] };
     const lane = await client.query<{ wc: string; ws: string; cc: string; cs: string }>(`SELECT w.city AS wc, w.state AS ws, COALESCE(p.city, c.city) AS cc, COALESCE(p.state, c.state) AS cs FROM orders o JOIN warehouses w ON w.id=o.warehouse_id JOIN customers c ON c.id=o.customer_id LEFT JOIN pincodes p ON p.pincode=c.pincode WHERE o.id=$1 AND o.seller_id=$2`, [input.orderId, p.sellerId]);
     const zone = lane.rows[0] ? laneZone({ city: lane.rows[0].wc, state: lane.rows[0].ws }, { city: lane.rows[0].cc, state: lane.rows[0].cs }) : 'rest_of_india';
     const rate = await client.query<Rate>(`SELECT cp.id AS provider_id,cp.code AS provider_code,cp.aggregator,cp.name AS provider_name,cs.id AS service_id,cs.code AS service_code,cs.display_name AS service_name,rcr.base_weight_g,rcr.base_price_paise,rcr.additional_weight_g,rcr.additional_price_paise,rcr.cod_fee_paise,rcr.fuel_surcharge_bps,rcr.cod_percent_bps,rcr.rto_base_price_paise,rcr.rto_additional_price_paise,o.payment_mode,o.cod_amount_paise,GREATEST(o.total_weight_g,o.volumetric_weight_g) AS total_weight_g,c.pincode AS destination_pincode FROM orders o JOIN customers c ON c.id=o.customer_id JOIN seller_courier_access sca ON sca.seller_id=o.seller_id AND sca.state='enabled' JOIN courier_services cs ON cs.id=sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id=cs.provider_id AND cp.integration_state='live' JOIN LATERAL (SELECT id FROM rate_cards WHERE seller_id=o.seller_id AND state='active' AND effective_from<=now() AND (effective_to IS NULL OR effective_to>now()) ORDER BY effective_from DESC LIMIT 1) card ON true JOIN rate_card_rates rcr ON rcr.rate_card_id=card.id AND rcr.service_id=cs.id AND rcr.zone_code IN ($5,'national') AND rcr.min_weight_g<=GREATEST(o.total_weight_g,o.volumetric_weight_g) WHERE o.id=$1 AND o.seller_id=$2 AND o.state='ready_to_ship' AND cp.code=$3 AND cs.code=$4 AND (o.payment_mode='prepaid' OR sca.cod_enabled=true) AND NOT EXISTS (SELECT 1 FROM seller_pincode_blocks sb WHERE sb.seller_id=o.seller_id AND (sb.service_id IS NULL OR sb.service_id=cs.id) AND sb.pincode=c.pincode) AND NOT EXISTS (SELECT 1 FROM platform_pincode_blocks pb WHERE pb.pincode=c.pincode) AND NOT EXISTS (SELECT 1 FROM courier_pincode_rules blocked WHERE blocked.service_id=cs.id AND blocked.rule_type='blocked' AND c.pincode LIKE blocked.destination_prefix || '%') AND (NOT EXISTS (SELECT 1 FROM courier_pincode_rules allowed WHERE allowed.service_id=cs.id AND allowed.rule_type='allowed') OR EXISTS (SELECT 1 FROM courier_pincode_rules allowed WHERE allowed.service_id=cs.id AND allowed.rule_type='allowed' AND c.pincode LIKE allowed.destination_prefix || '%')) ORDER BY (rcr.zone_code=$5) DESC, rcr.min_weight_g DESC LIMIT 1`, [input.orderId, p.sellerId, input.providerCode, input.serviceCode, zone]);
@@ -44,27 +61,28 @@ export async function bookInTx(client: PoolClient, p: ReturnType<typeof principa
     if (pinLane?.is_oda && !pinLane.serves_oda) throw Object.assign(new Error('This courier does not deliver to this pincode (out of delivery area). Choose another courier.'), { statusCode: 422 });
     if (selection.payment_mode === 'cod' && pinLane && pinLane.cod_available === false) throw Object.assign(new Error('Cash on delivery is not available at this pincode. Switch the order to prepaid or choose another courier.'), { statusCode: 422 });
     const price = calculateRate(selection, selection.total_weight_g || 1, selection.payment_mode === 'cod', selection.cod_amount_paise || 0);
-    // Funds are checked twice: a quick look before the (slow) courier call, and again under the wallet lock once the courier has answered.
-    // Holding the wallet lock across the courier call would force every booking of a seller to wait for the previous one (about 8 s each).
-    const fundsShort = async () => {
-      const balance = await client.query<{ balance_paise: string }>(`SELECT COALESCE(SUM(CASE WHEN entry_type IN ('credit','release') THEN amount_paise WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END),0)::bigint AS balance_paise FROM wallet_entries WHERE seller_id=$1`, [p.sellerId]);
-      const debitLimit = Number((await client.query<{ l: string }>('SELECT wallet_debit_limit_paise AS l FROM sellers WHERE id=$1', [p.sellerId])).rows[0]?.l ?? 0);
-      return Number(balance.rows[0].balance_paise) + debitLimit < price.totalPaise;
-    };
-    const noFunds = () => Object.assign(new Error('Insufficient wallet balance. Recharge your wallet to book this shipment.'), { statusCode: 402 });
-    if (await fundsShort()) throw noFunds();
+    // A quick look at the wallet before the (slow) courier call; it is checked again under the wallet lock once the courier has answered.
+    if (await fundsShort(client, p.sellerId, price.totalPaise)) throw noFunds();
     const details = await loadBookingDetails(client, p.sellerId, input.orderId, selection.service_id);
-    let providerBooking;
+    return { replay: false, ctx: { input, key, zone, selection, price, details } };
+}
+
+export async function callCourier(ctx: BookingContext) {
+  const { selection, details, input } = ctx;
     try {
-      providerBooking = await courierAdapter(selection.aggregator, selection.provider_code).book({ details, reference: input.orderId, destinationPincode: selection.destination_pincode, weightG: Math.max(selection.total_weight_g, 1), paymentMode: selection.payment_mode, codAmountPaise: selection.payment_mode === 'cod' ? selection.cod_amount_paise : 0 });
+      return await courierAdapter(selection.aggregator, selection.provider_code).book({ details, reference: input.orderId, destinationPincode: selection.destination_pincode, weightG: Math.max(selection.total_weight_g, 1), paymentMode: selection.payment_mode, codAmountPaise: selection.payment_mode === 'cod' ? selection.cod_amount_paise : 0 });
     } catch (e) {
       // The aggregator said this courier does not serve the lane: tag the error so the caller can remember it (after the rollback).
       if ((e as { laneRefusal?: boolean }).laneRefusal) Object.assign(e as object, { lane: { serviceId: selection.service_id, pickup: details.warehouse.pincode, destination: selection.destination_pincode } satisfies LaneRefusal });
       throw e;
     }
+}
+
+export async function completeBooking(client: PoolClient, p: ReturnType<typeof principal>, requestId: string, ctx: BookingContext, providerBooking: Awaited<ReturnType<typeof callCourier>>) {
+  const { input, key, zone, selection, price } = ctx;
     // The courier has answered: only now take the wallet lock, so two concurrent bookings cannot both spend the same balance.
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
-    if (await fundsShort()) {
+    if (await fundsShort(client, p.sellerId, price.totalPaise)) {
       // Another booking used the money while this one was with the courier: undo the courier booking so nothing is shipped unpaid.
       try { await courierAdapter(selection.aggregator, selection.provider_code).cancel(providerBooking.providerShipmentId ?? providerBooking.awb); }
       catch (cancelError) { console.error(`Booking ${providerBooking.awb} could not be cancelled after a failed wallet re-check; cancel it at the courier by hand`, cancelError); }
@@ -78,6 +96,29 @@ export async function bookInTx(client: PoolClient, p: ReturnType<typeof principa
     await client.query(`INSERT INTO wallet_entries (seller_id,entry_type,amount_paise,reference_type,reference_id,idempotency_key,description)
       VALUES ($1,'debit',$2,'shipment',$3,$4,$5)`, [p.sellerId, price.totalPaise, shipment.rows[0].id, `shipment-booking:${key}`, `Shipping charge for ${shipment.rows[0].awb}`]);
     await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'shipment.booked', targetType: 'shipment', targetId: shipment.rows[0].id, requestId, metadata: { orderId: input.orderId, awb: shipment.rows[0].awb, amount: paiseToAmount(price.totalPaise) } }); return { shipment: shipment.rows[0], replay: false };
+}
+
+export async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
+  const prep = await prepareBooking(client, p, input, key);
+  if (prep.replay) return { shipment: prep.shipment, replay: true as const };
+  return completeBooking(client, p, requestId, prep.ctx, await callCourier(prep.ctx));
+}
+
+/** The same booking with no connection held during the courier call, so many bookings can run at once. Safe to retry: the key makes it idempotent. */
+export async function bookDetached(p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
+  const prep = await withSellerTransaction(p.sellerId, (client) => prepareBooking(client, p, input, key));
+  if (prep.replay) return { shipment: prep.shipment, replay: true as const };
+  const providerBooking = await callCourier(prep.ctx);
+  try {
+    return await withSellerTransaction(p.sellerId, (client) => completeBooking(client, p, requestId, prep.ctx, providerBooking));
+  } catch (e) {
+    if ((e as { code?: string }).code === '23505') { // a parallel request recorded this very booking first: that is the booking
+      const again = await withSellerTransaction(p.sellerId, (client) => client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]));
+      if (again.rows[0]) return { shipment: again.rows[0] as Record<string, unknown>, replay: true as const };
+    }
+    if ((e as { statusCode?: number }).statusCode !== 402) console.error(`Booking ${providerBooking.awb} succeeded at the courier but was not recorded: ${(e as Error).message}. A retry reuses it.`);
+    throw e;
+  }
 }
 
 // ready = nothing is wrong with the order itself, so a courier can be assigned (same checks as diagnose() in lib/failedOrders.js).
@@ -106,40 +147,42 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
   const refusals: { lane: LaneRefusal; reason: string }[] = [];
   const started = Date.now();
   try {
-    const out = await withSellerTransaction(p.sellerId, async (client) => {
-        const order = await client.query<{ state: string }>('SELECT state::text FROM orders WHERE id = $1 AND seller_id = $2 FOR UPDATE', [orderId, p.sellerId]);
-        if (!order.rows[0]) return { ok: false, error: 'Order not found' };
-        if (order.rows[0].state === 'booked') return { ok: false, error: 'Already assigned to a courier' };
-        if (!['new', 'ready_to_ship'].includes(order.rows[0].state)) return { ok: false, error: `Order is ${order.rows[0].state}` };
-        if (order.rows[0].state === 'new') await client.query(`UPDATE orders SET state = 'ready_to_ship', updated_at = now() WHERE id = $1`, [orderId]);
-        const services = await client.query<{ pcode: string; pname: string; scode: string }>(
-          `SELECT cp.code AS pcode, cp.name AS pname, cs.code AS scode FROM seller_courier_access sca JOIN courier_services cs ON cs.id = sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id = cs.provider_id AND cp.integration_state = 'live' WHERE sca.seller_id = $1 ORDER BY cp.name, cs.display_name`, [p.sellerId]);
-        const ordered = services.rows.filter((c) => !providerCode || (c.pcode === providerCode && (!serviceCode || c.scode === serviceCode))).sort((a, b) => rank(a.pname, a.pcode) - rank(b.pname, b.pcode));
-        if (!ordered.length) return { ok: false, error: providerCode ? 'The courier you chose is not enabled for this account' : 'No courier is enabled for this account' };
-        let lastError = 'No serviceable courier for this order';
-        for (const c of ordered) {
-          await client.query('SAVEPOINT try_courier');
-          try {
-            const booked = await bookInTx(client, p, requestId, { orderId, providerCode: c.pcode, serviceCode: c.scode }, `auto-assign:${orderId}:${c.pcode}:${c.scode}`);
-            await client.query('RELEASE SAVEPOINT try_courier');
-            return { ok: true, awb: booked.shipment.awb as string, courier: c.pname };
-          } catch (e) {
-            await client.query('ROLLBACK TO SAVEPOINT try_courier');
-            const status = (e as { statusCode?: number }).statusCode;
-            lastError = (e as Error).message || lastError;
-            const lane = laneRefusalOf(e); if (lane) refusals.push({ lane, reason: lastError });
-            if (status === 402) return { ok: false, error: lastError }; // wallet short: no point trying other couriers
-            if (status !== 422) throw e;
-          }
-        }
-        return { ok: false, error: lastError };
+    // Step 1, a short transaction: the order can still be assigned, and the couriers to try in order.
+    const planned = await withSellerTransaction(p.sellerId, async (client) => {
+      const order = await client.query<{ state: string }>('SELECT state::text FROM orders WHERE id = $1 AND seller_id = $2 FOR UPDATE', [orderId, p.sellerId]);
+      if (!order.rows[0]) return { ok: false as const, error: 'Order not found' };
+      if (order.rows[0].state === 'booked') return { ok: false as const, error: 'Already assigned to a courier' };
+      if (!['new', 'ready_to_ship'].includes(order.rows[0].state)) return { ok: false as const, error: `Order is ${order.rows[0].state}` };
+      if (order.rows[0].state === 'new') await client.query(`UPDATE orders SET state = 'ready_to_ship', updated_at = now() WHERE id = $1`, [orderId]);
+      const services = await client.query<{ pcode: string; pname: string; scode: string }>(
+        `SELECT cp.code AS pcode, cp.name AS pname, cs.code AS scode FROM seller_courier_access sca JOIN courier_services cs ON cs.id = sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id = cs.provider_id AND cp.integration_state = 'live' WHERE sca.seller_id = $1 ORDER BY cp.name, cs.display_name`, [p.sellerId]);
+      const ordered = services.rows.filter((c) => !providerCode || (c.pcode === providerCode && (!serviceCode || c.scode === serviceCode))).sort((a, b) => rank(a.pname, a.pcode) - rank(b.pname, b.pcode));
+      if (!ordered.length) return { ok: false as const, error: providerCode ? 'The courier you chose is not enabled for this account' : 'No courier is enabled for this account' };
+      return { ok: true as const, ordered };
     });
-    if (out.ok && out.awb) await pushTrackingForShipment(p.sellerId, orderId, out.awb);
-    return { ...out, ms: Date.now() - started };
+    if (!planned.ok) return { ok: false, error: planned.error, ms: Date.now() - started };
+    // Step 2, one courier at a time: every attempt is its own booking (no connection held while the aggregator works), so a refused
+    // courier leaves nothing behind and the next one is tried.
+    let lastError = 'No serviceable courier for this order';
+    for (const c of planned.ordered) {
+      try {
+        const booked = await bookDetached(p, requestId, { orderId, providerCode: c.pcode, serviceCode: c.scode }, `auto-assign:${orderId}:${c.pcode}:${c.scode}`);
+        const awb = booked.shipment.awb as string;
+        await pushTrackingForShipment(p.sellerId, orderId, awb);
+        return { ok: true, awb, courier: c.pname, ms: Date.now() - started };
+      } catch (e) {
+        const status = (e as { statusCode?: number }).statusCode;
+        lastError = (e as Error).message || lastError;
+        const lane = laneRefusalOf(e); if (lane) refusals.push({ lane, reason: lastError });
+        if (status === 402) return { ok: false, error: lastError, ms: Date.now() - started }; // wallet short: no point trying other couriers
+        if (status !== 422) throw e;
+      }
+    }
+    return { ok: false, error: lastError, ms: Date.now() - started };
   } catch (e) {
     return { ok: false, error: (e as Error).message || 'Could not assign a courier', ms: Date.now() - started };
   } finally {
-    await rememberLaneRefusals(refusals); // after the rollback, so the refusal survives
+    await rememberLaneRefusals(refusals); // the refusal is remembered even though nothing was written for the failed attempt
   }
 }
 
@@ -256,7 +299,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
   app.post('/v1/shipments/book', { preHandler: [requireSeller, requireOnboarded('ship')] }, async (request, reply) => {
     const input = bookingInput.parse(request.body); const p = principal(request); const key = request.headers['idempotency-key'];
     if (typeof key !== 'string' || key.length < 16 || key.length > 200) throw Object.assign(new Error('A 16-200 character Idempotency-Key header is required'), { statusCode: 400 });
-    const result = await withSellerTransaction(p.sellerId, (client) => bookInTx(client, p, request.id, input, key)).catch(async (e) => {
+    const result = await bookDetached(p, request.id, input, key).catch(async (e) => {
       const lane = laneRefusalOf(e); if (lane) await rememberLaneRefusals([{ lane, reason: (e as Error).message }]);
       throw e;
     });
