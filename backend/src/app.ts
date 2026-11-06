@@ -84,7 +84,12 @@ app.addHook('onResponse', impersonationAudit);
 app.addHook('onResponse', adminWriteAudit);
 
 app.setErrorHandler((error, request, reply) => {
-  if (error instanceof ZodError) return reply.code(400).send({ error: 'VALIDATION_ERROR', details: error.flatten() });
+  if (error instanceof ZodError) {
+    // A readable sentence for the screen (first problem, with the field name), next to the full details for tools.
+    const first = error.issues[0];
+    const field = first?.path.filter((p) => typeof p === 'string').slice(-1)[0];
+    return reply.code(400).send({ error: 'VALIDATION_ERROR', message: first ? `${field ? `${field}: ` : ''}${first.message}` : 'The request is not valid.', details: error.flatten() });
+  }
   // Database constraint failures are caller mistakes, not server faults: report them plainly.
   const dbCode = (error as { code?: string }).code;
   if (dbCode === '23505') return reply.code(409).send({ error: 'This record already exists (a duplicate name or reference).' });

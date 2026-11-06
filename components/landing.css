@@ -37,8 +37,8 @@ html:has(.lp) { scroll-behavior: smooth; scroll-padding-top: 84px; }
 /* ---------- buttons ---------- */
 .lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border-radius: 11px; font-weight: 700; font-size: 15px; border: 1.5px solid transparent; transition: transform .15s ease, background .15s ease, box-shadow .15s ease, border-color .15s ease; white-space: nowrap; }
 .lp-btn:active { transform: scale(.97); }
-.lp-btn.primary { background: var(--blue); color: #fff; box-shadow: 0 1px 2px rgba(11, 31, 68, .2), 0 6px 16px rgba(56, 119, 252, .32); }
-.lp-btn.primary:hover { background: var(--blue-dark); transform: translateY(-1px); box-shadow: 0 1px 2px rgba(11, 31, 68, .2), 0 10px 22px rgba(56, 119, 252, .4); }
+.lp-btn.primary { background: var(--blue-dark); color: #fff; box-shadow: 0 1px 2px rgba(11, 31, 68, .2), 0 6px 16px rgba(56, 119, 252, .32); }
+.lp-btn.primary:hover { background: #1f4fb8; transform: translateY(-1px); box-shadow: 0 1px 2px rgba(11, 31, 68, .2), 0 10px 22px rgba(56, 119, 252, .4); }
 .lp-btn.ghost { border-color: var(--line); color: var(--ink); background: #fff; }
 .lp-btn.ghost:hover { border-color: var(--navy); }
 .lp-btn.light { background: #fff; color: var(--navy); }
@@ -262,7 +262,7 @@ html:has(.lp) { scroll-behavior: smooth; scroll-padding-top: 84px; }
 .lp-foot-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 40px; }
 .lp-foot p { margin: 14px 0 0; max-width: 300px; line-height: 1.6; }
 .lp-foot nav { display: grid; gap: 12px; align-content: start; font-weight: 600; }
-.lp-foot h5 { margin: 0 0 4px; font-size: 12.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink); }
+.lp-foot h3 { margin: 0 0 4px; font-size: 12.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink); }
 .lp-foot nav a:hover { color: var(--blue-dark); }
 .lp-legal { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 13.5px; }
 

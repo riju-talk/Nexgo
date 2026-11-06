@@ -20,6 +20,7 @@ const securityHeaders = [
 
 const nextConfig = {
   output: 'standalone', // minimal self-contained server for the docker image
+  compiler: { removeConsole: true }, // nothing is ever printed to the visitor's browser console
   poweredByHeader: false,
   // A proxied build talks to its own origin; otherwise honour NEXT_PUBLIC_API_BASE (local dev default is set in lib/api.js).
   env: backend ? { NEXT_PUBLIC_API_BASE: '' } : {},

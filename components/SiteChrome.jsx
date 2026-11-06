@@ -17,7 +17,7 @@ export function Logo({ light }) {
           NEXGO
         </>
       ) : (
-        <Image src="/nexgo-logo.png" alt="NEXGO" width={1757} height={364} priority className="lp-logo-img" />
+        <Image src="/nexgo-logo.png" alt="NEXGO" width={1757} height={364} priority sizes="150px" className="lp-logo-img" />
       )}
     </Link>
   );
@@ -66,20 +66,20 @@ export function SiteFooter({ base = '' }) {
           <p>Multi-courier shipping, COD and billing for Indian sellers.</p>
         </div>
         <nav aria-label="Product">
-          <h5>Product</h5>
+          <h3>Product</h3>
           <a href={`${base}#features`}>Features</a>
           <a href={`${base}#how`}>How it works</a>
           <a href={`${base}#money`}>COD &amp; billing</a>
           <a href={`${base}#faq`}>FAQ</a>
         </nav>
         <nav aria-label="Account">
-          <h5>Account</h5>
+          <h3>Account</h3>
           <Link href="/login">Sign in</Link>
           <Link href="/signup">Create account</Link>
           <Link href="/forgot-password">Forgot password</Link>
         </nav>
         <nav aria-label="Legal">
-          <h5>Legal</h5>
+          <h3>Legal</h3>
           {POLICIES.map((p) => <Link key={p.href} href={p.href}>{p.label}</Link>)}
         </nav>
       </div>

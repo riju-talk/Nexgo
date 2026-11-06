@@ -11,7 +11,9 @@ import { requireOnboarded } from '../lib/onboarding.js';
 
 const uuid = z.string().uuid();
 const pincode = z.string().regex(/^\d{6}$/);
-const phone = z.string().trim().regex(/^[0-9+() -]{7,24}$/);
+const phone = z.string().trim().regex(/^[0-9+() -]{7,24}$/, 'Enter a valid phone number (digits only, 7 to 24 characters)');
+// A customer's number must be a real Indian mobile: the last 10 digits start with 6, 7, 8 or 9 (+91 / 0 in front is fine).
+const mobile = phone.refine((v) => /^[6-9][0-9]{9}$/.test(v.replace(/\D/g, '').slice(-10)), 'Enter a valid 10-digit Indian mobile number (it starts with 6, 7, 8 or 9)');
 const address = z.object({ fullName: z.string().trim().min(2).max(120), email: z.string().email().max(254).optional(), phone, addressLine1: z.string().trim().min(3).max(200), addressLine2: z.string().trim().max(200).optional(), city: z.string().trim().min(2).max(100), state: z.string().trim().min(2).max(100), pincode });
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const warehouseBase = z.object({
@@ -30,7 +32,7 @@ const warehouseChecks = (v: { opensAt?: string; closesAt?: string; latitude?: nu
 const warehouseInput = warehouseBase.superRefine(warehouseChecks);
 const warehousePatch = warehouseBase.partial().superRefine(warehouseChecks);
 const productInput = z.object({ sku: z.string().trim().min(1).max(80), name: z.string().trim().min(2).max(200), description: z.string().trim().max(2000).optional(), hsnCode: z.string().trim().max(20).optional(), unitPricePaise: z.number().int().min(0).default(0), weightG: z.number().int().positive().optional(), lengthMm: z.number().int().positive().optional(), widthMm: z.number().int().positive().optional(), heightMm: z.number().int().positive().optional() });
-const consignee = address.extend({ companyName: z.string().trim().max(120).optional(), alternatePhone: phone.optional(), landmark: z.string().trim().max(200).optional() });
+const consignee = address.extend({ phone: mobile, companyName: z.string().trim().max(120).optional(), alternatePhone: mobile.optional(), landmark: z.string().trim().max(200).optional() });
 const paise = z.number().int().min(0).max(1_000_000_000);
 const orderInput = z.object({
   warehouseId: uuid, orderNumber: z.string().trim().min(1).max(100), externalReference: z.string().trim().min(1).max(150).optional(),

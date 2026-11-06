@@ -113,12 +113,12 @@ export default function LiveCourierPerformance({ mobile }) {
         <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)', gap: 12, marginBottom: 14 }}>
           {[
             ['Total Couriers', data.summary.totalCouriers, BLUE],
-            ['Avg Delivery %', data.summary.avgDeliveryRate, T.GREEN],
-            ['Avg NDR %', data.summary.avgNDRRate, T.RED]
+            ['Avg delivery rate', `${Number(data.summary.avgDeliveryRate || 0).toFixed(1)}%`, T.GREEN],
+            ['Avg NDR rate', `${Number(data.summary.avgNDRRate || 0).toFixed(1)}%`, T.RED]
           ].map(([l, v, col]) => (
             <div key={l} style={{ ...CARD, padding: 14, borderTop: `3px solid ${col}`, background: 'var(--ops-surface)' }}>
               <span style={{ fontSize: 11.5, color: T.TEXT_MUTED }}>{l}</span>
-              <b style={{ display: 'block', fontSize: 22, color: T.TEXT, marginTop: 3 }}>{typeof v === 'number' ? v.toFixed(1) : v}</b>
+              <b style={{ display: 'block', fontSize: 22, color: T.TEXT, marginTop: 3 }}>{v}</b>
             </div>
           ))}
         </div>

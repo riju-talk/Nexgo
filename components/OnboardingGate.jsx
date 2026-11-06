@@ -99,10 +99,12 @@ function Agreement({ me, onAccepted, mobile }) {
  * agreement sits under it. The server still refuses to create orders or book shipments before the agreement is accepted.
  */
 export default function OnboardingGate({ children, mobile }) {
-  const [me, setMe] = useState(null);
+  const [me, setMe] = useState(null); const [loaded, setLoaded] = useState(false);
+  // Safety net: if the status request is slow, show the page after 1.5 s anyway.
+  useEffect(() => { const t = setTimeout(() => setLoaded(true), 1500); return () => clearTimeout(t); }, []);
   const pathname = usePathname();
   const { showToast } = useAppState();
-  const load = useCallback(() => apiFetch('/v1/seller/me').then(setMe).catch(() => setMe(null)), []);
+  const load = useCallback(() => apiFetch('/v1/seller/me').then(setMe).catch(() => setMe(null)).finally(() => setLoaded(true)), []);
   useEffect(() => { load(); window.addEventListener(ONBOARDING_EVENT, load); return () => window.removeEventListener(ONBOARDING_EVENT, load); }, [load]);
 
   // The welcome card lives on the dashboard only. Elsewhere a seller who has not accepted yet gets one short toast per visit.
@@ -119,7 +121,8 @@ export default function OnboardingGate({ children, mobile }) {
       <KycProgress me={me} mobile={mobile} />
       <ShipChecklist me={me} mobile={mobile} />
       {needsAgreement && onDashboard && <Agreement me={me} onAccepted={load} mobile={mobile} />}
-      {children}
+      {/* The page stays invisible (but keeps its place) until the cards above have settled, so nothing visible jumps down when they appear. */}
+      <div style={{ display: 'contents', visibility: loaded ? 'visible' : 'hidden' }}>{children}</div>
     </>
   );
 }
