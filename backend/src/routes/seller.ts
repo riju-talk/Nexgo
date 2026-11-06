@@ -31,7 +31,13 @@ export async function sellerRoutes(app: FastifyInstance) {
     const principal = request.principal!;
     const result = await db.query('SELECT s.id, s.legal_name, s.slug, s.state, s.created_at, u.full_name, u.email, m.role, m.permissions FROM sellers s JOIN seller_memberships m ON m.seller_id = s.id JOIN users u ON u.id = m.user_id WHERE s.id = $1 AND u.id = $2', [principal.sellerId, principal.userId]);
     // Onboarding progress drives the gate in the web app (agreement first, then KYC).
-    return { ...result.rows[0], onboarding: await loadOnboardingState(principal.sellerId), agreementVersion: AGREEMENT_VERSION };
+    // What is still missing before the first shipment can be booked (drives the "Get ready to ship" checklist).
+    const setup = (await db.query<{ warehouses: number; couriers: number; balance_paise: string }>(
+      `SELECT (SELECT count(*)::int FROM warehouses WHERE seller_id = $1 AND is_active) AS warehouses,
+              (SELECT count(*)::int FROM seller_courier_access WHERE seller_id = $1 AND state = 'enabled') AS couriers,
+              (SELECT COALESCE(SUM(CASE WHEN entry_type IN ('credit','release') THEN amount_paise WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END), 0)::bigint FROM wallet_entries WHERE seller_id = $1) AS balance_paise`,
+      [principal.sellerId])).rows[0];
+    return { ...result.rows[0], onboarding: await loadOnboardingState(principal.sellerId), agreementVersion: AGREEMENT_VERSION, setup: { warehouse: setup.warehouses > 0, couriers: setup.couriers > 0, wallet: Number(setup.balance_paise) > 0 } };
   });
 
   // The owner accepts the seller agreement once per version; the time, user and version are kept as evidence.

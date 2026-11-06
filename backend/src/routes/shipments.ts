@@ -10,6 +10,7 @@ import { calculateRate, paiseToAmount } from '../lib/money.js';
 import { laneZone } from '../lib/zone.js';
 import { requireSeller } from './seller.js';
 import { requireOnboarded } from '../lib/onboarding.js';
+import { laneRefusalOf, rememberLaneRefusals, type LaneRefusal } from '../lib/laneRefusals.js';
 import { storage, STORAGE_NOT_CONNECTED } from '../lib/storage.js';
 import { config } from '../config.js';
 import { courierAdapter } from '../couriers/registry.js';
@@ -49,7 +50,14 @@ async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, req
     const debitLimit = Number((await client.query<{ l: string }>('SELECT wallet_debit_limit_paise AS l FROM sellers WHERE id=$1', [p.sellerId])).rows[0]?.l ?? 0);
     if (Number(balance.rows[0].balance_paise) + debitLimit < price.totalPaise) throw Object.assign(new Error('Insufficient wallet balance. Recharge your wallet to book this shipment.'), { statusCode: 402 });
     const details = await loadBookingDetails(client, p.sellerId, input.orderId, selection.service_id);
-    const providerBooking = await courierAdapter(selection.aggregator, selection.provider_code).book({ details, reference: input.orderId, destinationPincode: selection.destination_pincode, weightG: Math.max(selection.total_weight_g, 1), paymentMode: selection.payment_mode, codAmountPaise: selection.payment_mode === 'cod' ? selection.cod_amount_paise : 0 });
+    let providerBooking;
+    try {
+      providerBooking = await courierAdapter(selection.aggregator, selection.provider_code).book({ details, reference: input.orderId, destinationPincode: selection.destination_pincode, weightG: Math.max(selection.total_weight_g, 1), paymentMode: selection.payment_mode, codAmountPaise: selection.payment_mode === 'cod' ? selection.cod_amount_paise : 0 });
+    } catch (e) {
+      // The aggregator said this courier does not serve the lane: tag the error so the caller can remember it (after the rollback).
+      if ((e as { laneRefusal?: boolean }).laneRefusal) Object.assign(e as object, { lane: { serviceId: selection.service_id, pickup: details.warehouse.pincode, destination: selection.destination_pincode } satisfies LaneRefusal });
+      throw e;
+    }
     const shipment = await client.query(`INSERT INTO shipments (seller_id,order_id,provider_id,service_id,awb,chargeable_weight_g,shipping_charge_paise,quote_snapshot,idempotency_key,destination_pincode,destination_city,promised_delivery_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,cu.pincode,cu.city,now()+interval '5 days' FROM orders o JOIN customers cu ON cu.id=o.customer_id WHERE o.id=$2 RETURNING *`, [p.sellerId, input.orderId, selection.provider_id, selection.service_id, providerBooking.awb, Math.max(selection.total_weight_g, 1), price.totalPaise, JSON.stringify({ zone, provider: selection.provider_code, providerShipmentId: providerBooking.providerShipmentId, service: selection.service_code, destinationPincode: selection.destination_pincode, paymentMode: selection.payment_mode, price }), key]);
     await client.query('UPDATE shipments SET provider_shipment_id=$1, routing_code=$3 WHERE id=$2', [providerBooking.providerShipmentId, shipment.rows[0].id, providerBooking.routingCode ?? null]);
     if (providerBooking.pickupHubId) await client.query('INSERT INTO courier_pickup_hubs (warehouse_id,aggregator,seller_id,external_hub_id) SELECT o.warehouse_id,$2,$3,$4 FROM orders o WHERE o.id=$1 ON CONFLICT (warehouse_id, aggregator) DO UPDATE SET external_hub_id=EXCLUDED.external_hub_id', [input.orderId, selection.aggregator, p.sellerId, providerBooking.pickupHubId]);
@@ -179,7 +187,10 @@ export async function shipmentRoutes(app: FastifyInstance) {
   app.post('/v1/shipments/book', { preHandler: [requireSeller, requireOnboarded('ship')] }, async (request, reply) => {
     const input = bookingInput.parse(request.body); const p = principal(request); const key = request.headers['idempotency-key'];
     if (typeof key !== 'string' || key.length < 16 || key.length > 200) throw Object.assign(new Error('A 16-200 character Idempotency-Key header is required'), { statusCode: 400 });
-    const result = await withSellerTransaction(p.sellerId, (client) => bookInTx(client, p, request.id, input, key));
+    const result = await withSellerTransaction(p.sellerId, (client) => bookInTx(client, p, request.id, input, key)).catch(async (e) => {
+      const lane = laneRefusalOf(e); if (lane) await rememberLaneRefusals([{ lane, reason: (e as Error).message }]);
+      throw e;
+    });
     if (!result.replay) await pushTrackingForShipment(p.sellerId, result.shipment.order_id, result.shipment.awb);
     return reply.code(result.replay ? 200 : 201).send({ ...result, shipment: publicShipment(result.shipment) });
   });
@@ -193,6 +204,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
     const priority = [1, 2, 3, 4, 5, 6].map((n) => String(prefs[`priority${n}`] ?? '').toLowerCase().replace(/[^a-z]/g, '')).filter((x) => x && x !== 'notset');
     const rank = (name: string, code: string) => { const key = `${name}${code}`.toLowerCase().replace(/[^a-z]/g, ''); const i = priority.findIndex((x) => key.includes(x) || (x === 'xb' && key.includes('xpressbees'))); return i < 0 ? priority.length : i; };
     const results: { orderId: string; ok: boolean; awb?: string; courier?: string; error?: string }[] = [];
+    const refusals: { lane: LaneRefusal; reason: string }[] = [];
     for (const orderId of orderIds) {
       try {
         const out = await withSellerTransaction(p.sellerId, async (client) => {
@@ -216,6 +228,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
               await client.query('ROLLBACK TO SAVEPOINT try_courier');
               const status = (e as { statusCode?: number }).statusCode;
               lastError = (e as Error).message || lastError;
+              const lane = laneRefusalOf(e); if (lane) refusals.push({ lane, reason: lastError });
               if (status === 402) return { ok: false, error: lastError }; // wallet short: no point trying other couriers
               if (status !== 422) throw e;
             }
@@ -226,6 +239,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
         results.push({ orderId, ...out });
       } catch (e) { results.push({ orderId, ok: false, error: (e as Error).message || 'Could not assign a courier' }); }
     }
+    await rememberLaneRefusals(refusals);
     return { results, assigned: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };
   });
   // Cancel before pickup: the courier booking is cancelled and the exact wallet debit taken at booking is credited back (once).

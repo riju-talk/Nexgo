@@ -34,10 +34,10 @@ export async function billingRoutes(app: FastifyInstance) {
                  CASE WHEN w.entry_type IN ('debit','hold') THEN w.amount_paise ELSE 0 END AS debit_paise,
                  SUM(CASE WHEN w.entry_type IN ('debit','hold') THEN -w.amount_paise ELSE w.amount_paise END) OVER (ORDER BY w.created_at, w.id) AS closing_paise
           FROM wallet_entries w WHERE w.seller_id = $1)`;
-      const from = `FROM ledger l LEFT JOIN shipments s ON l.reference_type = 'shipment' AND s.id::text = l.reference_id ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`;
+      const from = `FROM ledger l LEFT JOIN shipments s ON l.reference_type IN ('shipment', 'shipment_cancel', 'shipment_rto') AND s.id::text = l.reference_id ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`;
       const total = Number((await client.query<{ n: string }>(`${cte} SELECT count(*) AS n ${from}`, params)).rows[0].n);
       const rows = await client.query(
-        `${cte} SELECT l.id, l.created_at, CASE l.reference_type WHEN 'shipment' THEN 'Shipping' WHEN 'wallet_recharge' THEN 'Recharge' WHEN 'weight_dispute' THEN 'Weight dispute' WHEN 'shipment_cancel' THEN 'Cancellation refund' WHEN 'cod_remittance' THEN 'COD wallet recovery' ELSE 'Adjustment' END AS txn_type,
+        `${cte} SELECT l.id, l.created_at, CASE l.reference_type WHEN 'shipment' THEN 'Shipping' WHEN 'wallet_recharge' THEN 'Recharge' WHEN 'weight_dispute' THEN 'Weight dispute' WHEN 'shipment_cancel' THEN 'Cancellation refund' WHEN 'shipment_rto' THEN 'RTO charge' WHEN 'cod_remittance' THEN 'COD wallet recovery' ELSE 'Adjustment' END AS txn_type,
                 COALESCE(s.awb, l.reference_id) AS ref_no, upper(substr(replace(l.id::text, '-', ''), 1, 10)) AS txn_id, l.credit_paise, l.debit_paise, l.closing_paise, l.description
          ${from} ORDER BY l.created_at DESC, l.id DESC LIMIT ${query.pageSize} OFFSET ${(query.page - 1) * query.pageSize}`, params);
       const balance = await client.query<{ b: string }>(`SELECT COALESCE(SUM(CASE WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END), 0)::bigint AS b FROM wallet_entries WHERE seller_id = $1`, [p.sellerId]);

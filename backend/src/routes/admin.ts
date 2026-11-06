@@ -258,6 +258,15 @@ If you did not ask for this, ignore this email.`);
           rate.additionalWeightG, rate.additionalPricePaise, rate.codFeePaise, rate.fuelSurchargeBps, rate.codPercentBps, rate.rtoBasePricePaise ?? null, rate.rtoAdditionalPricePaise ?? null],
       );
     }
+    // The new card supersedes the seller's earlier ones (quotes and booking only read the newest, so old active cards are just clutter).
+    // A card dated in the future leaves the current one running until then (its effective_to is set to the new start).
+    await db.query(
+      `UPDATE rate_cards o SET effective_to = CASE WHEN o.effective_from < n.effective_from THEN n.effective_from ELSE o.effective_to END, state = CASE WHEN n.effective_from <= now() THEN 'retired'::rate_card_state ELSE o.state END, updated_at = now()
+       FROM rate_cards n
+       WHERE n.id = $1 AND o.id <> n.id AND o.seller_id IS NOT DISTINCT FROM n.seller_id AND o.state = 'active'
+         AND o.effective_from <= n.effective_from AND (o.effective_to IS NULL OR o.effective_to > n.effective_from)`,
+      [rateCardId],
+    );
     // Switch the couriers on for the seller (platform card = no seller, so nothing to switch on).
     if (sellerId) {
       for (const a of input.access) {

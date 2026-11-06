@@ -172,7 +172,7 @@ export class LorrigoAdapter implements CourierAdapter {
   private async assertServiceable(lorrigoOrderId: string, courierId: string): Promise<void> {
     const res = await this.call('GET', `/shipments/${encodeURIComponent(lorrigoOrderId)}/rates`);
     const rates = isObj(res) && Array.isArray(res.rates) ? res.rates : [];
-    if (!rates.some((r) => isObj(r) && r.id === courierId)) throw invalid('This courier does not serve this pickup/delivery pincode (Lorrigo lists it as unavailable). Choose another courier.');
+    if (!rates.some((r) => isObj(r) && r.id === courierId)) throw Object.assign(invalid('This courier does not serve this pickup/delivery pincode (Lorrigo lists it as unavailable). Choose another courier.'), { laneRefusal: true });
   }
 
   /** The Lorrigo order record carries shipment { id, awb } once a courier is assigned; awb is null before that. */

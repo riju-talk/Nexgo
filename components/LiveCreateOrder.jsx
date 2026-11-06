@@ -70,6 +70,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
   const [placed, setPlaced] = useState(null); // { id, orderNumber }
   const [offer, setOffer] = useState({ loading: false, quotes: [], error: '' });
   const [pick, setPick] = useState('');
+  const [refused, setRefused] = useState([]); // couriers that were offered but refused the parcel at booking: [{ name, reason }]
   const [booking, setBooking] = useState(false);
 
   useEffect(() => {
@@ -183,7 +184,8 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
         const rank = (q) => { const k = q.provider.name.toLowerCase().replace(/[^a-z]/g, ''); const i = order.findIndex((o) => k.includes(o) || (o === 'xb' && k.includes('xpressbees'))); return i < 0 ? order.length : i; };
         const best = [...quotes].sort((a, b) => rank(a) - rank(b) || a.price.total - b.price.total)[0];
         setOffer({ loading: false, quotes, error: quotes.length ? '' : 'No courier is available for this pincode, weight and payment mode.' });
-        if (best) setPick(`${best.provider.code}:${best.service.code}`);
+        // Only pre-select when the seller has set a courier priority list; otherwise they choose (same rule as Track > Ready to ship > Book now).
+        setPick(best && order.length ? `${best.provider.code}:${best.service.code}` : '');
       } catch (y) { setOffer({ loading: false, quotes: [], error: y instanceof ApiError ? y.message : 'Courier rates could not be loaded.' }); }
     } catch (x) {
       showToast(x instanceof ApiError ? x.message : 'Unable to create order', 'error');
@@ -201,7 +203,16 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
       await apiFetch('/v1/shipments/book', { method: 'POST', headers: { 'Idempotency-Key': `book-${placed.id}-${q.provider.code}-${q.service.code}` }, body: { orderId: placed.id, providerCode: q.provider.code, serviceCode: q.service.code } });
       showToast(`Booked with ${q.provider.name}. Find it in Track.`);
       nav('shipments');
-    } catch (x) { showToast(x instanceof ApiError ? x.message : 'Booking failed', 'error'); } finally { setBooking(false); }
+    } catch (x) {
+      const reason = x instanceof ApiError ? x.message : 'Booking failed';
+      showToast(reason, 'error');
+      // 422 = this courier cannot take this parcel (lane not served, COD not available...): take it off the list and keep the reason on screen.
+      if (x instanceof ApiError && x.status === 422) {
+        setOffer((o) => ({ ...o, quotes: o.quotes.filter((c) => `${c.provider.code}:${c.service.code}` !== pick) }));
+        setRefused((r) => [...r, { name: `${q.provider.name} ${q.service.name}`.trim(), reason }]);
+        setPick('');
+      }
+    } finally { setBooking(false); }
   };
 
   const two = mobile ? '1fr' : '1fr 1fr';
@@ -300,7 +311,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
         <Section title="Package details" hint="Couriers bill the higher of dead weight and volumetric weight (L × B × H ÷ 5000).">
           <Grid cols={mobile ? '1fr 1fr' : 'repeat(4, minmax(0,1fr))'}>
             <Field label="Dead weight (kg)" required note={pkg.weightKg === '' && itemWeightG > 0 ? `From products: ${(itemWeightG / 1000).toFixed(3)} kg` : undefined}>
-              {input(pkg.weightKg, setPack('weightKg'), { required: true, type: 'number', min: 0.01, step: '0.01', placeholder: itemWeightG > 0 ? (itemWeightG / 1000).toFixed(3) : '0.50' })}
+              {input(pkg.weightKg, setPack('weightKg'), { required: pkg.weightKg === '' && itemWeightG <= 0, type: 'number', min: 0.01, step: '0.01', placeholder: itemWeightG > 0 ? (itemWeightG / 1000).toFixed(3) : '0.50' })}
             </Field>
             <Field label="Length (cm)" required>{input(pkg.length, setPack('length'), { required: true, type: 'number', min: 1, step: '0.1' })}</Field>
             <Field label="Breadth (cm)" required>{input(pkg.width, setPack('width'), { required: true, type: 'number', min: 1, step: '0.1' })}</Field>
@@ -335,6 +346,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
               <small style={{ display: 'block', color: T.TEXT_MUTED, margin: '2px 0 10px' }}>Order {placed.orderNumber} · pick one to book</small>
               {offer.loading && <div style={{ padding: 14, textAlign: 'center', fontSize: 12.5, color: T.TEXT_MUTED }}>Fetching courier rates…</div>}
               {offer.error && <div style={{ padding: 12, fontSize: 12.5, color: T.RED, border: `1px dashed ${T.BORDER}`, borderRadius: 9 }}>{offer.error}</div>}
+              {refused.map((r) => <div key={r.name} role="alert" style={{ marginBottom: 8, padding: 10, fontSize: 12.5, color: T.RED, border: `1px solid ${T.RED}`, borderRadius: 9, lineHeight: 1.45 }}><b>{r.name} could not take this parcel.</b> {r.reason} Choose another courier.</div>)}
               <div style={{ display: 'grid', gap: 7 }}>
                 {offer.quotes.map((q) => {
                   const key = `${q.provider.code}:${q.service.code}`; const on = pick === key;

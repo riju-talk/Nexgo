@@ -60,7 +60,15 @@ function SingleOrder({ order, onClose, onDone }) {
       const r = await apiFetch('/v1/shipments/book', { method: 'POST', headers: { 'Idempotency-Key': `book-${order.id}-${chosen.provider.code}-${chosen.service.code}` }, body: { orderId: order.id, providerCode: chosen.provider.code, serviceCode: chosen.service.code } });
       showToast(`Booked with ${chosen.provider.name}${r?.shipment?.awb ? ` · AWB ${r.shipment.awb}` : ''}`);
       onDone();
-    } catch (e) { showToast(e instanceof ApiError ? e.message : 'Booking failed', 'error'); } finally { setBusy(false); }
+    } catch (e) {
+      const reason = e instanceof ApiError ? e.message : 'Booking failed';
+      showToast(reason, 'error');
+      // 422 = this courier cannot take this parcel: move it to the "not available" list with the reason, so it is not tried again.
+      if (e instanceof ApiError && e.status === 422) {
+        setState((s) => ({ ...s, quotes: s.quotes.filter((q) => q !== chosen), unavailable: [...s.unavailable, { ...chosen, reason }], refusal: `${chosen.provider.name} ${chosen.service.name} could not take this parcel. ${reason} Choose another courier.` }));
+        setPick('');
+      }
+    } finally { setBusy(false); }
   };
 
   return (
@@ -74,6 +82,7 @@ function SingleOrder({ order, onClose, onDone }) {
       </div>
       {state.loading && <div style={{ padding: 22, textAlign: 'center', fontSize: 13, color: T.TEXT_MUTED }}>Fetching live courier rates…</div>}
       {state.error && <div style={{ marginTop: 14, padding: 12, fontSize: 13, color: T.RED, border: `1px dashed ${T.BORDER}`, borderRadius: 9 }}>{state.error}</div>}
+      {state.refusal && <div role="alert" style={{ marginTop: 14, padding: 12, fontSize: 13, color: T.RED, border: `1px solid ${T.RED}`, borderRadius: 9, lineHeight: 1.45 }}>{state.refusal}</div>}
       <div style={{ display: 'grid', gap: 8, marginTop: 14 }}>
         {state.quotes.map((q) => {
           const key = `${q.provider.code}:${q.service.code}`; const on = pick === key;

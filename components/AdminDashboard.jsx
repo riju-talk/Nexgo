@@ -19,6 +19,20 @@ function CardTitle({ children }) {
   return <div style={{ height: 52, padding: '0 19px', display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--ops-divider)', fontSize: 14, fontWeight: 750, color: 'var(--ops-heading)' }}>{children}</div>;
 }
 const ROW = { width: '100%', display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', padding: '10px 0', border: 0, borderBottom: '1px solid var(--ops-divider)', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: 'var(--ops-text)' };
+// Tracking comes only from the courier aggregator's webhook. Green = updates are arriving (or nothing is in flight); amber = look at it.
+function TrackingHealth({ t }) {
+  const quiet = t.liveShipments > 0 && t.webhooks24h === 0;
+  const warn = quiet || t.stuckBooked > 0;
+  const when = t.lastWebhookAt ? new Date(t.lastWebhookAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'never';
+  return (
+    <section role="status" style={{ marginTop: 14, padding: '11px 16px', borderRadius: 10, border: `1px solid ${warn ? '#E0B24A' : '#BFE3C9'}`, background: warn ? '#FFF7E0' : '#F1FAF4', color: '#26324A', fontSize: 13, lineHeight: 1.5 }}>
+      <b>{warn ? 'Tracking updates need attention' : 'Tracking updates are flowing'}</b>{' · '}last courier update {when} · {t.webhooks24h} in the last 24 h · {t.liveShipments} shipment{t.liveShipments === 1 ? '' : 's'} in flight
+      {t.stuckBooked > 0 && <> · <b>{t.stuckBooked} stuck at &quot;booked&quot; for over 48 h</b></>}
+      {quiet && <div style={{ marginTop: 3 }}>No courier update has arrived in 24 h while shipments are in flight. Check that the webhook URL and token are saved in the aggregator&apos;s dashboard and that LORRIGO_WEBHOOK_TOKEN matches.</div>}
+    </section>
+  );
+}
+
 const Empty = ({ children = 'No data for this period.' }) => <div style={{ padding: '30px 19px', color: 'var(--ops-subtle)', fontSize: 12.5 }}>{children}</div>;
 
 // Solid-colour daily bars. Each series draws side by side; hover shows the exact day figure.
@@ -137,6 +151,8 @@ export default function AdminDashboard({ mobile, phone }) {
             </div>)}</div>}
           </Card>
         </section>
+
+        {live.trackingHealth && <TrackingHealth t={live.trackingHealth} />}
 
         <section style={{ display: 'grid', gridTemplateColumns: cols(2), gap: 12, marginTop: 14 }}>
           <Card>

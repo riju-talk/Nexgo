@@ -29,7 +29,7 @@ type OptionRow = {
   account_mode: 'platform' | 'seller_owned'; cod_enabled: boolean;
   base_weight_g: number | null; base_price_paise: number | null; additional_weight_g: number | null; additional_price_paise: number | null; cod_fee_paise: number | null; fuel_surcharge_bps: number | null;
   cod_percent_bps: number | null; rto_base_price_paise: number | null; rto_additional_price_paise: number | null;
-  blocked: boolean; has_allow: boolean; allow_match: boolean;
+  blocked: boolean; has_allow: boolean; allow_match: boolean; refused_reason: string | null;
 };
 
 async function pincodeInfo(client: PoolClient, code?: string): Promise<PincodeInfo | null> {
@@ -38,12 +38,13 @@ async function pincodeInfo(client: PoolClient, code?: string): Promise<PincodeIn
 }
 
 // Every enabled courier service for the seller with its rate row (if any) and the pincode rule flags for one destination.
-async function loadOptions(client: PoolClient, sellerId: string, destination: string, zoneCode: string, chargeableG: number) {
+async function loadOptions(client: PoolClient, sellerId: string, destination: string, zoneCode: string, chargeableG: number, pickup?: string) {
   const result = await client.query<OptionRow>(
     `SELECT cp.code AS provider_code, cp.name AS provider_name, cp.supports_cod, cs.code AS service_code, cs.display_name AS service_name, cs.service_type,
             cs.typical_delivery_days, cs.max_delivery_days, cs.serves_oda, cs.delivery_tagline, sca.account_mode, sca.cod_enabled,
             rcr.base_weight_g, rcr.base_price_paise, rcr.additional_weight_g, rcr.additional_price_paise, rcr.cod_fee_paise, rcr.fuel_surcharge_bps, rcr.cod_percent_bps, rcr.rto_base_price_paise, rcr.rto_additional_price_paise,
             (EXISTS (SELECT 1 FROM courier_pincode_rules r WHERE r.service_id = cs.id AND r.rule_type = 'blocked' AND $4 LIKE r.destination_prefix || '%') OR EXISTS (SELECT 1 FROM seller_pincode_blocks sb WHERE sb.seller_id = sca.seller_id AND (sb.service_id IS NULL OR sb.service_id = cs.id) AND sb.pincode = $4) OR EXISTS (SELECT 1 FROM platform_pincode_blocks pb WHERE pb.pincode = $4)) AS blocked,
+            (SELECT r.reason FROM courier_lane_refusals r WHERE r.service_id = cs.id AND r.destination_pincode = $4 AND r.pickup_pincode = $5 AND r.refused_at > now() - interval '24 hours') AS refused_reason,
             EXISTS (SELECT 1 FROM courier_pincode_rules r WHERE r.service_id = cs.id AND r.rule_type = 'allowed') AS has_allow,
             EXISTS (SELECT 1 FROM courier_pincode_rules r WHERE r.service_id = cs.id AND r.rule_type = 'allowed' AND $4 LIKE r.destination_prefix || '%') AS allow_match
      FROM seller_courier_access sca
@@ -59,14 +60,15 @@ async function loadOptions(client: PoolClient, sellerId: string, destination: st
      ) rcr ON true
      WHERE sca.seller_id = $1 AND sca.state = 'enabled'
      ORDER BY cp.name, cs.display_name`,
-    [sellerId, zoneCode, chargeableG, destination],
+    [sellerId, zoneCode, chargeableG, destination, pickup ?? ''],
   );
   return result.rows;
 }
 
 function describe(row: OptionRow, dest: PincodeInfo | null, pickup: PincodeInfo | null, chargeableG: number, cod: boolean, orderValuePaise = 0) {
   const hasRate = row.base_price_paise !== null;
-  const reason = serviceabilityReason({ blocked: row.blocked, hasAllow: row.has_allow, allowMatch: row.allow_match, servesOda: row.serves_oda, courierCod: row.cod_enabled && row.supports_cod, hasRate }, dest, cod);
+  const reason = serviceabilityReason({ blocked: row.blocked, hasAllow: row.has_allow, allowMatch: row.allow_match, servesOda: row.serves_oda, courierCod: row.cod_enabled && row.supports_cod, hasRate }, dest, cod)
+    ?? (row.refused_reason ? 'Not available on this lane right now (the courier network refused it recently)' : null);
   const codAvailable = row.cod_enabled && row.supports_cod && (dest?.cod_available ?? true);
   const pricing = hasRate ? calculateRate(row as unknown as RateRow, chargeableG, cod, orderValuePaise) : null;
   const window = deliveryWindow({ typical: row.typical_delivery_days, max: row.max_delivery_days }, dest, pickup);
@@ -113,7 +115,7 @@ export async function shippingRoutes(app: FastifyInstance) {
     return withSellerTransaction(sellerId, async (client) => {
       const [dest, pickup] = await Promise.all([pincodeInfo(client, input.destinationPincode), pincodeInfo(client, input.pickupPincode)]);
       const zone = pickup && dest ? laneZone(pickup, dest) : input.zoneCode;
-      const rows = await loadOptions(client, sellerId, input.destinationPincode, zone, chargeableG);
+      const rows = await loadOptions(client, sellerId, input.destinationPincode, zone, chargeableG, input.pickupPincode);
       const options = rows.map((row) => describe(row, dest, pickup, chargeableG, isCod, Math.round(input.orderValue * 100)));
       const quotes = options.filter((o) => o.serviceable && o.price).sort((a, b) => a.price!.total - b.price!.total);
       const fastest = quotes.reduce<typeof quotes[number] | null>((best, q) => (!best || q.tat.minDays < best.tat.minDays || (q.tat.minDays === best.tat.minDays && q.price!.total < best.price!.total) ? q : best), null);
@@ -134,7 +136,7 @@ export async function shippingRoutes(app: FastifyInstance) {
     return withSellerTransaction(sellerId, async (client) => {
       const [dest, pickup] = await Promise.all([pincodeInfo(client, input.deliveryPincode), pincodeInfo(client, input.pickupPincode)]);
       const zone = laneZone(pickup, dest);
-      const rows = await loadOptions(client, sellerId, input.deliveryPincode, zone, input.weightG);
+      const rows = await loadOptions(client, sellerId, input.deliveryPincode, zone, input.weightG, input.pickupPincode);
       const items = rows.map((row) => describe(row, dest, pickup, input.weightG, input.paymentMode === 'cod', Math.round(input.orderValue * 100)));
       const ok = items.filter((i) => i.serviceable);
       const fastest = ok.length ? ok.reduce((a, b) => (b.tat.minDays < a.tat.minDays ? b : a)) : null;
