@@ -130,10 +130,10 @@ export async function analyticsRoutes(app: FastifyInstance) {
     const [tracking, sellers, ndr, kyc, cod, daily, pickups, pickupTotal, signups] = await Promise.all([
       // Tracking arrives only by the aggregator's webhook: say so loudly when it is not arriving (no delivery in a day while shipments are live, or shipments stuck at "booked").
       db.query<{ last_at: string | null; last24: number; stuck: number; live: number }>(
-        `SELECT (SELECT max(received_at) FROM webhook_deliveries WHERE provider_code = 'lorrigo') AS last_at,
-                (SELECT count(*)::int FROM webhook_deliveries WHERE provider_code = 'lorrigo' AND received_at > now() - interval '24 hours') AS last24,
-                (SELECT count(*)::int FROM shipments sh JOIN courier_providers cp ON cp.id = sh.provider_id WHERE cp.aggregator = 'lorrigo' AND sh.state = 'booked' AND sh.booked_at < now() - interval '48 hours') AS stuck,
-                (SELECT count(*)::int FROM shipments sh JOIN courier_providers cp ON cp.id = sh.provider_id WHERE cp.aggregator = 'lorrigo' AND sh.state NOT IN ('cancelled','delivered')) AS live`),
+        `SELECT (SELECT max(received_at) FROM webhook_deliveries WHERE provider_code IN (SELECT code FROM courier_aggregators)) AS last_at,
+                (SELECT count(*)::int FROM webhook_deliveries WHERE provider_code IN (SELECT code FROM courier_aggregators) AND received_at > now() - interval '24 hours') AS last24,
+                (SELECT count(*)::int FROM shipments sh JOIN courier_providers cp ON cp.id = sh.provider_id WHERE cp.aggregator IS NOT NULL AND sh.state = 'booked' AND sh.booked_at < now() - interval '48 hours') AS stuck,
+                (SELECT count(*)::int FROM shipments sh JOIN courier_providers cp ON cp.id = sh.provider_id WHERE cp.aggregator IS NOT NULL AND sh.state NOT IN ('cancelled','delivered')) AS live`),
       db.query<{ value: number }>(`SELECT count(*)::int AS value FROM sellers WHERE state='active'`),
       db.query<{ value: number }>(`SELECT count(*)::int AS value FROM ndr_cases WHERE state = 'open'`),
       db.query<{ value: number }>(`SELECT count(*)::int AS value FROM seller_kyc WHERE status = 'pending_review'`),

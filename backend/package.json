@@ -11,6 +11,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "migrate:prod": "node dist/db/migrate.js",
     "storage:check": "node dist/storageCheck.js",
+    "new:aggregator": "node scripts/new-aggregator.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

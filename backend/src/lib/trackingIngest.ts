@@ -1,4 +1,7 @@
+import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import { withTransaction } from '../db/client.js';
+import type { NormalizedUpdate } from '../couriers/aggregators/types.js';
 import { applyShipmentStateEffects } from './shipmentEffects.js';
 import { isProgressionAllowed, type CanonicalShipmentState } from './courier.js';
 
@@ -22,4 +25,32 @@ export async function applyEvent(tx: PoolClient, s: Shipment, m: Mapped, at: str
   if (m.state === 'ndr') await tx.query("INSERT INTO ndr_cases (seller_id,shipment_id,reason_code,reason_detail,ndr_reason,courier_notes) VALUES ($1,$2,'courier_ndr',$3,'other',$3) ON CONFLICT (shipment_id) DO NOTHING", [s.seller_id, s.id, description.slice(0, 500)]);
   s.state = m.state;
   await applyShipmentStateEffects(tx, s.seller_id, s.id, m.state); // RTO freight billed once, NDR case closed on delivery / return
+}
+
+export type IngestOutcome = 'processed' | 'duplicate' | 'unknown';
+
+/**
+ * One shipment's update from an aggregator's webhook (or poll), recorded once. A delivery is remembered by a hash of (awb + raw payload) in
+ * webhook_deliveries, so Lorrigo-style retries are no-ops; an AWB we do not know is not remembered (the webhook can beat our own booking commit,
+ * and the aggregator's identical retry must still be processed).
+ */
+export async function ingestUpdate(aggregator: string, update: NormalizedUpdate, rawBody: string, log: { warn: (o: object, m: string) => void }): Promise<IngestOutcome> {
+  if (!update.awb || update.awb.length > 64) return 'unknown';
+  const bodyHash = createHash('sha256').update(`${update.awb}|${rawBody}`).digest('hex');
+  return withTransaction(async (tx) => {
+    const delivery = await tx.query(
+      'INSERT INTO webhook_deliveries (provider_code,external_event_id,payload_hash,payload) VALUES ($1,$2,$3,$4) ON CONFLICT (provider_code, external_event_id) DO NOTHING RETURNING id',
+      [aggregator, bodyHash, bodyHash, JSON.stringify(update.raw ?? { awb: update.awb, events: update.events.length })]);
+    if (!delivery.rows[0]) return 'duplicate' as const;
+    const found = await tx.query<Shipment>('SELECT s.id,s.seller_id,s.state::text AS state FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.awb=$1 AND cp.aggregator=$2 FOR UPDATE OF s', [update.awb, aggregator]);
+    const shipment = found.rows[0];
+    if (!shipment) { await tx.query('DELETE FROM webhook_deliveries WHERE id=$1', [delivery.rows[0].id]); return 'unknown' as const; }
+    for (const e of update.events) await applyEvent(tx, shipment, e.mapped, e.at, e.location, e.description, e.eventId, e);
+    const c = update.current;
+    if (c && c.mapped.state !== shipment.state) await applyEvent(tx, shipment, c.mapped, c.at, c.location, c.description, c.eventId, { status: c.description });
+    let note: string | null = null;
+    if (update.unmappedStatus) { note = `Unmapped ${aggregator} status: ${update.unmappedStatus}`; log.warn({ awb: update.awb, status: update.unmappedStatus }, note); } // e.g. CANCELLED: needs a person
+    await tx.query('UPDATE webhook_deliveries SET processed_at=now(),processing_error=$2 WHERE id=$1', [delivery.rows[0].id, note]);
+    return 'processed' as const;
+  });
 }

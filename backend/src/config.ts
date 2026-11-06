@@ -21,6 +21,8 @@ const schema = z.object({
   TRUST_PROXY: bool(false),
 
   // --- Sessions, cookies, CSRF ---
+  // How often the worker asks aggregators for tracking itself (a safety net next to their webhooks). 0 turns it off.
+  TRACKING_POLL_MINUTES: z.coerce.number().int().min(0).max(240).default(10),
   // Background courier assignment (lib/assignQueue.ts): bookings in flight per process, and per seller.
   ASSIGN_WORKERS: z.coerce.number().int().min(1).max(32).default(10),
   ASSIGN_PER_SELLER: z.coerce.number().int().min(1).max(10).default(5),

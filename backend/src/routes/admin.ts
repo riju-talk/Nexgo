@@ -4,7 +4,8 @@ import { hashSessionToken } from '../lib/session.js';
 import { z } from 'zod';
 import argon2 from 'argon2';
 import { config } from '../config.js';
-import { AGGREGATORS, lorrigoAdapter } from '../couriers/registry.js';
+import { AGGREGATORS } from '../couriers/registry.js';
+import { pluginById } from '../couriers/aggregators/index.js';
 import { newSessionToken } from '../lib/session.js';
 import { randomInt } from 'node:crypto';
 import { sendMail } from '../lib/mailer.js';
@@ -13,7 +14,7 @@ import { sessionCookieOptions } from '../lib/cookies.js';
 import { auditAdminLogin } from '../lib/adminWriteAudit.js';
 import { issueCsrfCookie, clearCsrfCookie } from '../lib/csrf.js';
 
-const AGGREGATOR_LABEL: Record<(typeof AGGREGATORS)[number], string> = { lorrigo: 'Lorrigo' };
+const AGGREGATOR_LABEL = (id: string) => pluginById(id)?.label ?? id;
 
 const courierInput = z.object({
   code: z.string().regex(/^[a-z0-9-]{2,64}$/),
@@ -160,11 +161,6 @@ If you did not ask for this, ignore this email.`);
     return { items: result.rows };
   });
 
-  // The aggregator's own list of courier services, so an admin picks the id from a list instead of typing it when adding a courier.
-  app.get('/v1/admin/aggregators/:aggregator/couriers', { preHandler: requirePlatformAdmin }, async (request) => {
-    const aggregator = z.enum(AGGREGATORS).parse((request.params as { aggregator: string }).aggregator);
-    return { aggregator, items: await lorrigoAdapter().listServices() };
-  });
 
   app.get('/v1/admin/courier-pincode-rules', { preHandler: requirePlatformAdmin }, async () => {
     const result = await db.query(`SELECT r.*,cp.name AS provider_name,cs.display_name AS service_name FROM courier_pincode_rules r JOIN courier_services cs ON cs.id=r.service_id JOIN courier_providers cp ON cp.id=cs.provider_id ORDER BY cp.name,cs.display_name,r.destination_prefix`);
@@ -195,7 +191,7 @@ If you did not ask for this, ignore this email.`);
     for (const service of input.services) {
       await db.query(
         'INSERT INTO courier_services (provider_id, code, display_name, service_type, service_provider, external_service_id) VALUES ($1, $2, $3, $4, $5, $6)',
-        [providerId, service.code, service.displayName, service.serviceType, input.aggregator ? AGGREGATOR_LABEL[input.aggregator] : null, service.externalServiceId ?? null],
+        [providerId, service.code, service.displayName, service.serviceType, input.aggregator ? AGGREGATOR_LABEL(input.aggregator) : null, service.externalServiceId ?? null],
       );
     }
     await db.query(

@@ -18,8 +18,12 @@ export type CourierBookingResult = {
   /** Set when the adapter had to create the pickup address; the caller remembers it for the next booking. */
   pickupHubId?: string;
 };
+/** A courier service as the aggregator lists it (for the admin's "+ Add courier" picker). */
+export type ServiceSummary = { id: string; name: string; type: string };
 export type CourierAdapter = {
   providerCode: string;
+  /** The courier services this aggregator offers. Optional: only aggregators that expose a list implement it. */
+  listServices?(): Promise<ServiceSummary[]>;
   book(request: CourierBookingRequest): Promise<CourierBookingResult>;
   cancel(providerShipmentId: string): Promise<void>;
   /** Tell the courier what to do with an undelivered parcel. Optional: only couriers with an NDR API implement it. */

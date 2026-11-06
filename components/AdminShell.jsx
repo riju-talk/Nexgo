@@ -18,7 +18,7 @@ import SessionHeartbeat from './SessionHeartbeat';
 const GROUPS = [
   ['Overview', [['Dashboard', 'a-overview', '▦']]],
   ['Users', [['All sellers', 'a-sellers', '◎'], ['KYC verification', 'a-kyc', '◈'], ['Wallets', 'a-wallets', '₹'], ['Credit limits', 'a-credit', '⊞']]],
-  ['Couriers', [['Partners', 'a-couriers', '◌'], ['Rate cards', 'a-rate-cards', '₹'], ['Zone mapping', 'a-zones', '⌘'], ['SLA settings', 'a-sla', '◫'], ['Performance', 'a-performance', '▥']]],
+  ['Couriers', [['Partners', 'a-couriers', '◌'], ['Rate cards', 'a-rate-cards', '₹'], ['Zone mapping', 'a-zones', '⌘'], ['SLA settings', 'a-sla', '◫'], ['Performance', 'a-performance', '▥'], ['Integrations', 'a-integrations', '⚙']]],
   ['Shipments', [['All orders', 'a-orders', '▤'], ['All shipments', 'a-shipments', '□'], ['NDR centre', 'a-ndr', '!'], ['RTO centre', 'a-rto', '↩'], ['Pickups', 'a-pickups', '⌁']]],
   ['Finance', [['COD settlements', 'a-cod', '₹'], ['Invoices', 'a-invoices', '▤'], ['Credit notes & TDS', 'a-notes', '▥'], ['GST reports', 'a-gst', '▧']]],
   ['Reports', [['Revenue', 'a-revenue', '↗'], ['SLA', 'a-sla-report', '◷'], ['Courier analytics', 'a-analytics', '◉']]],

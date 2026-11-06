@@ -49,6 +49,7 @@ const LivePincodeServiceability = dynamic(() => import('./LivePincodeServiceabil
 const LiveTrack = dynamic(() => import('./LiveTrack'));
 const LiveCourierZones = dynamic(() => import('./LiveCourierZones'));
 const AdminAuditTrail = dynamic(() => import('./AdminAuditTrail'));
+const AdminIntegrations = dynamic(() => import('./AdminIntegrations'));
 const LiveCourierSla = dynamic(() => import('./LiveCourierSla'));
 const LiveCourierPerformance = dynamic(() => import('./LiveCourierPerformance'));
 const ComingSoon = dynamic(() => import('./ComingSoon'));
@@ -103,11 +104,12 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
   const isAdminRates = id === 'a-rate-cards' || id === 'a-rate-view' || id === 'a-rate-assign';
   const isCourierZones = id === 'a-zones';
   const isCourierPerformance = id === 'a-performance';
+  const isIntegrations = id === 'a-integrations';
   const isCourierSla = id === 'a-sla';
   // Admin screens that have no backend yet say so instead of showing sample figures.
   const ADMIN_SOON = { 'a-escalations': 'Escalations', 'a-credit': 'Credit limits', 'a-live-chat': 'Live chat', 'a-system': 'System settings', 'a-api': 'API management', 'a-roles': 'Role permissions' };
   const isAdminSoon = id in ADMIN_SOON;
-  const isAdminUtility = isAdminPage && !isAdminSoon && !isAdminOverview && !hasTable && !isCourierZones && !isCourierPerformance && !isCourierSla && !isLiveAdminReport && !isAdminDisputes && !isAdminNotes && !isSellerProfile && !isAdminRates;
+  const isAdminUtility = isAdminPage && !isAdminSoon && !isAdminOverview && !hasTable && !isCourierZones && !isCourierPerformance && !isCourierSla && !isIntegrations && !isLiveAdminReport && !isAdminDisputes && !isAdminNotes && !isSellerProfile && !isAdminRates;
 
   return (
     <>
@@ -133,6 +135,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isCourierZones && <LiveCourierZones mobile={mobile} />}
         {isCourierPerformance && <LiveCourierPerformance mobile={mobile} />}
         {isCourierSla && <LiveCourierSla mobile={mobile} />}
+        {isIntegrations && <AdminIntegrations mobile={mobile} />}
         {id === 'a-rate-cards' && <AdminRateCards mobile={mobile} />}
         {(id === 'a-rate-view' || id === 'a-rate-assign') && <AdminRateAssign sellerId={sellerId} mode={id === 'a-rate-assign' ? 'assign' : 'view'} mobile={mobile} />}
         {isRateCard && <LiveRateCard mobile={mobile} />}

@@ -186,7 +186,19 @@ export class LorrigoAdapter implements CourierAdapter {
     return null;
   }
 
-  /** The rates call is what makes an order shippable on Lorrigo, and it only lists couriers that serve this lane. */
+  /** The newest orders with their tracking history, for the poll fallback: awb, status and trackingEvents per order. Up to `pages` x 100 orders. */
+  async recentOrders(pages = 5): Promise<Record<string, unknown>[]> {
+    const out: Record<string, unknown>[] = [];
+    for (let page = 1; page <= pages; page++) {
+      const res = await this.call('GET', `/orders?page=${page}&limit=100`);
+      const orders = isObj(res) && Array.isArray(res.orders) ? res.orders.filter(isObj) : [];
+      out.push(...orders);
+      if (!isObj(res) || res.hasMore !== true || !orders.length) break;
+    }
+    return out;
+  }
+
+  /** Finds a Lorrigo order by the reference we sent., and it only lists couriers that serve this lane. */
   private async assertServiceable(lorrigoOrderId: string, courierId: string): Promise<void> {
     const res = await this.call('GET', `/shipments/${encodeURIComponent(lorrigoOrderId)}/rates`);
     const rates = isObj(res) && Array.isArray(res.rates) ? res.rates : [];
