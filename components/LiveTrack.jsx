@@ -1,5 +1,6 @@
 'use client';
 
+import { assignInBatches } from '@/lib/assignBatches';
 import { askConfirm } from '@/lib/dialog';
 import { useSellerSession } from '@/lib/useSellerSession';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -346,8 +347,9 @@ export default function LiveTrack({ mobile }) {
       }
       let assigned = 0;
       if (fixed.length) {
-        const r = await apiFetch('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds: fixed.map((o) => o.id) } });
-        assigned = r.assigned;
+        const results = await assignInBatches(fixed.map((o) => o.id));
+        const r = { results };
+        assigned = results.filter((x) => x.ok).length;
         const byOrder = new Map(fixed.map((o) => [o.id, o]));
         r.results.filter((x) => !x.ok).forEach((x) => report.push({ id: byOrder.get(x.orderId)?.nexgo_order_id, ref: byOrder.get(x.orderId)?.order_number, problem: `Saved, but no courier assigned: ${x.error}` }));
       }

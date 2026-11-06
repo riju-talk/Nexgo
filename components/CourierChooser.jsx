@@ -1,5 +1,6 @@
 'use client';
 
+import { assignInBatches } from '@/lib/assignBatches';
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
@@ -10,19 +11,14 @@ const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-bord
 const inr = (rupees) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(rupees || 0));
 const days = (t) => (t.minDays === t.maxDays ? `${t.minDays} day${t.minDays === 1 ? '' : 's'}` : `${t.minDays}–${t.maxDays} days`);
 
-// Assigns couriers in chunks of 25 (each order is a live booking call, so a few thousand orders neither time out nor hit the per-request cap).
-// `courier` = { providerCode, serviceCode? } books every order with that courier only; without it the seller's priority list decides.
+// Assigns couriers in small parallel batches (lib/assignBatches.js): each order is a live booking call of several seconds, and a request
+// that runs longer than 60 seconds is cut off by the proxy. `courier` = { providerCode, serviceCode? } books every order with that courier
+// only; without it the seller's priority list decides.
 export async function assignCouriers(orderIds, showToast, reload, courier) {
-  let assigned = 0; let failed = 0; let firstError = '';
-  try {
-    for (let i = 0; i < orderIds.length; i += 25) {
-      if (orderIds.length > 25) showToast(`Assigning couriers… ${Math.min(i + 25, orderIds.length)} of ${orderIds.length}`);
-      const r = await apiFetch('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds: orderIds.slice(i, i + 25), ...(courier || {}) } });
-      assigned += r.assigned; failed += r.failed;
-      if (!firstError) firstError = r.results.find((x) => !x.ok)?.error || '';
-    }
-    showToast(failed ? `${assigned} assigned, ${failed} not assigned: ${firstError}` : `${assigned} order${assigned === 1 ? '' : 's'} assigned to a courier`, failed ? 'error' : 'success');
-  } catch (e) { showToast(`${assigned} assigned before it stopped: ${e.message || 'couriers could not be assigned'}`, 'error'); }
+  const results = await assignInBatches(orderIds, { courier, onProgress: (n, total) => { if (total > 3) showToast(`Assigning couriers… ${n} of ${total}`); } });
+  const assigned = results.filter((r) => r.ok).length; const failed = results.length - assigned;
+  const firstError = results.find((x) => !x.ok)?.error || '';
+  showToast(failed ? `${assigned} assigned, ${failed} not assigned: ${firstError}` : `${assigned} order${assigned === 1 ? '' : 's'} assigned to a courier`, failed ? 'error' : 'success');
   await reload();
 }
 

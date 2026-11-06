@@ -44,11 +44,15 @@ async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, req
     if (pinLane?.is_oda && !pinLane.serves_oda) throw Object.assign(new Error('This courier does not deliver to this pincode (out of delivery area). Choose another courier.'), { statusCode: 422 });
     if (selection.payment_mode === 'cod' && pinLane && pinLane.cod_available === false) throw Object.assign(new Error('Cash on delivery is not available at this pincode. Switch the order to prepaid or choose another courier.'), { statusCode: 422 });
     const price = calculateRate(selection, selection.total_weight_g || 1, selection.payment_mode === 'cod', selection.cod_amount_paise || 0);
-    // Wallet writes for one seller are serialised so two concurrent bookings cannot both pass the balance check.
-    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
-    const balance = await client.query<{ balance_paise: string }>(`SELECT COALESCE(SUM(CASE WHEN entry_type IN ('credit','release') THEN amount_paise WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END),0)::bigint AS balance_paise FROM wallet_entries WHERE seller_id=$1`, [p.sellerId]);
-    const debitLimit = Number((await client.query<{ l: string }>('SELECT wallet_debit_limit_paise AS l FROM sellers WHERE id=$1', [p.sellerId])).rows[0]?.l ?? 0);
-    if (Number(balance.rows[0].balance_paise) + debitLimit < price.totalPaise) throw Object.assign(new Error('Insufficient wallet balance. Recharge your wallet to book this shipment.'), { statusCode: 402 });
+    // Funds are checked twice: a quick look before the (slow) courier call, and again under the wallet lock once the courier has answered.
+    // Holding the wallet lock across the courier call would force every booking of a seller to wait for the previous one (about 8 s each).
+    const fundsShort = async () => {
+      const balance = await client.query<{ balance_paise: string }>(`SELECT COALESCE(SUM(CASE WHEN entry_type IN ('credit','release') THEN amount_paise WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END),0)::bigint AS balance_paise FROM wallet_entries WHERE seller_id=$1`, [p.sellerId]);
+      const debitLimit = Number((await client.query<{ l: string }>('SELECT wallet_debit_limit_paise AS l FROM sellers WHERE id=$1', [p.sellerId])).rows[0]?.l ?? 0);
+      return Number(balance.rows[0].balance_paise) + debitLimit < price.totalPaise;
+    };
+    const noFunds = () => Object.assign(new Error('Insufficient wallet balance. Recharge your wallet to book this shipment.'), { statusCode: 402 });
+    if (await fundsShort()) throw noFunds();
     const details = await loadBookingDetails(client, p.sellerId, input.orderId, selection.service_id);
     let providerBooking;
     try {
@@ -57,6 +61,14 @@ async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, req
       // The aggregator said this courier does not serve the lane: tag the error so the caller can remember it (after the rollback).
       if ((e as { laneRefusal?: boolean }).laneRefusal) Object.assign(e as object, { lane: { serviceId: selection.service_id, pickup: details.warehouse.pincode, destination: selection.destination_pincode } satisfies LaneRefusal });
       throw e;
+    }
+    // The courier has answered: only now take the wallet lock, so two concurrent bookings cannot both spend the same balance.
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
+    if (await fundsShort()) {
+      // Another booking used the money while this one was with the courier: undo the courier booking so nothing is shipped unpaid.
+      try { await courierAdapter(selection.aggregator, selection.provider_code).cancel(providerBooking.providerShipmentId ?? providerBooking.awb); }
+      catch (cancelError) { console.error(`Booking ${providerBooking.awb} could not be cancelled after a failed wallet re-check; cancel it at the courier by hand`, cancelError); }
+      throw noFunds();
     }
     const shipment = await client.query(`INSERT INTO shipments (seller_id,order_id,provider_id,service_id,awb,chargeable_weight_g,shipping_charge_paise,quote_snapshot,idempotency_key,destination_pincode,destination_city,promised_delivery_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,cu.pincode,cu.city,now()+interval '5 days' FROM orders o JOIN customers cu ON cu.id=o.customer_id WHERE o.id=$2 RETURNING *`, [p.sellerId, input.orderId, selection.provider_id, selection.service_id, providerBooking.awb, Math.max(selection.total_weight_g, 1), price.totalPaise, JSON.stringify({ zone, provider: selection.provider_code, providerShipmentId: providerBooking.providerShipmentId, service: selection.service_code, destinationPincode: selection.destination_pincode, paymentMode: selection.payment_mode, price }), key]);
     await client.query('UPDATE shipments SET provider_shipment_id=$1, routing_code=$3 WHERE id=$2', [providerBooking.providerShipmentId, shipment.rows[0].id, providerBooking.routingCode ?? null]);

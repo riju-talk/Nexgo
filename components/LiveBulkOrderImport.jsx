@@ -1,5 +1,6 @@
 'use client';
 
+import { assignInBatches } from '@/lib/assignBatches';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { apiFetch, ApiError } from '@/lib/api';
@@ -322,18 +323,12 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     const made = assignMode === 'none' ? [] : [...outcome.values()].filter((x) => x.orderId);
     const [pickProvider, pickService] = courierPick.split(':');
     const chosenCourier = assignMode === 'one' && pickProvider ? { providerCode: pickProvider, serviceCode: pickService } : {};
-    // Couriers are assigned 25 orders per request: each order is a live booking call and one request may only run for a few seconds.
-    for (let i = 0; i < made.length; i += 25) {
-      const chunk = made.slice(i, i + 25);
-      setProgress(`Assigning couriers… ${Math.min(i + 25, made.length)} of ${made.length}`);
-      try {
-        const r = await apiFetchPatient('/v1/shipments/auto-assign', { method: 'POST', body: { orderIds: chunk.map((x) => x.orderId), ...chosenCourier } });
-        const by = new Map(r.results.map((x) => [x.orderId, x]));
-        for (const [num, x] of outcome) { const a = x.orderId && by.get(x.orderId); if (a) outcome.set(num, a.ok ? { ...x, courier: a.courier, awb: a.awb } : { ...x, unassigned: true, failure: `Order created, but no courier assigned: ${a.error}` }); }
-      } catch (error) {
-        const ids = new Set(chunk.map((x) => x.orderId));
-        for (const [num, x] of outcome) if (x.orderId && ids.has(x.orderId)) outcome.set(num, { ...x, unassigned: true, failure: `Order created, but couriers could not be assigned: ${error.message || 'try again from the Ready to ship tab'}` });
-      }
+    // Couriers are assigned in small parallel batches (lib/assignBatches.js): each order is a live booking call of several seconds,
+    // and one request that runs over 60 seconds is cut off by the proxy.
+    if (made.length) {
+      const results = await assignInBatches(made.map((x) => x.orderId), { courier: assignMode === 'one' && pickProvider ? chosenCourier : undefined, onProgress: (n, total) => setProgress(`Assigning couriers… ${n} of ${total}`) });
+      const by = new Map(results.map((x) => [x.orderId, x]));
+      for (const [num, x] of outcome) { const a = x.orderId && by.get(x.orderId); if (a) outcome.set(num, a.ok ? { ...x, courier: a.courier, awb: a.awb } : { ...x, unassigned: true, failure: `Order created, but no courier assigned: ${a.error}` }); }
     }
     setProgress('');
     const next = all.map((o) => (outcome.has(o.orderNumber) ? { ...o, ...outcome.get(o.orderNumber) } : o));
