@@ -354,7 +354,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
               <small style={{ display: 'block', color: T.TEXT_MUTED, margin: '2px 0 10px' }}>Order {placed.orderNumber} · pick one to book</small>
               {offer.loading && <div style={{ padding: 14, textAlign: 'center', fontSize: 12.5, color: T.TEXT_MUTED }}>Fetching courier rates…</div>}
               {offer.error && <div style={{ padding: 12, fontSize: 12.5, color: T.RED, border: `1px dashed ${T.BORDER}`, borderRadius: 9 }}>{offer.error}</div>}
-              {refused.map((r) => <div key={r.name} role="alert" style={{ marginBottom: 8, padding: 10, fontSize: 12.5, color: T.RED, border: `1px solid ${T.RED}`, borderRadius: 9, lineHeight: 1.45 }}><b>{r.name} could not take this parcel.</b> {r.reason} Choose another courier.</div>)}
+              {refused.map((r) => <div key={r.name} role="alert" style={{ marginBottom: 8, padding: 10, fontSize: 12.5, color: T.RED, border: `1px solid ${T.RED}`, borderRadius: 9, lineHeight: 1.45 }}><b>{r.name} could not take this parcel.</b> {r.reason}{/choose another courier.?$/i.test(r.reason || "") ? "" : " Choose another courier."}</div>)}
               <div style={{ display: 'grid', gap: 7 }}>
                 {offer.quotes.map((q) => {
                   const key = `${q.provider.code}:${q.service.code}`; const on = pick === key;

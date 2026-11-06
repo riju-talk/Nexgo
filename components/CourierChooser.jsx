@@ -65,7 +65,7 @@ function SingleOrder({ order, onClose, onDone }) {
       showToast(reason, 'error');
       // 422 = this courier cannot take this parcel: move it to the "not available" list with the reason, so it is not tried again.
       if (e instanceof ApiError && e.status === 422) {
-        setState((s) => ({ ...s, quotes: s.quotes.filter((q) => q !== chosen), unavailable: [...s.unavailable, { ...chosen, reason }], refusal: `${chosen.provider.name} ${chosen.service.name} could not take this parcel. ${reason} Choose another courier.` }));
+        setState((s) => ({ ...s, quotes: s.quotes.filter((q) => q !== chosen), unavailable: [...s.unavailable, { ...chosen, reason }], refusal: `${chosen.provider.name} ${chosen.service.name} could not take this parcel. ${reason}${/choose another courier.?$/i.test(reason) ? "" : " Choose another courier."}` }));
         setPick('');
       }
     } finally { setBusy(false); }
