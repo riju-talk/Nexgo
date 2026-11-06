@@ -1,5 +1,6 @@
 'use client';
 
+import { askConfirm } from '@/lib/dialog';
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
@@ -15,7 +16,7 @@ const inr = (paise) => `₹${(Number(paise || 0) / 100).toLocaleString('en-IN', 
 const day = (v) => (v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
 function Pill({ s }) { const [label, color, bg] = STATUS[s] || [s, T.TEXT, T.SURFACE_SOFT]; return <span style={{ display: 'inline-block', padding: '4px 9px', borderRadius: 6, background: bg, color, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}>{label}</span>; }
-function Btn({ children, onClick, primary, danger, disabled, small }) { return <button type="button" disabled={disabled} onClick={onClick} style={{ height: small ? 32 : 38, padding: `0 ${small ? 11 : 16}px`, borderRadius: 8, border: `1px solid ${primary ? '#3877fc' : danger ? T.RED : T.BORDER}`, background: primary ? '#3877fc' : danger ? T.RED : T.SURFACE, color: primary || danger ? '#fff' : T.TEXT, fontWeight: 700, fontSize: small ? 12.5 : 13.5, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>{children}</button>; }
+function Btn({ children, onClick, primary, danger, disabled, small }) { return <button type="button" disabled={disabled} onClick={onClick} style={{ height: small ? 32 : 38, padding: `0 ${small ? 11 : 16}px`, borderRadius: 8, border: `1px solid ${primary ? '#3877fc' : danger ? T.RED : T.BORDER}`, background: primary ? '#3877fc' : danger ? T.RED : T.SURFACE, color: primary || danger ? '#fff' : T.TEXT, fontWeight: 700, fontSize: small ? 12.5 : 13.5, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.55 : 1 }}>{children}</button>; }
 
 function ActionDialog({ row, onClose, onDone }) {
   const { showToast } = useAppState();
@@ -93,7 +94,7 @@ export default function LiveWeightDisputes({ mobile }) {
 
   const bulk = async (action) => {
     if (!openSelected.length) return showToast('Select disputes that still need action.', 'error');
-    if (action === 'dispute' && !window.confirm(`Dispute ${openSelected.length} charge(s)? Add details per case afterwards if the courier asks.`)) return;
+    if (action === 'dispute' && !(await askConfirm({ title: 'Are you sure?', message: `Dispute ${openSelected.length} charge(s)? Add details per case afterwards if the courier asks.`, confirmLabel: 'Yes, continue', danger: true }))) return;
     setBusy(true);
     try { const r = await apiFetch('/v1/weight-disputes/bulk-action', { method: 'POST', body: { disputeIds: openSelected.map((x) => x.id), action, sellerNotes: action === 'dispute' ? 'Disputed in bulk from the weight discrepancy page' : undefined } }); showToast(`${action === 'dispute' ? 'Disputed' : 'Accepted'} ${r.summary?.succeeded ?? openSelected.length} case(s)`); refresh(); }
     catch (e) { showToast(e.message || 'Bulk action failed', 'error'); } finally { setBusy(false); }

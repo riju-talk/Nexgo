@@ -53,6 +53,8 @@ const CSRF_EXEMPT_PATHS = new Set([
   '/v1/auth/reset-password',
   '/v1/admin/auth/login',
   '/v1/admin/auth/mfa',
+  '/v1/admin/auth/forgot-password', // like the seller one: a stale session cookie must not block a password recovery request
+  '/v1/admin/accounts', // authenticated by the x-admin-api-secret header, never by a session
   '/v1/team/invitations/accept',
   // Heartbeat only touches the caller's own session and re-issues a missing/stale CSRF cookie (the response is unreadable cross-site).
   '/v1/auth/heartbeat',

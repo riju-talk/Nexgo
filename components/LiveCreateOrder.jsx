@@ -153,6 +153,14 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
   const submit = async (e) => {
     e?.preventDefault();
     if (!warehouse) return showToast('Select the pickup warehouse first.', 'error');
+    // Checked before anything is saved or any courier is asked: wrong customer details are the most common cause of failed bookings.
+    if (customer.fullName.trim().length < 2) return showToast('Enter the customer name.', 'error');
+    if (!/^[6-9]\d{9}$/.test(customer.phone.trim())) return showToast('Enter a valid 10-digit mobile number (it starts with 6, 7, 8 or 9).', 'error');
+    if (customer.address.trim().length < 5) return showToast('Enter the full delivery address.', 'error');
+    if (!/^\d{6}$/.test(customer.pincode)) return showToast('Enter the 6-digit delivery pincode.', 'error');
+    if (pinStatus === 'loading') return showToast('Checking the pincode. Try again in a moment.', 'error');
+    if (pinStatus === 'missing') return showToast(`Pincode ${customer.pincode} was not found. Check it before continuing.`, 'error');
+    if (!customer.city.trim() || !customer.state.trim()) return showToast('City and state are missing. Check the pincode.', 'error');
     if (totals.discount > totals.gross) return showToast('Discount cannot exceed the order value.', 'error');
     if (quoteMode === 'cod' && totals.total <= 0) return showToast('COD orders need a value to collect.', 'error');
     if (!hasDims) return showToast('Length, breadth and height are required.', 'error');

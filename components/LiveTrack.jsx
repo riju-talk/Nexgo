@@ -1,5 +1,6 @@
 'use client';
 
+import { askConfirm } from '@/lib/dialog';
 import { useSellerSession } from '@/lib/useSellerSession';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
@@ -89,7 +90,7 @@ function Detail({ shipment, mobile, onClose, reload, onChoose }) {
   const [events, setEvents] = useState(null);
   const cancellable = ['booked', 'pickup_pending', 'pickup_scheduled'].includes(shipment.state);
   const cancelShipment = async () => {
-    if (!window.confirm(`Cancel shipment ${shipment.awb}? The shipping charge is credited back to your wallet.`)) return;
+    if (!(await askConfirm({ title: 'Are you sure?', message: `Cancel shipment ${shipment.awb}? The shipping charge is credited back to your wallet.`, confirmLabel: 'Yes, continue', danger: true }))) return;
     try { const r = await apiFetch(`/v1/shipments/${shipment.id}/cancel`, { method: 'POST' }); showToast(`Shipment cancelled. ${inr(r.refundedPaise)} credited to your wallet.`); await reload(); onClose(); }
     catch (e) { showToast(e.message || 'Shipment could not be cancelled', 'error'); }
   };
@@ -210,6 +211,8 @@ export default function LiveTrack({ mobile }) {
 
   const load = useCallback(() => apiFetch('/v1/shipments').then((x) => { setRows(x.items || []); setTotals(x.totals || null); setFailed((x.failed || []).map((o) => ({ ...o, state: o.order_state === 'cancelled' ? 'cancelled' : o.ready ? 'ready' : 'failed', awb: '', booked_at: o.created_at, shipping_charge_paise: 0, chargeable_weight_g: o.total_weight_g, whatsapp_status: 'not_sent' }))); setError(null); }).catch(setError), []);
   useEffect(() => { load(); }, [load]);
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => { setRefreshing(true); try { await load(); showToast('Shipments refreshed'); } finally { setRefreshing(false); } };
   // Orders created or cancelled elsewhere (another tab, a bulk upload, a webhook) appear without a manual refresh: reload when the tab is shown again and every 30 s.
   useEffect(() => {
     const again = () => { if (document.visibilityState === 'visible') load(); };
@@ -277,7 +280,7 @@ export default function LiveTrack({ mobile }) {
     const body = source.map((r) => [channelName(r.channel), r.order_number, r.nexgo_order_id, stamp(r.booked_at), r.payment_mode === 'cod' ? 'COD' : 'Prepaid', r.payment_mode === 'cod' ? r.cod_amount_paise / 100 : 0, r.subtotal_paise / 100, r.customer_name, r.customer_phone, r.customer_city, r.customer_pincode, r.courier_name || '', r.service_name || '', r.service_type ? modeOf(r) : '', r.awb || '', WHATSAPP[r.whatsapp_status] || 'Not sent', label(r.state), r.warehouse_name, r.product_names, r.quantity, r.total_weight_g / 1000, r.chargeable_weight_g / 1000, r.shipping_charge_paise / 100, r.last_description || '', r.last_location || '', r.last_event_at ? stamp(r.last_event_at) : '', day(r.promised_delivery_at), r.delivered_at ? stamp(r.delivered_at) : '', isDelayed(r) ? 'Yes' : 'No', (r.tags || []).join(', ')]);
     // Customer name and phone only leave the app for members with Export Customer Details.
     const safeBody = canExportCustomer ? body : body.map((row) => row.map((cell, i) => (i === 7 || i === 8 ? '' : cell)));
-    await saveRows([head, ...safeBody], `shipments-${isoDay(Date.now())}`, exportFormat, 'Shipments');
+    await saveRows([head, ...safeBody], `shipments-${isoDay()}`, exportFormat, 'Shipments');
     showToast(`${source.length} shipments exported (${exportFormat === 'xlsx' ? 'Excel' : 'CSV'})`);
   };
 
@@ -285,7 +288,7 @@ export default function LiveTrack({ mobile }) {
   const cancelOrders = async () => {
     const chosen = visible.filter((r) => picked.has(r.id) && isUnassigned(r));
     if (!chosen.length) return;
-    if (!window.confirm(`Cancel ${chosen.length} order${chosen.length === 1 ? '' : 's'}? Nothing has been booked, so nothing is charged.`)) return;
+    if (!(await askConfirm({ title: 'Are you sure?', message: `Cancel ${chosen.length} order${chosen.length === 1 ? '' : 's'}? Nothing has been booked, so nothing is charged.`, confirmLabel: 'Yes, continue', danger: true }))) return;
     let done = 0; let failedCount = 0;
     for (const r of chosen) {
       try { await apiFetch(`/v1/orders/${r.id}/state`, { method: 'PATCH', body: { state: 'cancelled' } }); done += 1; } catch { failedCount += 1; }
@@ -311,7 +314,7 @@ export default function LiveTrack({ mobile }) {
     if (!rows.length) return showToast('There are no shipments with an AWB to list.', 'error');
     await saveRows([['#', 'Courier', 'AWB', 'Order', 'Customer', 'City', 'Pincode', 'Weight (kg)', 'Payment', 'COD to collect (INR)', 'Pickup warehouse', 'Picked up (tick)'],
       ...rows.map((r, i) => [i + 1, r.courier_name, r.awb, r.order_number, r.customer_name, r.customer_city, r.customer_pincode, Math.max(r.chargeable_weight_g || 0, r.total_weight_g || 0) / 1000, r.payment_mode === 'cod' ? 'COD' : 'Prepaid', r.payment_mode === 'cod' ? (r.cod_amount_paise || 0) / 100 : 0, r.warehouse_name, ''])],
-      `pickup-manifest-${isoDay(Date.now())}`, format, 'Manifest');
+      `pickup-manifest-${isoDay()}`, format, 'Manifest');
     showToast(`Manifest for ${rows.length} shipment${rows.length === 1 ? '' : 's'} downloaded (${format === 'xlsx' ? 'Excel' : 'CSV'}).`);
   };
 
@@ -319,7 +322,7 @@ export default function LiveTrack({ mobile }) {
   const downloadFailed = async (format = 'xlsx') => {
     const source = visible.filter((r) => r.state === 'failed');
     if (!source.length) return showToast('There are no failed orders to download.', 'error');
-    await saveRows(failedSheet(source), `failed-orders-${isoDay(Date.now())}`, format, 'Failed orders');
+    await saveRows(failedSheet(source), `failed-orders-${isoDay()}`, format, 'Failed orders');
     showToast(`${source.length} failed order${source.length === 1 ? '' : 's'} downloaded. Correct them and upload the file.`);
   };
   const uploadCorrected = async (file) => {
@@ -378,7 +381,7 @@ export default function LiveTrack({ mobile }) {
     if (!ids.length) return showToast('None of the selected shipments can be cancelled. Only shipments that are not yet picked up can.', 'error');
     if (ids.length > 50) return showToast('Cancel up to 50 shipments at a time.', 'error');
     const skipped = chosen.length - ids.length;
-    if (!window.confirm(`Cancel ${ids.length} shipment${ids.length === 1 ? '' : 's'}? The shipping charges are credited back to your wallet.${skipped ? ` ${skipped} selected shipment${skipped === 1 ? ' is' : 's are'} already picked up and will be left as they are.` : ''}`)) return;
+    if (!(await askConfirm({ title: 'Are you sure?', message: `Cancel ${ids.length} shipment${ids.length === 1 ? '' : 's'}? The shipping charges are credited back to your wallet.${skipped ? ` ${skipped} selected shipment${skipped === 1 ? ' is' : 's are'} already picked up and will be left as they are.` : ''}`, confirmLabel: 'Yes, continue', danger: true }))) return;
     try {
       const r = await apiFetch('/v1/shipments/bulk-cancel', { method: 'POST', body: { shipmentIds: ids } });
       const bad = r.results.find((x) => !x.ok);
@@ -395,7 +398,7 @@ export default function LiveTrack({ mobile }) {
       <div style={{ ...CARD, padding: 12, marginBottom: 12, boxShadow: 'none', background: 'var(--nx-surface-soft)' }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <input aria-label="Search shipments" value={f.q} onChange={set('q')} placeholder="Search AWB, order, customer, phone, pincode or product" style={{ ...FIELD, flex: '1 1 280px', height: 38 }} />
-          <Btn onClick={load}>Refresh</Btn>
+          <Btn disabled={refreshing} onClick={refresh}>{refreshing ? 'Refreshing…' : 'Refresh'}</Btn>
           {canExport && <><select aria-label="Export format" value={exportFormat} onChange={(e) => setExportFormat(e.target.value)} style={{ ...FIELD, height: 32 }}>{FORMATS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select>
           <Btn onClick={exportRows}>{picked.size ? `Export ${picked.size} selected` : 'Export'}</Btn></>}
           <Btn onClick={() => nav('bulk-track')}>Bulk AWB tracking</Btn>

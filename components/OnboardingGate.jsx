@@ -2,14 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { ONBOARDING_EVENT, kycProgress, onboardingStep } from '@/lib/onboarding';
 import * as T from '@/lib/theme';
 import { BLUE, Btn, CARD } from './Kit';
 
-// The documents the seller agrees to. Each opens the real page in a new tab.
-const POLICIES = [['Terms of Service', '/terms'], ['Privacy Policy', '/privacy-policy'], ['Shipping SOP', '/shipping-sop'], ['Refund & Cancellation Policy', '/refund-policy']];
+// The agreement the seller accepts (opens the real page in a new tab); every other policy is only linked in the footer line.
+const AGREEMENT = ['NEXGO Seller Agreement (Terms of Service)', '/terms'];
+const OTHER_POLICIES = [['Privacy Policy', '/privacy-policy'], ['Shipping SOP', '/shipping-sop'], ['Refund & Cancellation Policy', '/refund-policy'], ['Cookie Policy', '/cookie-policy'], ['API Terms', '/api-terms']];
 
 const kycNeedsAction = (me) => ['unsubmitted', 'rejected'].includes(me?.onboarding?.kycStatus);
 
@@ -76,16 +78,17 @@ function Agreement({ me, onAccepted, mobile }) {
   return (
     <section aria-label="Welcome" style={{ ...CARD, margin: mobile ? '12px 12px 0' : '16px 24px 0', padding: mobile ? 16 : 22 }}>
       <h2 style={{ margin: 0, fontSize: 19, color: T.TEXT }}>Welcome to NEXGO{me?.full_name ? `, ${me.full_name}` : ''}</h2>
-      <p style={{ margin: '8px 0 14px', color: T.TEXT_SECONDARY, fontSize: 13.5, lineHeight: 1.6 }}>Your dashboard, tracking, reports and tools are open and ready to explore. To create orders and book shipments, please accept the NEXGO seller agreement below. You can add your PAN, ID proof and bank details any time from Settings → KYC; the checklist above stays on every page until your KYC is verified.</p>
-      <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-        {POLICIES.map(([label, href]) => <a key={href} href={href} target="_blank" rel="noreferrer" style={{ color: BLUE, fontSize: 13.5, fontWeight: 650, textDecoration: 'none' }}>{label} ↗</a>)}
-      </div>
+      <p style={{ margin: '8px 0 14px', color: T.TEXT_SECONDARY, fontSize: 13.5, lineHeight: 1.6 }}>To create orders and book shipments, please read and accept the NEXGO seller agreement.</p>
+      <a href={AGREEMENT[1]} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginBottom: 16, color: BLUE, fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>{AGREEMENT[0]} ↗</a>
       <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: isOwner ? 'pointer' : 'not-allowed', fontSize: 13.5, color: T.TEXT, lineHeight: 1.5 }}>
         <input type="checkbox" checked={checked} disabled={!isOwner} onChange={(e) => setChecked(e.target.checked)} style={{ width: 18, height: 18, marginTop: 2, accentColor: BLUE }} />
-        <span>I have read and agree to the documents above, I am authorised to act for this business, and the details I provide are true.</span>
+        <span>I have read and agree to the seller agreement, I am authorised to act for this business, and the details I provide are true.</span>
       </label>
       {!isOwner && <p style={{ margin: '12px 0 0', color: T.AMBER, fontSize: 13 }}>Only the account owner can accept the agreement. Ask the owner to sign in and accept it.</p>}
       <div style={{ marginTop: 18 }}><Btn primary disabled={!checked || busy || !isOwner} onClick={accept} style={{ height: 44, padding: '0 26px' }}>{busy ? 'Saving…' : 'Accept and continue'}</Btn></div>
+      <div style={{ marginTop: 18, paddingTop: 12, borderTop: `1px solid ${T.BORDER}`, display: 'flex', flexWrap: 'wrap', gap: '6px 16px', fontSize: 12 }}>
+        {OTHER_POLICIES.map(([label, href]) => <a key={href} href={href} target="_blank" rel="noreferrer" style={{ color: T.TEXT_MUTED, textDecoration: 'none' }}>{label}</a>)}
+      </div>
     </section>
   );
 }
@@ -97,14 +100,25 @@ function Agreement({ me, onAccepted, mobile }) {
  */
 export default function OnboardingGate({ children, mobile }) {
   const [me, setMe] = useState(null);
+  const pathname = usePathname();
+  const { showToast } = useAppState();
   const load = useCallback(() => apiFetch('/v1/seller/me').then(setMe).catch(() => setMe(null)), []);
   useEffect(() => { load(); window.addEventListener(ONBOARDING_EVENT, load); return () => window.removeEventListener(ONBOARDING_EVENT, load); }, [load]);
+
+  // The welcome card lives on the dashboard only. Elsewhere a seller who has not accepted yet gets one short toast per visit.
+  const needsAgreement = onboardingStep(me) === 'agreement';
+  const onDashboard = pathname === '/dashboard';
+  useEffect(() => {
+    if (!needsAgreement || onDashboard || sessionStorage.getItem('nx_agreement_hint')) return;
+    sessionStorage.setItem('nx_agreement_hint', '1');
+    showToast('Accept the NEXGO seller agreement on your Dashboard to start creating orders.');
+  }, [needsAgreement, onDashboard, showToast]);
 
   return (
     <>
       <KycProgress me={me} mobile={mobile} />
       <ShipChecklist me={me} mobile={mobile} />
-      {onboardingStep(me) === 'agreement' && <Agreement me={me} onAccepted={load} mobile={mobile} />}
+      {needsAgreement && onDashboard && <Agreement me={me} onAccepted={load} mobile={mobile} />}
       {children}
     </>
   );

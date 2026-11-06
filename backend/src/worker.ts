@@ -24,11 +24,18 @@ async function complete(job: Job, result: Record<string, unknown>) {
   await db.query(`UPDATE job_runs SET state = 'succeeded', result = $1, completed_at = now() WHERE id = $2 AND state = 'running'`, [JSON.stringify(result), job.id]);
 }
 
+// A document whose job can no longer succeed must say so, instead of staying 'queued' for ever on the seller's screen.
+async function markDocumentFailed(payload: Record<string, unknown> | null) {
+  const documentId = payload?.documentId;
+  if (typeof documentId === 'string') await db.query("UPDATE documents SET status = 'failed' WHERE id = $1 AND status <> 'ready'", [documentId]).catch(() => {});
+}
+
 async function fail(job: Job, error: unknown) {
   const summary = error instanceof Error ? error.message.slice(0, 1000) : 'Unknown worker error';
   const state = job.attempts >= 5 ? 'dead_letter' : 'queued';
   const delaySeconds = Math.min(900, 2 ** Math.max(0, job.attempts - 1) * 15);
   await db.query(`UPDATE job_runs SET state = $1::job_state, error_summary = $2, next_attempt_at = CASE WHEN $1 = 'queued' THEN now() + ($3 || ' seconds')::interval ELSE next_attempt_at END, completed_at = CASE WHEN $1 = 'dead_letter' THEN now() ELSE NULL END WHERE id = $4`, [state, summary, String(delaySeconds), job.id]);
+  if (state === 'dead_letter') await markDocumentFailed(job.payload);
 }
 
 async function execute(job: Job) {
@@ -90,7 +97,18 @@ async function execute(job: Job) {
   }
 }
 
+// A job still 'running' after this long was abandoned (the worker crashed or was stopped mid-job): put it back in the queue, or in the
+// dead-letter state once it has used all its attempts, so queues never stay stuck.
+const LEASE_MINUTES = 10;
+async function recoverAbandonedJobs() {
+  const requeued = await db.query(`UPDATE job_runs SET state = 'queued', next_attempt_at = now(), error_summary = 'Recovered: the worker stopped while running this job' WHERE state = 'running' AND started_at < now() - ($1 || ' minutes')::interval AND attempts < 5`, [String(LEASE_MINUTES)]);
+  const dead = await db.query(`UPDATE job_runs SET state = 'dead_letter', completed_at = now(), error_summary = 'Gave up: the worker stopped repeatedly while running this job' WHERE state = 'running' AND started_at < now() - ($1 || ' minutes')::interval AND attempts >= 5 RETURNING payload`, [String(LEASE_MINUTES)]);
+  for (const row of dead.rows) await markDocumentFailed(row.payload);
+  if (requeued.rowCount || dead.rowCount) console.log(`Recovered ${requeued.rowCount ?? 0} abandoned job(s), dead-lettered ${dead.rowCount ?? 0}`);
+}
+
 async function tick() {
+  await recoverAbandonedJobs().catch((error) => console.error('Abandoned-job recovery failed', error));
   const job = await claimNextJob();
   if (!job) return;
   try { await execute(job); } catch (error) { await fail(job, error); }

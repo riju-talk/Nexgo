@@ -49,6 +49,36 @@ function toSellerView(row: Record<string, unknown> | undefined) {
   return rest;
 }
 
+type KycInput = z.infer<typeof kycBase>;
+
+/** Writes the full KYC submission (status pending_review). Shared by the one-shot form and the section-by-section flow. */
+export async function submitKyc(p: { sellerId: string; userId: string }, input: KycInput, secret: { ciphertext: Buffer; keyReference: string }, requestId: string) {
+  return withSellerTransaction(p.sellerId, async (client) => {
+    const current = await client.query<{ status: string }>('SELECT status FROM seller_kyc WHERE seller_id = $1 FOR UPDATE', [p.sellerId]);
+    if (current.rows[0] && ['pending_review', 'verified'].includes(current.rows[0].status)) {
+      throw Object.assign(new Error(`KYC cannot be resubmitted while its status is ${current.rows[0].status}`), { statusCode: 409 });
+    }
+    // The scans are uploaded to the bucket first; a submission without them cannot be reviewed.
+    const scans = await client.query<{ purpose: string }>("SELECT DISTINCT purpose FROM seller_files WHERE seller_id = $1 AND purpose IN ('kyc_pan', 'kyc_id_front', 'kyc_aadhaar_front')", [p.sellerId]);
+    const have = new Set(scans.rows.map((r) => r.purpose));
+    if (!have.has('kyc_pan')) throw Object.assign(new Error('Upload a scanned copy of your PAN card first'), { statusCode: 400 });
+    if (!have.has('kyc_id_front') && !have.has('kyc_aadhaar_front')) throw Object.assign(new Error('Upload a scanned copy of your identity proof first'), { statusCode: 400 });
+    const result = await client.query(
+      `INSERT INTO seller_kyc (seller_id, gstin, pan, entity_type, registered_address, bank_account_holder, bank_account_number_encrypted, bank_ifsc, key_reference, aadhaar_last4, gst_applicable, pan_holder_name, id_proof_type, id_proof_last4, status, submitted_at, rejection_reason, reviewed_at, reviewed_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'pending_review',now(),NULL,NULL,NULL)
+       ON CONFLICT (seller_id) DO UPDATE SET gstin=EXCLUDED.gstin, pan=EXCLUDED.pan, entity_type=EXCLUDED.entity_type,
+         registered_address=EXCLUDED.registered_address, bank_account_holder=EXCLUDED.bank_account_holder,
+         bank_account_number_encrypted=EXCLUDED.bank_account_number_encrypted, bank_ifsc=EXCLUDED.bank_ifsc,
+         key_reference=EXCLUDED.key_reference, aadhaar_last4=EXCLUDED.aadhaar_last4, id_proof_type=EXCLUDED.id_proof_type, id_proof_last4=EXCLUDED.id_proof_last4, gst_applicable=EXCLUDED.gst_applicable, pan_holder_name=EXCLUDED.pan_holder_name, status='pending_review', submitted_at=now(),
+         rejection_reason=NULL, reviewed_at=NULL, reviewed_by=NULL, updated_at=now()
+       RETURNING *`,
+      [p.sellerId, input.gstApplicable ? input.gstin : null, input.pan, input.entityType, input.registeredAddress, input.bankAccountHolder, secret.ciphertext, input.bankIfsc, secret.keyReference, input.idProofType === 'aadhaar' ? idLast4(input.idNumber) : null, input.gstApplicable, input.panHolderName ?? null, input.idProofType, idLast4(input.idNumber)],
+    );
+    await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'kyc.submitted', targetType: 'seller_kyc', targetId: p.sellerId, requestId, metadata: { bankAccountMasked: maskAccountNumber(input.bankAccountNumber) } });
+    return result.rows[0];
+  });
+}
+
 export async function kycRoutes(app: FastifyInstance) {
   app.get('/v1/seller/kyc', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
@@ -64,31 +94,7 @@ export async function kycRoutes(app: FastifyInstance) {
   app.post('/v1/seller/kyc', { preHandler: requireSeller }, async (request, reply) => {
     const input = kycSubmission.parse(request.body);
     const p = principal(request);
-    const { ciphertext, keyReference } = encryptSecret(input.bankAccountNumber);
-    const row = await withSellerTransaction(p.sellerId, async (client) => {
-      const current = await client.query<{ status: string }>('SELECT status FROM seller_kyc WHERE seller_id = $1 FOR UPDATE', [p.sellerId]);
-      if (current.rows[0] && ['pending_review', 'verified'].includes(current.rows[0].status)) {
-        throw Object.assign(new Error(`KYC cannot be resubmitted while its status is ${current.rows[0].status}`), { statusCode: 409 });
-      }
-      // The scans are uploaded to the bucket first; a submission without them cannot be reviewed.
-      const scans = await client.query<{ purpose: string }>("SELECT DISTINCT purpose FROM seller_files WHERE seller_id = $1 AND purpose IN ('kyc_pan', 'kyc_id_front', 'kyc_aadhaar_front')", [p.sellerId]);
-      const have = new Set(scans.rows.map((r) => r.purpose));
-      if (!have.has('kyc_pan')) throw Object.assign(new Error('Upload a scanned copy of your PAN card first'), { statusCode: 400 });
-      if (!have.has('kyc_id_front') && !have.has('kyc_aadhaar_front')) throw Object.assign(new Error('Upload a scanned copy of your identity proof first'), { statusCode: 400 });
-      const result = await client.query(
-        `INSERT INTO seller_kyc (seller_id, gstin, pan, entity_type, registered_address, bank_account_holder, bank_account_number_encrypted, bank_ifsc, key_reference, aadhaar_last4, gst_applicable, pan_holder_name, id_proof_type, id_proof_last4, status, submitted_at, rejection_reason, reviewed_at, reviewed_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'pending_review',now(),NULL,NULL,NULL)
-         ON CONFLICT (seller_id) DO UPDATE SET gstin=EXCLUDED.gstin, pan=EXCLUDED.pan, entity_type=EXCLUDED.entity_type,
-           registered_address=EXCLUDED.registered_address, bank_account_holder=EXCLUDED.bank_account_holder,
-           bank_account_number_encrypted=EXCLUDED.bank_account_number_encrypted, bank_ifsc=EXCLUDED.bank_ifsc,
-           key_reference=EXCLUDED.key_reference, aadhaar_last4=EXCLUDED.aadhaar_last4, id_proof_type=EXCLUDED.id_proof_type, id_proof_last4=EXCLUDED.id_proof_last4, gst_applicable=EXCLUDED.gst_applicable, pan_holder_name=EXCLUDED.pan_holder_name, status='pending_review', submitted_at=now(),
-           rejection_reason=NULL, reviewed_at=NULL, reviewed_by=NULL, updated_at=now()
-         RETURNING *`,
-        [p.sellerId, input.gstApplicable ? input.gstin : null, input.pan, input.entityType, input.registeredAddress, input.bankAccountHolder, ciphertext, input.bankIfsc, keyReference, input.idProofType === 'aadhaar' ? idLast4(input.idNumber) : null, input.gstApplicable, input.panHolderName ?? null, input.idProofType, idLast4(input.idNumber)],
-      );
-      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'kyc.submitted', targetType: 'seller_kyc', targetId: p.sellerId, requestId: request.id, metadata: { bankAccountMasked: maskAccountNumber(input.bankAccountNumber) } });
-      return result.rows[0];
-    });
+    const row = await submitKyc(p, input, encryptSecret(input.bankAccountNumber), request.id);
     return reply.code(202).send(toSellerView(row));
   });
 

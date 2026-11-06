@@ -154,6 +154,7 @@ export async function operationsRoutes(app: FastifyInstance) {
   // One order in its own transaction. Shared by POST /v1/orders and POST /v1/orders/bulk, so both create orders exactly the same way.
   const createOrder = (p: ReturnType<typeof getPrincipal>, requestId: string, input: z.infer<typeof orderInput>) => withSellerTransaction(p.sellerId, async (client) => {
       const warehouse = await client.query('SELECT id FROM warehouses WHERE id=$1 AND seller_id=$2 AND is_active', [input.warehouseId, p.sellerId]); if (!warehouse.rows[0]) throw Object.assign(new Error('Active warehouse not found'), { statusCode: 422 });
+      await checkLocation(client, input.customer.pincode, input.customer.state); // a pincode that belongs to another state is a typo, caught before any courier is asked
       let customer = await client.query<{ id: string }>('SELECT id FROM customers WHERE seller_id=$1 AND phone=$2 AND pincode=$3 LIMIT 1', [p.sellerId, input.customer.phone, input.customer.pincode]);
       const c = input.customer;
       if (!customer.rows[0]) customer = await client.query<{ id: string }>(`INSERT INTO customers (seller_id,full_name,email,phone,address_line_1,address_line_2,city,state,pincode,company_name,alternate_phone,landmark) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`, [p.sellerId, c.fullName, c.email ?? null, c.phone, c.addressLine1, c.addressLine2 ?? null, c.city, c.state, c.pincode, c.companyName ?? null, c.alternatePhone ?? null, c.landmark ?? null]);
@@ -188,6 +189,10 @@ export async function operationsRoutes(app: FastifyInstance) {
     }
     if (cancelled.length) await client.query(`UPDATE orders SET order_number = order_number || '-CXL-' || left(id::text, 6), external_reference = CASE WHEN external_reference IS NULL THEN NULL ELSE external_reference || '-CXL-' || left(id::text, 6) END, updated_at = now() WHERE id = ANY($1::uuid[])`, [cancelled]);
     const fresh = inputs.filter((i) => !existingByNumber.has(i.orderNumber));
+    // A pincode that belongs to another state than the one typed is rejected per order: replay one by one so only that order fails.
+    const knownPins = await client.query<{ pincode: string; state: string }>('SELECT pincode, state FROM pincodes WHERE pincode = ANY($1::text[])', [[...new Set(fresh.map((i) => i.customer.pincode))]]);
+    const stateOf = new Map(knownPins.rows.map((r) => [r.pincode, r.state.toLowerCase()]));
+    if (fresh.some((i) => { const known = stateOf.get(i.customer.pincode); return !!known && known !== i.customer.state.toLowerCase(); })) throw FALLBACK;
     const out = new Map<string, { id: string; existing: boolean }>();
     for (const [n, id] of existingByNumber) out.set(n, { id, existing: true });
     if (fresh.length) {

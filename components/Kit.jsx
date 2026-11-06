@@ -15,7 +15,8 @@ export const kg = (g) => `${(Number(g || 0) / 1000).toFixed(2)} kg`;
 export const dayText = (v) => (v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 export const dateTime = (v) => (v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 export const titleCase = (v = '') => String(v).replaceAll('_', ' ').replaceAll('-', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-export const isoDay = (offset = 0) => { const d = new Date(Date.now() + offset * 864e5); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+// Accepts a day offset from today (isoDay(-7)) or a Date (isoDay(new Date()))
+export const isoDay = (offset = 0) => { const d = offset instanceof Date ? offset : Math.abs(offset) > 1e6 ? new Date(offset) /* a timestamp */ : new Date(Date.now() + offset * 864e5); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 
 // An AWB that opens that shipment on the Track page (detail panel + timeline). Used wherever an AWB is listed.
 export function AwbLink({ awb, style }) {

@@ -1,5 +1,6 @@
 'use client';
 
+import { askConfirm } from '@/lib/dialog';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminApi, apiFetch, ApiError } from '@/lib/api';
@@ -27,6 +28,7 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
   const assign = mode === 'assign';
   const [setup, setSetup] = useState(null); const [error, setError] = useState(null);
   const [slabs, setSlabs] = useState([]);
+  const [modeBy, setModeBy] = useState({}); // per configuration: Air or Surface narrows the courier list
   const [offered, setOffered] = useState({}); // serviceId -> { on, cod }
   const [cardName, setCardName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -73,7 +75,7 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
   };
 
   const copyCard = async () => {
-    if (!copyFrom || !window.confirm('Copy that seller\'s rate card onto this seller? It replaces the card shown here (shipments already booked keep their price).')) return;
+    if (!copyFrom || !(await askConfirm({ title: 'Are you sure?', message: 'Copy that seller\'s rate card onto this seller? It replaces the card shown here (shipments already booked keep their price).', confirmLabel: 'Yes, continue', danger: true }))) return;
     setBusy(true);
     try { await apiFetch(`/v1/admin/sellers/${sellerId}/assign-rate-card`, { method: 'POST', body: { sourceRateCardId: copyFrom } }); showToast('Rate card copied.'); setCopyFrom(''); await load(); }
     catch (e) { showToast(errText(e, 'Rate card could not be copied'), 'error'); } finally { setBusy(false); }
@@ -106,7 +108,7 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
             {services.map((svc) => (
               <div key={svc.id} style={{ marginBottom: 14 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
-                  <b style={{ fontSize: 13.5 }}>{svc.name}</b>
+                  <b style={{ fontSize: 13.5 }}>{svc.name}</b>{svc.aggregator && <span style={{ border: "1px solid var(--ops-border)", borderRadius: 99, padding: "1px 9px", fontSize: 11.5 }}>via {svc.aggregator}</span>}
                   <span style={{ border: '1px solid var(--ops-border)', borderRadius: 99, padding: '1px 9px', fontSize: 11.5 }}>{svc.type}</span>
                   <span style={{ borderRadius: 99, padding: '1px 9px', fontSize: 11.5, background: svc.access_state === 'enabled' ? '#E8F7EF' : '#FFF5DF', color: svc.access_state === 'enabled' ? '#137D50' : '#9B6500', fontWeight: 700 }}>{svc.access_state === 'enabled' ? `Available${svc.cod_enabled ? ' · COD allowed' : ' · prepaid only'}` : 'Not available to the seller'}</span>
                 </div>
@@ -153,6 +155,7 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
             <button type="button" onClick={addConfig} style={{ height: 46, padding: '0 24px', borderRadius: 12, border: '2px solid var(--ac, #3877fc)', background: 'transparent', color: 'var(--ac, #3877fc)', fontWeight: 740, fontSize: 15, cursor: 'pointer' }}>+&nbsp; Add New Configuration</button>
           </div>
 
+          <div style={{ fontSize: 12.5, color: 'var(--ops-muted)', lineHeight: 1.6 }}>Need a special rate for a weight band such as 2 kg? Add another configuration for the same courier, set <b>Weight (kg)</b> to 2, and open <b>COD charges and weight slab start</b> to choose from which weight that band begins (for example 1.5 kg). Parcels at or above that start weight use this configuration; lighter parcels keep using the earlier one.</div>
           {!slabs.length && <div style={{ border: '1px dashed var(--ops-border)', borderRadius: 12, padding: 28, textAlign: 'center', color: 'var(--ops-muted)' }}>No configuration yet. Click <b>+ Add New Configuration</b>.</div>}
           {slabs.map((s, n) => {
             const svc = serviceOf(s.serviceId);
@@ -176,10 +179,10 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
                         <td style={{ padding: '6px 10px 4px' }}>
                           <select style={{ ...IN, textAlign: 'left', width: '100%' }} value={s.serviceId} onChange={(e) => pickCourier(s.key, e.target.value)}>
                             <option value="">Courier</option>
-                            {services.map((x) => <option key={x.id} value={x.id}>{x.provider_name} · {x.name}</option>)}
+                            {services.filter((x) => !modeBy[s.key] || x.type === modeBy[s.key] || x.id === s.serviceId).map((x) => <option key={x.id} value={x.id}>{x.provider_name} · {x.name}{x.aggregator ? ` · via ${x.aggregator}` : ""}</option>)}
                           </select>
                         </td>
-                        <td rowSpan={2} style={{ padding: '6px 10px', verticalAlign: 'middle' }}><div style={{ ...IN, display: 'grid', placeItems: 'center', fontSize: 12, minWidth: 54, width: 64, margin: '0 auto' }}>{svc ? String(svc.type).replace(/^./, (c) => c.toUpperCase()) : ''}</div></td>
+                        <td rowSpan={2} style={{ padding: '6px 10px', verticalAlign: 'middle' }}><select aria-label="Air or surface" title="Pick Air or Surface to narrow the courier list" style={{ ...IN, fontSize: 12, width: 92, margin: '0 auto', display: 'block' }} value={modeBy[s.key] ?? svc?.type ?? ''} onChange={(e) => setModeBy((m) => ({ ...m, [s.key]: e.target.value }))}><option value="">All modes</option>{[...new Set(['surface', 'air', ...services.map((x) => x.type)])].map((t) => <option key={t} value={t}>{String(t).replace(/^./, (c) => c.toUpperCase())}</option>)}</select></td>
                         <td rowSpan={2} style={{ padding: '6px 10px', verticalAlign: 'middle' }}><input aria-label="Weight in kg" style={{ ...IN, width: 110, margin: '0 auto', display: 'block' }} inputMode="decimal" value={s.baseKg} onChange={(e) => patchSlab(s.key, { baseKg: e.target.value })} /></td>
                         {ZONES.map(([z, zl]) => [
                           <td key={`${z}f`} style={{ padding: '6px 4px 4px' }}><input aria-label={`${zl} forward first weight`} style={IN} inputMode="decimal" value={s.zones[z].fwdBase} onChange={(e) => patchCell(s.key, z, 'fwdBase', e.target.value)} /></td>,

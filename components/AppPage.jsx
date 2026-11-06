@@ -1,52 +1,56 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { TABLES, FORMS, CONNECTORS } from '@/lib/data';
 import { useAppState } from '@/lib/AppStateContext';
 import { MOBILE_BREAK, NARROW_BREAK, PHONE_BREAK } from '@/lib/theme';
 import PageHeader from './PageHeader';
-import DashboardContent from './DashboardContent';
-import TablePage from './TablePage';
-import FormPage from './FormPage';
-import AccountConfiguration from './AccountConfiguration';
-import AdminDashboard from './AdminDashboard';
-import AdminUtilityPage from './AdminUtilityPage';
-import LiveSellerOperations from './LiveSellerOperations';
-import LiveAdminQueues from './LiveAdminQueues';
-import LiveCreateOrder from './LiveCreateOrder';
-import LiveSellerWorkspace from './LiveSellerWorkspace';
-import LiveAdminOperations from './LiveAdminOperations';
-import LiveWorkspaceTools from './LiveWorkspaceTools';
-import LiveAdminReports from './LiveAdminReports';
-import LiveMarketing from './LiveMarketing';
-import LiveSellerSecurity from './LiveSellerSecurity';
-import LiveShipmentDetail from './LiveShipmentDetail';
-import LiveBulkTrack from './LiveBulkTrack';
-import CreateOrder from './CreateOrder';
-import LiveNdr from './LiveNdr';
-import LiveRto from './LiveRto';
-import LiveAdminDisputes from './LiveAdminDisputes';
-import LiveAdminNotes from './LiveAdminNotes';
-import AdminSellerProfile from './AdminSellerProfile';
-import AdminRateCards from './AdminRateCards';
-import AdminRateAssign from './AdminRateAssign';
-import LiveRateCard from './LiveRateCard';
-import LiveTeamRoles from './LiveTeamRoles';
-import LiveCodConfirmation from './LiveCodConfirmation';
-import LiveInvoiceSettings from './LiveInvoiceSettings';
-import LiveEmailScheduler from './LiveEmailScheduler';
-import LiveNotifyChannels from './LiveNotifyChannels';
-import LiveMarketplace from './LiveMarketplace';
-import LiveKyc from './LiveKyc';
-import LiveBillingHub from './LiveBillingHub';
-import LiveWeightDisputes from './LiveWeightDisputes';
-import LiveWarehouse from './LiveWarehouse';
-import LiveRateCalculator from './LiveRateCalculator';
-import LivePincodeServiceability from './LivePincodeServiceability';
-import LiveTrack from './LiveTrack';
-import LiveCourierZones from './LiveCourierZones';
-import LiveCourierPerformance from './LiveCourierPerformance';
-import ComingSoon from './ComingSoon';
 import PageContainer from './PageContainer';
+
+// Each page loads its own code when it is opened (a route used to download every page's code).
+const DashboardContent = dynamic(() => import('./DashboardContent'));
+const TablePage = dynamic(() => import('./TablePage'));
+const FormPage = dynamic(() => import('./FormPage'));
+const AccountConfiguration = dynamic(() => import('./AccountConfiguration'));
+const AdminDashboard = dynamic(() => import('./AdminDashboard'));
+const AdminUtilityPage = dynamic(() => import('./AdminUtilityPage'));
+const LiveSellerOperations = dynamic(() => import('./LiveSellerOperations'));
+const LiveAdminQueues = dynamic(() => import('./LiveAdminQueues'));
+const LiveCreateOrder = dynamic(() => import('./LiveCreateOrder'));
+const LiveSellerWorkspace = dynamic(() => import('./LiveSellerWorkspace'));
+const LiveAdminOperations = dynamic(() => import('./LiveAdminOperations'));
+const LiveWorkspaceTools = dynamic(() => import('./LiveWorkspaceTools'));
+const LiveAdminReports = dynamic(() => import('./LiveAdminReports'));
+const LiveMarketing = dynamic(() => import('./LiveMarketing'));
+const LiveSellerSecurity = dynamic(() => import('./LiveSellerSecurity'));
+const LiveShipmentDetail = dynamic(() => import('./LiveShipmentDetail'));
+const LiveBulkTrack = dynamic(() => import('./LiveBulkTrack'));
+const CreateOrder = dynamic(() => import('./CreateOrder'));
+const LiveNdr = dynamic(() => import('./LiveNdr'));
+const LiveRto = dynamic(() => import('./LiveRto'));
+const LiveAdminDisputes = dynamic(() => import('./LiveAdminDisputes'));
+const LiveAdminNotes = dynamic(() => import('./LiveAdminNotes'));
+const AdminSellerProfile = dynamic(() => import('./AdminSellerProfile'));
+const AdminRateCards = dynamic(() => import('./AdminRateCards'));
+const AdminRateAssign = dynamic(() => import('./AdminRateAssign'));
+const LiveRateCard = dynamic(() => import('./LiveRateCard'));
+const LiveTeamRoles = dynamic(() => import('./LiveTeamRoles'));
+const LiveCodConfirmation = dynamic(() => import('./LiveCodConfirmation'));
+const LiveInvoiceSettings = dynamic(() => import('./LiveInvoiceSettings'));
+const LiveEmailScheduler = dynamic(() => import('./LiveEmailScheduler'));
+const LiveNotifyChannels = dynamic(() => import('./LiveNotifyChannels'));
+const LiveMarketplace = dynamic(() => import('./LiveMarketplace'));
+const LiveKyc = dynamic(() => import('./LiveKyc'));
+const LiveBillingHub = dynamic(() => import('./LiveBillingHub'));
+const LiveWeightDisputes = dynamic(() => import('./LiveWeightDisputes'));
+const LiveWarehouse = dynamic(() => import('./LiveWarehouse'));
+const LiveRateCalculator = dynamic(() => import('./LiveRateCalculator'));
+const LivePincodeServiceability = dynamic(() => import('./LivePincodeServiceability'));
+const LiveTrack = dynamic(() => import('./LiveTrack'));
+const LiveCourierZones = dynamic(() => import('./LiveCourierZones'));
+const LiveCourierSla = dynamic(() => import('./LiveCourierSla'));
+const LiveCourierPerformance = dynamic(() => import('./LiveCourierPerformance'));
+const ComingSoon = dynamic(() => import('./ComingSoon'));
 
 export default function AppPage({ id, isDashboard = false, sellerId }) {
   const { vw } = useAppState();
@@ -54,7 +58,8 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
   const phone = vw <= PHONE_BREAK;
   const narrow = vw <= NARROW_BREAK;
 
-  const hasTable = !!TABLES[id];
+  // These three admin courier pages are live components; their old sample tables must not render underneath.
+  const hasTable = !!TABLES[id] && !['a-zones', 'a-sla', 'a-performance'].includes(id);
   const hasForm = !isDashboard && !hasTable && !!(FORMS[id] || CONNECTORS[id]);
   const isAccountConfig = id === 'account-config';
   const isAdminOverview = id === 'a-overview';
@@ -96,10 +101,11 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
   const isAdminRates = id === 'a-rate-cards' || id === 'a-rate-view' || id === 'a-rate-assign';
   const isCourierZones = id === 'a-zones';
   const isCourierPerformance = id === 'a-performance';
+  const isCourierSla = id === 'a-sla';
   // Admin screens that have no backend yet say so instead of showing sample figures.
   const ADMIN_SOON = { 'a-escalations': 'Escalations', 'a-credit': 'Credit limits', 'a-live-chat': 'Live chat', 'a-system': 'System settings', 'a-api': 'API management', 'a-roles': 'Role permissions' };
   const isAdminSoon = id in ADMIN_SOON;
-  const isAdminUtility = isAdminPage && !isAdminSoon && !isAdminOverview && !hasTable && !isLiveAdminReport && !isAdminDisputes && !isAdminNotes && !isSellerProfile && !isAdminRates;
+  const isAdminUtility = isAdminPage && !isAdminSoon && !isAdminOverview && !hasTable && !isCourierZones && !isCourierPerformance && !isCourierSla && !isLiveAdminReport && !isAdminDisputes && !isAdminNotes && !isSellerProfile && !isAdminRates;
 
   return (
     <>
@@ -124,6 +130,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isSellerProfile && <AdminSellerProfile sellerId={sellerId} />}
         {isCourierZones && <LiveCourierZones mobile={mobile} />}
         {isCourierPerformance && <LiveCourierPerformance mobile={mobile} />}
+        {isCourierSla && <LiveCourierSla mobile={mobile} />}
         {id === 'a-rate-cards' && <AdminRateCards mobile={mobile} />}
         {(id === 'a-rate-view' || id === 'a-rate-assign') && <AdminRateAssign sellerId={sellerId} mode={id === 'a-rate-assign' ? 'assign' : 'view'} mobile={mobile} />}
         {isRateCard && <LiveRateCard mobile={mobile} />}
@@ -144,7 +151,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isLiveAdminOperations && <LiveAdminOperations activeId={id} mobile={mobile} />}
         {isLiveAdminReport && <LiveAdminReports activeId={id} mobile={mobile} />}
         {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
-        {hasTable && !isNew && !isNdr && !isWeight && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isCustomSetting && <TablePage activeId={id} mobile={mobile} phone={phone} />}
+        {hasTable && !isNew && !isNdr && !isWeight && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isLiveAdminOperations && !isCustomSetting && <TablePage activeId={id} mobile={mobile} phone={phone} />}
         {hasForm && !isNew && !isWeight && !isWarehouse && !isRateCalc && !isPincode && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isCustomSetting && <FormPage activeId={id} mobile={mobile} phone={phone} />}
         {isAdminUtility && !isLiveAdminPage && !isLiveAdminOperations && !isLiveWorkspaceTool && <AdminUtilityPage activeId={id} mobile={mobile} />}
         {isAccountConfig && <AccountConfiguration mobile={mobile} phone={phone} />}

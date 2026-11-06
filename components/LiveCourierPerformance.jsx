@@ -9,11 +9,11 @@ import { BLUE, Btn, CARD, FIELD, Table, isoDay } from './Kit';
 
 const METRICS = [
   { key: 'totalShipments', label: 'Total Shipments' },
-  { key: 'deliveryRate', label: 'Delivery Rate %', format: v => v.toFixed(2) },
-  { key: 'ndrRate', label: 'NDR Rate %', format: v => v.toFixed(2) },
-  { key: 'rtoRate', label: 'RTO Rate %', format: v => v.toFixed(2) },
-  { key: 'avgDeliveryDays', label: 'Avg Days', format: v => v.toFixed(1) },
-  { key: 'onTimeDeliveryRate', label: 'On-Time %', format: v => v.toFixed(2) }
+  { key: 'deliveryRate', label: 'Delivery Rate %', format: v => Number(v).toFixed(2) },
+  { key: 'ndrRate', label: 'NDR Rate %', format: v => Number(v).toFixed(2) },
+  { key: 'rtoRate', label: 'RTO Rate %', format: v => Number(v).toFixed(2) },
+  { key: 'avgDeliveryDays', label: 'Avg Days', format: v => Number(v).toFixed(1) },
+  { key: 'onTimeDeliveryRate', label: 'On-Time %', format: v => Number(v).toFixed(2) }
 ];
 
 export default function LiveCourierPerformance({ mobile }) {
@@ -84,12 +84,12 @@ export default function LiveCourierPerformance({ mobile }) {
       const rows = data.couriers.map(c => [
         c.courierName,
         c.totalShipments,
-        c.deliveryRate.toFixed(2),
-        c.ndrRate.toFixed(2),
-        c.rtoRate.toFixed(2),
-        c.avgDeliveryDays.toFixed(1),
-        c.onTimeDeliveryRate.toFixed(2),
-        c.pickupSuccessRate.toFixed(2)
+        Number(c.deliveryRate).toFixed(2),
+        Number(c.ndrRate).toFixed(2),
+        Number(c.rtoRate).toFixed(2),
+        Number(c.avgDeliveryDays).toFixed(1),
+        Number(c.onTimeDeliveryRate).toFixed(2),
+        Number(c.pickupSuccessRate).toFixed(2)
       ]);
 
       await saveRows(
@@ -175,8 +175,8 @@ export default function LiveCourierPerformance({ mobile }) {
             columns={[
               { h: 'Zone', cell: (r) => <b>{r.zone}</b> },
               { h: 'Shipments', cell: (r) => r.totalShipments },
-              { h: 'Delivery %', cell: (r) => r.deliveryRate.toFixed(2) },
-              { h: 'Avg Days', cell: (r) => r.avgDeliveryDays.toFixed(1) }
+              { h: 'Delivery %', cell: (r) => Number(r.deliveryRate).toFixed(2) },
+              { h: 'Avg Days', cell: (r) => Number(r.avgDeliveryDays).toFixed(1) }
             ]}
           />
         )}
@@ -192,8 +192,8 @@ export default function LiveCourierPerformance({ mobile }) {
             columns={[
               { h: 'Date', cell: (r) => new Date(r.date).toLocaleDateString() },
               { h: 'Shipments', cell: (r) => r.totalShipments },
-              { h: 'Delivery %', cell: (r) => r.deliveryRate.toFixed(2) },
-              { h: 'NDR %', cell: (r) => r.ndrRate.toFixed(2) }
+              { h: 'Delivery %', cell: (r) => Number(r.deliveryRate).toFixed(2) },
+              { h: 'NDR %', cell: (r) => Number(r.ndrRate).toFixed(2) }
             ]}
           />
         )}

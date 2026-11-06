@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isBlocked, kycProgress, onboardingStep } from '../lib/onboarding.js';
 
-const me = (agreementAccepted, kycStatus) => ({ onboarding: { agreementAccepted, kycStatus } });
+const me = (agreementAccepted, kycStatus, kycEnforced = true) => ({ onboarding: { agreementAccepted, kycStatus, kycEnforced } });
 
 test('the next step follows agreement then KYC', () => {
   assert.equal(onboardingStep(me(false, 'unsubmitted')), 'agreement');
@@ -10,6 +10,11 @@ test('the next step follows agreement then KYC', () => {
   assert.equal(onboardingStep(me(true, 'rejected')), 'kyc');
   assert.equal(onboardingStep(me(true, 'pending_review')), 'review');
   assert.equal(onboardingStep(me(true, 'verified')), 'done');
+});
+
+test('with the KYC gate switched off only the agreement is a step', () => {
+  assert.equal(onboardingStep(me(false, 'unsubmitted', false)), 'agreement');
+  assert.equal(onboardingStep(me(true, 'unsubmitted', false)), 'done');
 });
 
 test('an API without onboarding data never locks anyone out', () => {

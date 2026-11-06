@@ -10,10 +10,6 @@ import * as T from '@/lib/theme';
 import { MOBILE_BREAK } from '@/lib/theme';
 import { signupProblem } from '@/lib/authRules';
 
-const SWITCHER = [
-  ['Login', 'login'], ['Sign up', 'signup'], ['Forgot password', 'forgot'], ['Reset password', 'reset'],
-];
-
 const FIELD = { height: 38, border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, display: 'flex', alignItems: 'center', padding: '0 12px', fontSize: 13.5, color: T.TEXT };
 // The sign-in card is solid white, so these are the dark-on-white text colours.
 const AUTH_TEXT = '#0F1F3D';
@@ -60,7 +56,7 @@ function Field({ label, required, value, onChange, type = 'text', placeholder })
   );
 }
 
-export default function AuthScreen({ mode }) {
+export default function AuthScreen({ mode: requestedMode }) {
   const { vw, nav, showToast } = useAppState();
   const mobile = vw <= MOBILE_BREAK;
   const [form, setForm] = useState({ fullName: '', email: '', password: '', phone: '', confirmPassword: '' });
@@ -71,6 +67,9 @@ export default function AuthScreen({ mode }) {
     const reason = new URLSearchParams(window.location.search).get('reason');
     return reason === 'expired' ? 'Your session ended. Please sign in again.' : reason === 'idle' ? 'You were signed out after a period of inactivity.' : '';
   });
+  // /reset-password opened without the e-mailed token has nothing to reset: ask for the e-mail address instead.
+  const [hasResetToken] = useState(() => typeof window !== 'undefined' && !!new URLSearchParams(window.location.search).get('token'));
+  const mode = requestedMode === 'reset' && !hasResetToken ? 'forgot' : requestedMode;
   const set = (name) => (value) => setForm((current) => ({ ...current, [name]: value }));
   
   const submit = async (event) => {
@@ -91,8 +90,8 @@ export default function AuthScreen({ mode }) {
       if (mode === 'signup') {
         if (form.password !== form.confirmPassword) throw new Error('Passwords do not match');
         await apiFetch('/v1/auth/signup', { method: 'POST', body: { fullName: form.fullName, email: form.email, password: form.password } });
-        showToast(`Welcome ${form.fullName.trim()}! Your account is created and a confirmation email is on its way. Please sign in.`);
-        nav('login'); return;
+        showToast(`Welcome ${form.fullName.trim()}! Your account is ready.`);
+        nav('dashboard'); return;
       }
       if (mode === 'forgot') { await apiFetch('/v1/auth/forgot-password', { method: 'POST', body: { email: form.email } }); showToast('If the account exists, a reset link has been sent.'); return; }
       if (mode === 'reset') {
@@ -171,7 +170,7 @@ export default function AuthScreen({ mode }) {
           </Link>
           <form onSubmit={submit}>{mode === 'login' && (
             <>
-              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT, textShadow: 'none' }}>Sign in</div>
+              <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-.01em', color: AUTH_TEXT, textShadow: 'none' }}>Sign in with email</div>
               <div style={{ fontSize: 13, color: AUTH_SUB, marginTop: 4 }}>Access your shipping workspace</div>
               
               {notice && <div role="status" style={{ marginTop: 14, padding: '10px 12px', borderRadius: 8, background: '#FEF3C7', border: '1px solid #FCD34D', color: '#92400E', fontSize: 12.5, lineHeight: 1.5 }}>{notice}</div>}
@@ -183,9 +182,7 @@ export default function AuthScreen({ mode }) {
                   <span onClick={() => nav('forgot')} style={{ fontSize: 12, color: AUTH_LINK, fontWeight: 700, cursor: 'pointer' }}>Forgot Password</span>
                   <span style={{ fontSize: 12, color: AUTH_SUB }}>New here? <span onClick={() => nav('signup')} style={{ color: AUTH_LINK, fontWeight: 700, cursor: 'pointer' }}>Sign Up</span></span>
                 </div>
-                <div style={{ marginTop: 12, paddingTop: 14, borderTop: '1px solid #E2E8F0', textAlign: 'center', fontSize: 12, color: AUTH_SUB }}>
-                  Platform staff? <Link href="/admin/login" style={{ color: AUTH_LINK, fontWeight: 700, textDecoration: 'none' }}>Sign in as admin</Link>
-                </div>
+                
               </div>
             </>
           )}
@@ -225,11 +222,7 @@ export default function AuthScreen({ mode }) {
               </div>
             </form>
           )}
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 22, paddingTop: 16, borderTop: '1px solid #E2E8F0' }}>
-            {SWITCHER.map(([label, id]) => (
-              <div key={id} onClick={() => nav(id)} style={{ fontSize: 11, fontWeight: 700, color: mode === id ? AUTH_LINK : AUTH_MUTED, cursor: 'pointer' }}>{label}</div>
-            ))}
-          </div>
+          
         </div>
       </div>
       <Toast />

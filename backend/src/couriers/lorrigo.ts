@@ -156,9 +156,7 @@ export class LorrigoAdapter implements CourierAdapter {
     catch (e) {
       if (!(e instanceof LorrigoError)) throw e;
       if (e.upstreamStatus === 409) { // "Order Id already exists": reuse it
-        const found = await this.call('GET', `/orders?orderNumber=${encodeURIComponent(ref)}`);
-        const match = (isObj(found) && Array.isArray(found.orders) ? found.orders : []).find((o) => isObj(o) && (o.orderNumber === ref || o.order_number === ref));
-        const id = match ? firstString(match, ['id']) : null;
+        const id = await this.findOrderIdByRef(ref);
         if (!id) throw e; // "already exists" but we cannot find it: surface Lorrigo's message
         return { id, hubId };
       }
@@ -166,6 +164,23 @@ export class LorrigoAdapter implements CourierAdapter {
       if (d.pickupHubId && e.upstreamStatus === 400 && /hub|pickup/i.test(e.message)) { const fresh = await this.ensureHub(d.warehouse); if (fresh !== hubId) return { id: await create(fresh), hubId: fresh }; }
       throw e;
     }
+  }
+
+  /**
+   * Finds a Lorrigo order by the reference we sent. Verified against the live API: GET /orders ignores every filter (orderNumber, search, ...)
+   * and returns the newest orders first, so the order has to be looked for page by page (limit up to 100; answer { orders, hasMore, totalPages }).
+   * Looking only at the first page (10 orders) lost any order that was not among the newest few, and a retry then failed with
+   * "Order Id already exists" even though the order could simply have been reused.
+   */
+  private async findOrderIdByRef(ref: string): Promise<string | null> {
+    for (let page = 1; page <= 30; page++) {
+      const res = await this.call('GET', `/orders?page=${page}&limit=100`);
+      const orders = isObj(res) && Array.isArray(res.orders) ? res.orders : [];
+      const match = orders.find((o) => isObj(o) && (o.orderNumber === ref || o.order_number === ref));
+      if (match) return firstString(match, ['id']);
+      if (!isObj(res) || res.hasMore !== true || !orders.length) return null;
+    }
+    return null;
   }
 
   /** The rates call is what makes an order shippable on Lorrigo, and it only lists couriers that serve this lane. */

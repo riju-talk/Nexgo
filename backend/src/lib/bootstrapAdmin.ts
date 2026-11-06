@@ -5,10 +5,15 @@ import argon2 from 'argon2';
 // Developer super admin: e-mail and password come from DEV_SUPERADMIN_EMAIL / DEV_SUPERADMIN_PASSWORD in .env, never from the
 // repository. The account lives in the database like any admin and stays there; while the variables are set, the password is
 // kept in sync with .env at every start. To remove it: delete the variables and its row.
-export async function ensureDeveloperSuperadmin(log: { info: (m: string) => void }) {
+export async function ensureDeveloperSuperadmin(log: { info: (m: string) => void; warn?: (m: string) => void }) {
   const email = config.DEV_SUPERADMIN_EMAIL?.toLowerCase();
   const password = config.DEV_SUPERADMIN_PASSWORD;
   if (!email || !password) return;
+  // A password in an environment file must not silently mint (or re-set) a super admin on a live system. Production needs an explicit opt-in.
+  if (config.NODE_ENV === 'production' && process.env.ALLOW_DEV_SUPERADMIN_IN_PRODUCTION !== 'true') {
+    log.warn?.('DEV_SUPERADMIN_EMAIL / DEV_SUPERADMIN_PASSWORD are set but ignored in production (set ALLOW_DEV_SUPERADMIN_IN_PRODUCTION=true to allow). Remove them and create admins with POST /v1/admin/accounts instead.');
+    return;
+  }
   await withTransaction(async (client) => {
     const existing = await client.query<{ id: string; password_hash: string }>('SELECT id, password_hash FROM users WHERE email = $1', [email]);
     let userId = existing.rows[0]?.id;
@@ -37,8 +42,14 @@ export const BOOTSTRAP_ADMIN = {
   passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$0GCP5g4AcQHuKvmXhvgdOA$Lc/qKIKH7x3MYQDH1xkSE1iXfVGgfX/my+uu2gUBqYQ',
 } as const;
 
-export async function ensureBootstrapAdmin(log: { info: (m: string) => void }) {
+export async function ensureBootstrapAdmin(log: { info: (m: string) => void; warn?: (m: string) => void }) {
   if (!config.ENABLE_BOOTSTRAP_ADMIN) return;
+  // The built-in admin's password hash is public (it is in the repository), so in production it is only created when ENABLE_BOOTSTRAP_ADMIN=true is set explicitly.
+  // An account created earlier is left as it is: change its password, or disable it, after creating your own admin with POST /v1/admin/accounts.
+  if (config.NODE_ENV === 'production' && process.env.ENABLE_BOOTSTRAP_ADMIN !== 'true') {
+    log.warn?.('Built-in bootstrap admin is not created in production unless ENABLE_BOOTSTRAP_ADMIN=true is set explicitly.');
+    return;
+  }
   await withTransaction(async (client) => {
     const existing = await client.query<{ id: string }>('SELECT id FROM users WHERE email = $1', [BOOTSTRAP_ADMIN.email]);
     let userId = existing.rows[0]?.id;

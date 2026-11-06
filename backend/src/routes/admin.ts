@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { db } from '../db/client.js';
+import { db, withTransaction } from '../db/client.js';
 import { hashSessionToken } from '../lib/session.js';
 import { z } from 'zod';
 import argon2 from 'argon2';
@@ -226,63 +226,67 @@ If you did not ask for this, ignore this email.`);
     const rawSellerId = (request.params as { sellerId: string }).sellerId;
     const sellerId = rawSellerId === 'platform' ? null : z.string().uuid().parse(rawSellerId);
     const input = rateCardInput.parse(request.body);
-    const card = await db.query<{ id: string }>(
-      `INSERT INTO rate_cards (seller_id, name, state, effective_from, created_by)
-       VALUES ($1, $2, 'active', COALESCE($3::timestamptz, now()), $4) RETURNING id`,
-      [sellerId, input.name, input.effectiveFrom ?? null, request.adminPrincipal!.userId],
-    );
-    const rateCardId = card.rows[0].id;
-    // A commercial edit is a new immutable snapshot. Start from the previous
-    // active card so changing one courier never accidentally removes all
-    // other seller options from the next quote.
-    await db.query(
-      `INSERT INTO rate_card_rates (rate_card_id, service_id, zone_code, min_weight_g, base_weight_g, base_price_paise,
-        additional_weight_g, additional_price_paise, cod_fee_paise, fuel_surcharge_bps, cod_percent_bps, rto_base_price_paise, rto_additional_price_paise)
-       SELECT $1, r.service_id, r.zone_code, r.min_weight_g, r.base_weight_g, r.base_price_paise,
-         r.additional_weight_g, r.additional_price_paise, r.cod_fee_paise, r.fuel_surcharge_bps, r.cod_percent_bps, r.rto_base_price_paise, r.rto_additional_price_paise
-       FROM rate_card_rates r
-       WHERE NOT $3::boolean AND r.rate_card_id = (SELECT id FROM rate_cards WHERE seller_id IS NOT DISTINCT FROM $2 AND state='active' AND id <> $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1)`,
-      [rateCardId, sellerId, input.replaceAll],
-    );
-    for (const rate of input.rates) {
-      await db.query(
+    // One transaction: the card, its rates, the retirement of older cards, courier access and the audit row all commit together or not at all,
+    // so a failure halfway can never leave a half-written active card that quotes would then use.
+    return withTransaction(async (client) => {
+      const card = await client.query<{ id: string }>(
+        `INSERT INTO rate_cards (seller_id, name, state, effective_from, created_by)
+         VALUES ($1, $2, 'active', COALESCE($3::timestamptz, now()), $4) RETURNING id`,
+        [sellerId, input.name, input.effectiveFrom ?? null, request.adminPrincipal!.userId],
+      );
+      const rateCardId = card.rows[0].id;
+      // A commercial edit is a new immutable snapshot. Start from the previous
+      // active card so changing one courier never accidentally removes all
+      // other seller options from the next quote.
+      await client.query(
         `INSERT INTO rate_card_rates (rate_card_id, service_id, zone_code, min_weight_g, base_weight_g, base_price_paise,
           additional_weight_g, additional_price_paise, cod_fee_paise, fuel_surcharge_bps, cod_percent_bps, rto_base_price_paise, rto_additional_price_paise)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-         ON CONFLICT (rate_card_id, service_id, zone_code, min_weight_g) DO UPDATE SET
-          base_weight_g=EXCLUDED.base_weight_g, base_price_paise=EXCLUDED.base_price_paise,
-          additional_weight_g=EXCLUDED.additional_weight_g, additional_price_paise=EXCLUDED.additional_price_paise,
-          cod_fee_paise=EXCLUDED.cod_fee_paise, fuel_surcharge_bps=EXCLUDED.fuel_surcharge_bps, cod_percent_bps=EXCLUDED.cod_percent_bps,
-          rto_base_price_paise=EXCLUDED.rto_base_price_paise, rto_additional_price_paise=EXCLUDED.rto_additional_price_paise`,
-        [rateCardId, rate.serviceId, rate.zoneCode, rate.minWeightG, rate.baseWeightG, rate.basePricePaise,
-          rate.additionalWeightG, rate.additionalPricePaise, rate.codFeePaise, rate.fuelSurchargeBps, rate.codPercentBps, rate.rtoBasePricePaise ?? null, rate.rtoAdditionalPricePaise ?? null],
+         SELECT $1, r.service_id, r.zone_code, r.min_weight_g, r.base_weight_g, r.base_price_paise,
+           r.additional_weight_g, r.additional_price_paise, r.cod_fee_paise, r.fuel_surcharge_bps, r.cod_percent_bps, r.rto_base_price_paise, r.rto_additional_price_paise
+         FROM rate_card_rates r
+         WHERE NOT $3::boolean AND r.rate_card_id = (SELECT id FROM rate_cards WHERE seller_id IS NOT DISTINCT FROM $2 AND state='active' AND id <> $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1)`,
+        [rateCardId, sellerId, input.replaceAll],
       );
-    }
-    // The new card supersedes the seller's earlier ones (quotes and booking only read the newest, so old active cards are just clutter).
-    // A card dated in the future leaves the current one running until then (its effective_to is set to the new start).
-    await db.query(
-      `UPDATE rate_cards o SET effective_to = CASE WHEN o.effective_from < n.effective_from THEN n.effective_from ELSE o.effective_to END, state = CASE WHEN n.effective_from <= now() THEN 'retired'::rate_card_state ELSE o.state END, updated_at = now()
-       FROM rate_cards n
-       WHERE n.id = $1 AND o.id <> n.id AND o.seller_id IS NOT DISTINCT FROM n.seller_id AND o.state = 'active'
-         AND o.effective_from <= n.effective_from AND (o.effective_to IS NULL OR o.effective_to > n.effective_from)`,
-      [rateCardId],
-    );
-    // Switch the couriers on for the seller (platform card = no seller, so nothing to switch on).
-    if (sellerId) {
-      for (const a of input.access) {
-        await db.query(
-          `INSERT INTO seller_courier_access (seller_id, service_id, account_mode, state, cod_enabled, auto_assign_eligible)
-           VALUES ($1, $2, 'platform', 'enabled', $3, true)
-           ON CONFLICT (seller_id, service_id) DO UPDATE SET state='enabled', cod_enabled=EXCLUDED.cod_enabled, updated_at=now()`,
-          [sellerId, a.serviceId, a.codEnabled],
+      for (const rate of input.rates) {
+        await client.query(
+          `INSERT INTO rate_card_rates (rate_card_id, service_id, zone_code, min_weight_g, base_weight_g, base_price_paise,
+            additional_weight_g, additional_price_paise, cod_fee_paise, fuel_surcharge_bps, cod_percent_bps, rto_base_price_paise, rto_additional_price_paise)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           ON CONFLICT (rate_card_id, service_id, zone_code, min_weight_g) DO UPDATE SET
+            base_weight_g=EXCLUDED.base_weight_g, base_price_paise=EXCLUDED.base_price_paise,
+            additional_weight_g=EXCLUDED.additional_weight_g, additional_price_paise=EXCLUDED.additional_price_paise,
+            cod_fee_paise=EXCLUDED.cod_fee_paise, fuel_surcharge_bps=EXCLUDED.fuel_surcharge_bps, cod_percent_bps=EXCLUDED.cod_percent_bps,
+            rto_base_price_paise=EXCLUDED.rto_base_price_paise, rto_additional_price_paise=EXCLUDED.rto_additional_price_paise`,
+          [rateCardId, rate.serviceId, rate.zoneCode, rate.minWeightG, rate.baseWeightG, rate.basePricePaise,
+            rate.additionalWeightG, rate.additionalPricePaise, rate.codFeePaise, rate.fuelSurchargeBps, rate.codPercentBps, rate.rtoBasePricePaise ?? null, rate.rtoAdditionalPricePaise ?? null],
         );
       }
-    }
-    await db.query(
-      `INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id, metadata)
-       VALUES ($1, $2, 'rate_card.published', 'rate_card', $3, $4, $5)`,
-      [sellerId, request.adminPrincipal!.userId, rateCardId, request.id, JSON.stringify({ name: input.name, rateCount: input.rates.length })],
-    );
-    return { id: rateCardId, state: 'active' };
+      // The new card supersedes the seller's earlier ones (quotes and booking only read the newest, so old active cards are just clutter).
+      // A card dated in the future leaves the current one running until then (its effective_to is set to the new start).
+      await client.query(
+        `UPDATE rate_cards o SET effective_to = CASE WHEN o.effective_from < n.effective_from THEN n.effective_from ELSE o.effective_to END, state = CASE WHEN n.effective_from <= now() THEN 'retired'::rate_card_state ELSE o.state END, updated_at = now()
+         FROM rate_cards n
+         WHERE n.id = $1 AND o.id <> n.id AND o.seller_id IS NOT DISTINCT FROM n.seller_id AND o.state = 'active'
+           AND o.effective_from <= n.effective_from AND (o.effective_to IS NULL OR o.effective_to > n.effective_from)`,
+        [rateCardId],
+      );
+      // Switch the couriers on for the seller (platform card = no seller, so nothing to switch on).
+      if (sellerId) {
+        for (const a of input.access) {
+          await client.query(
+            `INSERT INTO seller_courier_access (seller_id, service_id, account_mode, state, cod_enabled, auto_assign_eligible)
+             VALUES ($1, $2, 'platform', 'enabled', $3, true)
+             ON CONFLICT (seller_id, service_id) DO UPDATE SET state='enabled', cod_enabled=EXCLUDED.cod_enabled, updated_at=now()`,
+            [sellerId, a.serviceId, a.codEnabled],
+          );
+        }
+      }
+      await client.query(
+        `INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id, metadata)
+         VALUES ($1, $2, 'rate_card.published', 'rate_card', $3, $4, $5)`,
+        [sellerId, request.adminPrincipal!.userId, rateCardId, request.id, JSON.stringify({ name: input.name, rateCount: input.rates.length })],
+      );
+      return { id: rateCardId, state: 'active' };
+    });
   });
 }

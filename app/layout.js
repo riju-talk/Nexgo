@@ -3,6 +3,7 @@ import './fonts.css';
 import './globals.css';
 import { AppStateProvider } from '@/lib/AppStateContext';
 import BootOverlay from '@/components/BootOverlay';
+import DialogHost from '@/components/DialogHost';
 import { SITE_URL, SITE_NAME, SITE_TITLE, SITE_DESCRIPTION } from '@/lib/site';
 
 export const metadata = {
@@ -47,6 +48,7 @@ export default function RootLayout({ children }) {
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: ORG_JSON_LD }} />
         <Script id="nx-theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
         <AppStateProvider>{children}</AppStateProvider>
+        <DialogHost />
         <BootOverlay />
       </body>
     </html>

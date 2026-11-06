@@ -21,8 +21,8 @@ const schema = z.object({
   TRUST_PROXY: bool(false),
 
   // --- Sessions, cookies, CSRF ---
-  SESSION_TTL_DAYS: z.coerce.number().int().positive().max(30).default(7), // absolute lifetime of one sign-in
-  SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(120), // signed out after this long without user activity
+  SESSION_TTL_DAYS: z.coerce.number().int().positive().max(30).default(14), // absolute lifetime of one sign-in
+  SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(720), // signed out after this long without user activity
   // Cookies are Secure whenever NODE_ENV=production. Only set false to test a production image over plain http://localhost.
   COOKIE_SECURE: bool(production),
   // Signs the CSRF token to the session it was issued for (>= 32 random characters).
@@ -50,6 +50,7 @@ const schema = z.object({
   LORRIGO_API_KEY: z.string().optional(),
   LORRIGO_BASE_URL: z.string().url().default('https://app.lorrigo.com/api/v2'),
   LORRIGO_WEBHOOK_TOKEN: z.string().min(24).optional(),
+  ADMIN_API_SECRET: z.string().min(32).optional().or(z.literal('')), // enables POST /v1/admin/accounts (create a platform admin); empty = endpoint off
 
   // --- Object storage (S3-compatible; the AWS SDK also reads AWS_* itself) ---
   STORAGE_ENABLED: bool(false),
