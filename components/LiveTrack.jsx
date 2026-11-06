@@ -280,7 +280,7 @@ export default function LiveTrack({ mobile }) {
     const body = source.map((r) => [channelName(r.channel), r.order_number, r.nexgo_order_id, stamp(r.booked_at), r.payment_mode === 'cod' ? 'COD' : 'Prepaid', r.payment_mode === 'cod' ? r.cod_amount_paise / 100 : 0, r.subtotal_paise / 100, r.customer_name, r.customer_phone, r.customer_city, r.customer_pincode, r.courier_name || '', r.service_name || '', r.service_type ? modeOf(r) : '', r.awb || '', WHATSAPP[r.whatsapp_status] || 'Not sent', label(r.state), r.warehouse_name, r.product_names, r.quantity, r.total_weight_g / 1000, r.chargeable_weight_g / 1000, r.shipping_charge_paise / 100, r.last_description || '', r.last_location || '', r.last_event_at ? stamp(r.last_event_at) : '', day(r.promised_delivery_at), r.delivered_at ? stamp(r.delivered_at) : '', isDelayed(r) ? 'Yes' : 'No', (r.tags || []).join(', ')]);
     // Customer name and phone only leave the app for members with Export Customer Details.
     const safeBody = canExportCustomer ? body : body.map((row) => row.map((cell, i) => (i === 7 || i === 8 ? '' : cell)));
-    await saveRows([head, ...safeBody], `shipments-${isoDay()}`, exportFormat, 'Shipments');
+    await saveRows([head, ...safeBody], `shipments-${isoDay(new Date())}`, exportFormat, 'Shipments');
     showToast(`${source.length} shipments exported (${exportFormat === 'xlsx' ? 'Excel' : 'CSV'})`);
   };
 
@@ -314,7 +314,7 @@ export default function LiveTrack({ mobile }) {
     if (!rows.length) return showToast('There are no shipments with an AWB to list.', 'error');
     await saveRows([['#', 'Courier', 'AWB', 'Order', 'Customer', 'City', 'Pincode', 'Weight (kg)', 'Payment', 'COD to collect (INR)', 'Pickup warehouse', 'Picked up (tick)'],
       ...rows.map((r, i) => [i + 1, r.courier_name, r.awb, r.order_number, r.customer_name, r.customer_city, r.customer_pincode, Math.max(r.chargeable_weight_g || 0, r.total_weight_g || 0) / 1000, r.payment_mode === 'cod' ? 'COD' : 'Prepaid', r.payment_mode === 'cod' ? (r.cod_amount_paise || 0) / 100 : 0, r.warehouse_name, ''])],
-      `pickup-manifest-${isoDay()}`, format, 'Manifest');
+      `pickup-manifest-${isoDay(new Date())}`, format, 'Manifest');
     showToast(`Manifest for ${rows.length} shipment${rows.length === 1 ? '' : 's'} downloaded (${format === 'xlsx' ? 'Excel' : 'CSV'}).`);
   };
 
@@ -322,7 +322,7 @@ export default function LiveTrack({ mobile }) {
   const downloadFailed = async (format = 'xlsx') => {
     const source = visible.filter((r) => r.state === 'failed');
     if (!source.length) return showToast('There are no failed orders to download.', 'error');
-    await saveRows(failedSheet(source), `failed-orders-${isoDay()}`, format, 'Failed orders');
+    await saveRows(failedSheet(source), `failed-orders-${isoDay(new Date())}`, format, 'Failed orders');
     showToast(`${source.length} failed order${source.length === 1 ? '' : 's'} downloaded. Correct them and upload the file.`);
   };
   const uploadCorrected = async (file) => {

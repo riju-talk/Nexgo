@@ -25,6 +25,7 @@ export default function LiveCourierSla({ mobile }) {
   const [rows, setRows] = useState([]); const [loading, setLoading] = useState(false); const [error, setError] = useState('');
   const [form, setForm] = useState(null); // null = closed; { id?, ...fields } = open
   const [busy, setBusy] = useState(false); const [format, setFormat] = useState('csv');
+  const [showOff, setShowOff] = useState(false); // removed and switched-off policies stay in the database (breach history) but are hidden unless asked for
 
   useEffect(() => {
     apiFetch('/v1/admin/couriers').then((x) => { const list = x.items || []; setCouriers(list); if (list[0]) setCourierId(list[0].id); }).catch((e) => setError(e.message || 'Couriers could not be loaded.'));
@@ -59,7 +60,7 @@ export default function LiveCourierSla({ mobile }) {
     finally { setBusy(false); }
   };
   const toggle = async (r) => { try { await apiFetch(`/v1/admin/couriers/${courierId}/sla/${r.id}`, { method: 'PATCH', body: { isActive: !r.isActive } }); showToast(r.isActive ? 'Policy switched off' : 'Policy switched on'); load(); } catch (x) { showToast(x.message || 'Could not update the policy', 'error'); } };
-  const remove = async (r) => { if (!(await askConfirm({ title: 'Are you sure?', message: `Delete the ${zoneLabel(r.zone)} policy for ${courierName}?`, confirmLabel: 'Yes, continue', danger: true }))) return; try { await apiFetch(`/v1/admin/couriers/${courierId}/sla/${r.id}`, { method: 'DELETE' }); showToast('Policy deleted'); load(); } catch (x) { showToast(x.message || 'Could not delete the policy', 'error'); } };
+  const remove = async (r) => { if (!(await askConfirm({ title: 'Are you sure?', message: `Remove the ${zoneLabel(r.zone)} policy for ${courierName}? It stops being used. Past breach records are kept.`, confirmLabel: 'Yes, continue', danger: true }))) return; try { await apiFetch(`/v1/admin/couriers/${courierId}/sla/${r.id}`, { method: 'DELETE' }); showToast('Policy removed'); load(); } catch (x) { showToast(x.message || 'Could not delete the policy', 'error'); } };
 
   const exportAll = async () => {
     if (!rows.length) return showToast('Nothing to export.', 'error');
@@ -76,11 +77,12 @@ export default function LiveCourierSla({ mobile }) {
         <label style={{ minWidth: 220 }}><Label>Courier</Label><select aria-label="Courier" style={{ ...FIELD, width: '100%', height: 40 }} value={courierId} onChange={(e) => { setLoading(true); setCourierId(e.target.value); }}>{couriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <div style={{ flex: 1 }} />
         <select aria-label="Export format" value={format} onChange={(e) => setFormat(e.target.value)} style={{ ...FIELD, height: 38 }}>{FORMATS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: T.TEXT_SECONDARY, cursor: 'pointer' }}><input type="checkbox" checked={showOff} onChange={(e) => setShowOff(e.target.checked)} style={{ accentColor: BLUE }} />Show switched-off</label>
         <Btn onClick={exportAll}>Export policies</Btn>
         <Btn primary disabled={!courierId} onClick={() => open(null)}>+ Create policy</Btn>
       </section>
       <section style={{ ...CARD, overflow: 'hidden' }}>
-        <Table loading={loading} error={error} rows={rows} rowKey={(r) => r.id} empty={courierId ? 'No SLA policies for this courier yet. Click “Create policy” to add the first one.' : 'Add a courier first.'} minWidth={880} columns={[
+        <Table loading={loading} error={error} rows={showOff ? rows : rows.filter((r) => r.isActive)} rowKey={(r) => r.id} empty={courierId ? 'No SLA policies for this courier yet. Click “Create policy” to add the first one.' : 'Add a courier first.'} minWidth={880} columns={[
           { h: 'Zone', cell: (r) => <b>{zoneLabel(r.zone)}</b> },
           { h: 'Service type', cell: (r) => typeLabel(r.serviceType) },
           { h: 'Delivery promise', cell: (r) => `${r.promisedDays} day${r.promisedDays === 1 ? '' : 's'}` },
@@ -88,7 +90,7 @@ export default function LiveCourierSla({ mobile }) {
           { h: 'Escalation', cell: (r) => (r.escalationHours == null ? '—' : `${r.escalationHours} h`) },
           { h: 'Alerts', cell: (r) => [r.autoNotify && 'Auto', r.notifySeller && 'Seller', r.notifyAdmin && 'Admin'].filter(Boolean).join(' · ') || 'Off' },
           { h: 'Status', cell: (r) => <Pill color={r.isActive ? T.GREEN : T.TEXT_MUTED}>{r.isActive ? 'Active' : 'Off'}</Pill> },
-          { h: 'Actions', cell: (r) => <span style={{ display: 'flex', gap: 6 }}><Btn small onClick={() => open(r)}>Edit</Btn><Btn small onClick={() => toggle(r)}>{r.isActive ? 'Turn off' : 'Turn on'}</Btn><Btn small danger onClick={() => remove(r)}>Delete</Btn></span> },
+          { h: 'Actions', cell: (r) => <span style={{ display: 'flex', gap: 6 }}><Btn small onClick={() => open(r)}>Edit</Btn><Btn small onClick={() => toggle(r)}>{r.isActive ? 'Turn off' : 'Turn on'}</Btn><Btn small danger onClick={() => remove(r)}>Remove</Btn></span> },
         ]} />
       </section>
       {form && (
