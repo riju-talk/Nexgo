@@ -8,8 +8,58 @@ import { sessionCookieOptions } from '../lib/cookies.js';
 import { issueCsrfCookie } from '../lib/csrf.js';
 import { config } from '../config.js';
 import { requirePlatformAdmin } from '../lib/adminAuth.js';
+import { checkAdminOtp, sendAdminOtp } from '../lib/adminEmailOtp.js';
+import { auditAdminLogin } from '../lib/adminWriteAudit.js';
+import { hashSessionToken as hashToken } from '../lib/session.js';
 
 export async function adminMfaRoutes(app: FastifyInstance) {
+  // Step two for admins who sign in with an e-mailed code: the one-time token from the password step plus the 6-digit code opens the session.
+  // The first correct code also marks the admin's email as verified. Wrong codes are counted and the code is locked after 5 tries.
+  app.post('/v1/admin/auth/verify-otp', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const { otpToken, code } = z.object({ otpToken: z.string().min(20), code: z.string().regex(/^[0-9]{6}$/) }).parse(request.body);
+    const result = await withTransaction(async (client) => {
+      const check = await checkAdminOtp(client, otpToken, code);
+      if (!check.ok) return check;
+      if (check.master) await client.query("INSERT INTO audit_events (actor_user_id, action, target_type, target_id, request_id, metadata) VALUES ($1,'admin.master_otp_used','platform_admin',$2,$3,$4)", [check.userId, check.userId, request.id, JSON.stringify({ ip: request.ip })]);
+      const admin = (await client.query<{ role: string; full_name: string; email: string; mfa_required: boolean; totp_enrolled_at: string | null }>(
+        'SELECT pa.role, u.full_name, u.email, pa.mfa_required, pa.totp_enrolled_at FROM platform_admins pa JOIN users u ON u.id = pa.user_id WHERE pa.user_id = $1', [check.userId])).rows[0];
+      if (!admin) return { ok: false as const, reason: 'expired' as const };
+      await client.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1', [check.userId]);
+      // An admin who also has an authenticator app still has to enter that code: the e-mail code is one more step, never a replacement.
+      if (admin.mfa_required && admin.totp_enrolled_at) {
+        const mfaToken = newSessionToken();
+        await client.query("INSERT INTO admin_mfa_challenges (user_id, token_hash, expires_at) VALUES ($1,$2, now() + interval '5 minutes')", [check.userId, hashSessionToken(mfaToken)]);
+        return { ok: true as const, needsMfa: true as const, mfaToken };
+      }
+      const token = newSessionToken();
+      const created = await client.query<{ expires_at: string }>(
+        `INSERT INTO sessions (user_id, token_hash, expires_at, user_agent, ip_address)
+         VALUES ($1,$2, now() + ($3 || ' days')::interval, $4, $5) RETURNING expires_at`,
+        [check.userId, hashSessionToken(token), String(config.SESSION_TTL_DAYS), request.headers['user-agent'] ?? null, request.ip]);
+      return { ok: true as const, needsMfa: false as const, token, userId: check.userId, role: admin.role, fullName: admin.full_name, email: admin.email, expiresAt: created.rows[0].expires_at };
+    });
+    if (!result.ok) {
+      if (result.reason === 'wrong') return reply.code(401).send({ error: 'INVALID_CODE', message: 'That code is not right. Check the email and try again.' });
+      if (result.reason === 'locked') return reply.code(401).send({ error: 'CODE_LOCKED', message: 'Too many wrong codes. Go back and sign in again to get a new code.' });
+      return reply.code(401).send({ error: 'CODE_EXPIRED', message: 'This code has expired. Go back and sign in again to get a new code.' });
+    }
+    if (result.needsMfa) return reply.code(202).send({ requiresMfa: true, mfaToken: result.mfaToken });
+    reply.setCookie('nx_session', result.token, sessionCookieOptions());
+    issueCsrfCookie(reply, result.token);
+    await auditAdminLogin(request, 'success', result.email, result.userId);
+    return { userId: result.userId, fullName: result.fullName, role: result.role, expiresAt: result.expiresAt };
+  });
+
+  // Sends a new code for a sign-in that is already past the password step (the old code stops working).
+  app.post('/v1/admin/auth/resend-otp', { config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const { otpToken } = z.object({ otpToken: z.string().min(20) }).parse(request.body);
+    const row = (await db.query<{ user_id: string; email: string }>(
+      'SELECT o.user_id, u.email FROM admin_email_otps o JOIN users u ON u.id = o.user_id WHERE o.token_hash = $1', [hashToken(otpToken)])).rows[0];
+    if (!row) return reply.code(401).send({ error: 'CODE_EXPIRED', message: 'This sign-in has expired. Go back and sign in again.' });
+    const result = await sendAdminOtp(row.user_id, row.email, 'sign-in');
+    return { sent: result.sent, ...(config.NODE_ENV === 'development' ? { devCode: result.code } : {}) };
+  });
+
   // Step two of login when MFA is required and enrolled: exchange the
   // short-lived challenge + a valid code for a real session. The challenge
   // itself proves the password step already passed; it is single-use.

@@ -12,6 +12,7 @@ import { sendMail } from '../lib/mailer.js';
 import { requirePlatformAdmin, requireCommercialAdmin } from '../lib/adminAuth.js';
 import { sessionCookieOptions } from '../lib/cookies.js';
 import { auditAdminLogin } from '../lib/adminWriteAudit.js';
+import { maskEmail, startAdminOtpChallenge } from '../lib/adminEmailOtp.js';
 import { issueCsrfCookie, clearCsrfCookie } from '../lib/csrf.js';
 
 const AGGREGATOR_LABEL = (id: string) => pluginById(id)?.label ?? id;
@@ -72,8 +73,8 @@ const adminLoginInput = z.object({
 export async function adminRoutes(app: FastifyInstance) {
   app.post('/v1/admin/auth/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
     const input = adminLoginInput.parse(request.body);
-    const account = await db.query<{ user_id: string; password_hash: string; role: string; full_name: string; mfa_required: boolean; totp_enrolled_at: string | null }>(
-      `SELECT pa.user_id, u.password_hash, pa.role, u.full_name, pa.mfa_required, pa.totp_enrolled_at
+    const account = await db.query<{ user_id: string; password_hash: string; role: string; full_name: string; mfa_required: boolean; totp_enrolled_at: string | null; email_otp_required: boolean }>(
+      `SELECT pa.user_id, u.password_hash, pa.role, u.full_name, pa.mfa_required, pa.totp_enrolled_at, pa.email_otp_required
        FROM platform_admins pa JOIN users u ON u.id = pa.user_id
        WHERE u.email = $1`, [input.email.toLowerCase()],
     );
@@ -92,24 +93,11 @@ export async function adminRoutes(app: FastifyInstance) {
       await auditAdminLogin(request, 'failed', input.email, admin.user_id);
       return reply.code(401).send({ error: 'INVALID_CREDENTIALS' });
     }
-    // MFA is only enforceable once an admin has actually enrolled a device —
-    // an admin with mfa_required=true but no enrolled secret still logs in
-    // with password alone and is expected to enroll immediately after.
-    if (admin.mfa_required && admin.totp_enrolled_at) {
-      const mfaToken = newSessionToken();
-      await db.query(`INSERT INTO admin_mfa_challenges (user_id, token_hash, expires_at) VALUES ($1,$2, now() + interval '5 minutes')`, [admin.user_id, hashSessionToken(mfaToken)]);
-      return reply.code(202).send({ requiresMfa: true, mfaToken });
-    }
-    const token = newSessionToken();
-    const session = await db.query<{ expires_at: string }>(
-      `INSERT INTO sessions (user_id, token_hash, expires_at, user_agent, ip_address)
-       VALUES ($1, $2, now() + ($3 || ' days')::interval, $4, $5) RETURNING expires_at`,
-      [admin.user_id, hashSessionToken(token), String(config.SESSION_TTL_DAYS), request.headers['user-agent'] ?? null, request.ip],
-    );
-    reply.setCookie('nx_session', token, sessionCookieOptions());
-    issueCsrfCookie(reply, token);
-    await auditAdminLogin(request, 'success', input.email, admin.user_id);
-    return { userId: admin.user_id, fullName: admin.full_name, role: admin.role, expiresAt: session.rows[0].expires_at };
+    // EVERY admin sign-in needs the 6-digit code e-mailed to the admin: a correct password never opens a session by itself.
+    // The session is opened only by POST /v1/admin/auth/verify-otp (and, for admins with an authenticator app, after that by /v1/admin/auth/mfa).
+    const challenge = await startAdminOtpChallenge(admin.user_id, input.email.toLowerCase());
+    const hint = config.NODE_ENV === 'development' && challenge.code ? { devCode: challenge.code } : {}; // local development only, never in production
+    return reply.code(202).send({ requiresEmailOtp: true, otpToken: challenge.otpToken, sentTo: maskEmail(input.email.toLowerCase()), emailed: challenge.emailed, ...hint });
   });
 
   // Registered platform admins only. Always answers 202 so the form never reveals who is an admin.

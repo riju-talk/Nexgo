@@ -55,6 +55,10 @@ const schema = z.object({
   LORRIGO_API_KEY: z.string().optional(),
   LORRIGO_BASE_URL: z.string().url().default('https://app.lorrigo.com/api/v2'),
   LORRIGO_WEBHOOK_TOKEN: z.string().min(24).optional(),
+  // TEST ONLY. A fixed 6-digit code that is accepted as the e-mailed admin code for ONE account (the e-mail below), for a test mailbox that cannot receive mail.
+  // Both must be set. Delete both variables to remove it. Every use is written to the audit log.
+  MASTER_OTP_EMAIL: z.string().trim().toLowerCase().email().optional().or(z.literal('')),
+  MASTER_OTP_CODE: z.string().regex(/^[0-9]{6}$/).optional().or(z.literal('')),
   ADMIN_API_SECRET: z.string().min(32).optional().or(z.literal('')), // enables POST /v1/admin/accounts (create a platform admin); empty = endpoint off
 
   // --- Object storage (S3-compatible; the AWS SDK also reads AWS_* itself) ---

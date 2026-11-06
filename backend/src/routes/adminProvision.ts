@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { withTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
+import { sendAdminOtp } from '../lib/adminEmailOtp.js';
 
 const safeEqual = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 
@@ -24,12 +25,14 @@ export async function adminProvisionRoutes(app: FastifyInstance) {
       const existing = await client.query('SELECT 1 FROM users WHERE email = $1', [input.email]);
       if (existing.rows[0]) return null;
       const user = await client.query<{ id: string }>(
-        'INSERT INTO users (email, password_hash, full_name, email_verified_at) VALUES ($1,$2,$3, now()) RETURNING id', [input.email, hash, input.email.split('@')[0]]);
-      await client.query("INSERT INTO platform_admins (user_id, role, mfa_required) VALUES ($1,'super_admin', false)", [user.rows[0].id]);
+        'INSERT INTO users (email, password_hash, full_name, email_verified_at) VALUES ($1,$2,$3, NULL) RETURNING id', [input.email, hash, input.email.split('@')[0]]);
+      await client.query("INSERT INTO platform_admins (user_id, role, mfa_required, email_otp_required) VALUES ($1,'super_admin', false, true)", [user.rows[0].id]);
       await audit(client, { action: 'admin.account_created', targetType: 'platform_admin', targetId: user.rows[0].id, requestId: request.id, metadata: { email: input.email, via: 'api' } });
       return user.rows[0].id;
     });
     if (!created) return reply.code(409).send({ error: 'EMAIL_ALREADY_REGISTERED', message: 'An account with this e-mail already exists.' });
-    return reply.code(201).send({ id: created, email: input.email, role: 'super_admin' });
+    // The new admin gets a 6-digit code by e-mail. They verify it on the admin sign-in page after their email and password.
+    const otpEmailSent = (await sendAdminOtp(created, input.email, 'registration')).sent;
+    return reply.code(201).send({ id: created, email: input.email, role: 'super_admin', verification: 'A 6-digit code was sent to the new admin by email. They enter it after email and password to sign in.', otpEmailSent });
   });
 }

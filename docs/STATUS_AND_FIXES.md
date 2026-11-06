@@ -94,9 +94,9 @@ Date: 2026-11-06. Tested on the live site (mynexgo.com) as an admin and as a sel
 - Sellers can book and ship without KYC.
 - Reason: testing was being blocked. It will be switched on before real sellers start.
 
-**Admin accounts are verified by email.**
-- When an admin is registered through the admin API, an email check is part of it.
-- Status: in progress.
+**Every admin sign-in is verified by email.**
+- After the password, a 6-digit code goes to the admin's email, and the admin must enter it to get in.
+- Status: built. EVERY admin sign-in needs a 6-digit code sent to the admin's email. A correct password alone never opens a session. A code is also emailed when an admin is registered through the API. The code works once, lasts 10 minutes and locks after 5 wrong tries.
 
 **There is no fake payment mode.**
 - Wallet recharge works only with real Razorpay keys.
@@ -110,7 +110,7 @@ Date: 2026-11-06. Tested on the live site (mynexgo.com) as an admin and as a sel
 ## 5. Bug list from the audit report
 | Bug | Status |
 |---|---|
-| 003 Admin sign-in without a second step | Email check in progress (section 4) |
+| 003 Admin sign-in without a second step | Done for every admin: email code at each sign-in (section 4) |
 | 004 KYC does not block users | On purpose, switched off for testing (section 4) |
 | 005 Payment amount not compared with the recharge | Not changed. Waiting for the client |
 | 006 Fake payment mode | Removed |
@@ -132,7 +132,6 @@ Date: 2026-11-06. Tested on the live site (mynexgo.com) as an admin and as a sel
 - Payment amount check on recharge (bug 005).
 - Tests that one seller cannot see another seller's data (bug 012).
 - Switching KYC on again, and when.
-- Admin email check: finish and confirm how it should work.
 
 **Not built yet**
 - A second courier company through its own API (the system is ready for one).

@@ -21,6 +21,7 @@ export default function AdminLogin() {
   const [password, setPassword] = useState('');
   const [mfaToken, setMfaToken] = useState(null);
   const [mfaCode, setMfaCode] = useState('');
+  const [otp, setOtp] = useState(null); // e-mailed code step: { token, sentTo }
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -33,6 +34,7 @@ export default function AdminLogin() {
     try {
       const result = await adminApi.login(email, password);
       if (result.requiresMfa) { setMfaToken(result.mfaToken); return; }
+      if (result.requiresEmailOtp) { setOtp({ token: result.otpToken, sentTo: result.sentTo }); setNotice((result.emailed ? 'We sent a 6-digit code to ' + result.sentTo + '.' : 'The code email could not be sent. Press Resend code.') + (result.devCode ? ' (local development code: ' + result.devCode + ')' : '')); return; }
       // Signed in with the e-mailed temporary password: go straight to choosing a new one.
       if (result.mustChangePassword) { router.push(`/reset-password?token=${encodeURIComponent(result.resetToken)}&admin=1`); return; }
       nav('a-overview');
@@ -53,14 +55,24 @@ export default function AdminLogin() {
     } finally { setBusy(false); }
   }
 
+  async function resendOtp() {
+    setError(''); setNotice(''); setBusy(true);
+    try { const r = await adminApi.resendEmailOtp(otp.token); setNotice(r.sent ? 'A new code was sent to ' + otp.sentTo + '. The old one no longer works.' : 'The email could not be sent. Try again in a minute.'); }
+    catch (err) { setError(err instanceof ApiError && err.status === 429 ? 'Wait a minute before asking for another code.' : err instanceof ApiError && err.status === 401 ? err.message : 'Something went wrong. Try again.'); }
+    finally { setBusy(false); }
+  }
+
   async function submitMfa(event) {
     event.preventDefault();
     setError(''); setBusy(true);
     try {
-      await adminApi.verifyMfa(mfaToken, mfaCode);
+      if (otp) {
+        const step = await adminApi.verifyEmailOtp(otp.token, mfaCode);
+        if (step.requiresMfa) { setMfaToken(step.mfaToken); setOtp(null); setMfaCode(''); setNotice(''); return; } // authenticator-app step comes next
+      } else await adminApi.verifyMfa(mfaToken, mfaCode);
       nav('a-overview');
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 401 ? 'That code didn’t work — check the time on your authenticator app.' : 'Something went wrong. Try again.');
+      setError(otp && err instanceof ApiError && err.status === 401 ? err.message : err instanceof ApiError && err.status === 401 ? 'That code didn’t work — check the time on your authenticator app.' : 'Something went wrong. Try again.');
     } finally { setBusy(false); }
   }
   const field = {
@@ -98,18 +110,19 @@ export default function AdminLogin() {
         <div style={{ width: 'min(100%, 400px)', padding: mobile ? '29px 26px 26px' : '32px 34px 29px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow: '0 1px 1px rgba(15,23,42,.05), 0 24px 60px rgba(6,12,10,.35)', ...WHITE_CARD_TOKENS }}>
           {mobile && <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><NMark size={28} /><div style={{ fontSize: 14, fontWeight: 800, letterSpacing: '.13em', color: T.TEXT }}>NEXGO</div></div>}
           <div style={{ marginTop: mobile ? 25 : 0 }}>
-            <div style={{ color: T.TEXT, fontSize: 23, lineHeight: 1.12, letterSpacing: '-.02em', fontWeight: 750 }}>{mfaToken ? 'Verification code' : 'Admin sign in'}</div>
-            <p style={{ margin: '6px 0 0', color: T.TEXT_SECONDARY, fontSize: 13, lineHeight: 1.55 }}>{mfaToken ? 'Enter the 6-digit code from your authenticator app.' : 'Access the NEXGO platform operations workspace.'}</p>
+            <div style={{ color: T.TEXT, fontSize: 23, lineHeight: 1.12, letterSpacing: '-.02em', fontWeight: 750 }}>{mfaToken || otp ? 'Verification code' : 'Admin sign in'}</div>
+            <p style={{ margin: '6px 0 0', color: T.TEXT_SECONDARY, fontSize: 13, lineHeight: 1.55 }}>{otp ? 'Enter the 6-digit code we emailed you.' : mfaToken ? 'Enter the 6-digit code from your authenticator app.' : 'Access the NEXGO platform operations workspace.'}</p>
           </div>
           {error && <div style={{ marginTop: 15, padding: '10px 12px', borderRadius: 8, background: 'rgba(178,58,43,.1)', border: '1px solid rgba(178,58,43,.25)', color: '#B23A2B', fontSize: 12.5, fontWeight: 600 }}>{error}</div>}
           
           {notice && <div role="status" style={{ marginTop: 15, padding: '10px 12px', borderRadius: 8, background: 'rgba(31,138,76,.1)', border: '1px solid rgba(31,138,76,.25)', color: '#1F6B3D', fontSize: 12.5, lineHeight: 1.5 }}>{notice}</div>}
 
-          {mfaToken ? (
+          {mfaToken || otp ? (
             <form onSubmit={submitMfa} style={{ display: 'grid', gap: 15, marginTop: 20 }}>
               <label style={{ display: 'grid', gap: 6 }}><span style={{ color: T.TEXT_LABEL, fontSize: 12.5, fontWeight: 650 }}>6-digit code <span style={{ color: T.RED }}>*</span></span><input aria-label="Verification code" value={mfaCode} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="000000" autoFocus autoComplete="one-time-code" style={{ ...field, fontVariantNumeric: 'tabular-nums', letterSpacing: '.3em', textAlign: 'center' }} /></label>
               <motion.button whileTap={{ scale: .98 }} type="submit" disabled={busy || mfaCode.length !== 6} style={{ height: 41, marginTop: 2, border: 0, borderRadius: 8, background: '#1a6aa3', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy || mfaCode.length !== 6 ? .6 : 1, fontSize: 14, fontWeight: 700, boxShadow: '0 9px 18px rgba(15,31,61,.2)' }}>{busy ? 'Verifying…' : 'Verify and sign in'}</motion.button>
-              <div onClick={() => { setMfaToken(null); setMfaCode(''); setError(''); }} style={{ textAlign: 'center', color: T.TEXT_SECONDARY, fontSize: 12, cursor: 'pointer' }}>← Back to password</div>
+              {otp && <button type="button" onClick={resendOtp} disabled={busy} style={{ border: 0, background: 'transparent', color: '#1a6aa3', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Resend code</button>}
+              <div onClick={() => { setMfaToken(null); setOtp(null); setMfaCode(''); setError(''); setNotice(''); }} style={{ textAlign: 'center', color: T.TEXT_SECONDARY, fontSize: 12, cursor: 'pointer' }}>← Back to password</div>
             </form>
           ) : (
             <form onSubmit={submitPassword} style={{ display: 'grid', gap: 15, marginTop: 20 }}>
