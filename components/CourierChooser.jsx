@@ -1,7 +1,7 @@
 'use client';
 
 import { assignInBatches } from '@/lib/assignBatches';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
@@ -20,6 +20,36 @@ export async function assignCouriers(orderIds, showToast, reload, courier) {
   const firstError = results.find((x) => !x.ok)?.error || '';
   showToast(failed ? `${assigned} assigned, ${failed} not assigned: ${firstError}` : `${assigned} order${assigned === 1 ? '' : 's'} assigned to a courier`, failed ? 'error' : 'success');
   await reload();
+}
+
+// Shown on Track while a queued assignment batch is still being booked in the background (also after a page refresh).
+export function ActiveAssignBanner({ onFinished }) {
+  const [batch, setBatch] = useState(null);
+  const had = useRef(false);
+  useEffect(() => {
+    let live = true; let timer;
+    const tick = async () => {
+      try {
+        const r = await apiFetch('/v1/shipments/assign-batch/active');
+        if (!live) return;
+        if (had.current && !r.batch) onFinished?.(); // it just finished: refresh the list
+        had.current = !!r.batch;
+        setBatch(r.batch);
+      } catch { /* the next poll tries again */ }
+      if (live) timer = setTimeout(tick, 3000);
+    };
+    tick();
+    return () => { live = false; clearTimeout(timer); };
+  }, [onFinished]);
+  if (!batch) return null;
+  const done = batch.assigned + batch.failed;
+  return (
+    <div role="status" style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, background: '#EAF1FF', border: '1px solid #BBD0FF', color: '#1E3A8A', fontSize: 13, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+      <b>Assigning couriers in the background</b>
+      <span>{done} of {batch.total} done{batch.failed ? ` · ${batch.failed} could not be assigned` : ''}. You can keep working or leave this page.</span>
+      <span style={{ flex: '0 0 120px', height: 6, borderRadius: 3, background: '#D4E2FF' }}><span style={{ display: 'block', height: '100%', width: `${Math.round((done / batch.total) * 100)}%`, borderRadius: 3, background: '#3877fc' }} /></span>
+    </div>
+  );
 }
 
 const Overlay = ({ onClose, children }) => (

@@ -153,6 +153,12 @@ export default function AdminDashboard({ mobile, phone }) {
         </section>
 
         {live.trackingHealth && <TrackingHealth t={live.trackingHealth} />}
+        {live.assignQueue && (live.assignQueue.queued + live.assignQueue.running > 0 || live.assignQueue.p95Ms) && (
+          <section role="status" style={{ marginTop: 10, padding: '9px 16px', borderRadius: 10, border: '1px solid var(--ops-border)', background: 'var(--ops-surface)', color: '#26324A', fontSize: 13 }}>
+            <b>Courier assignment queue</b>{' · '}{live.assignQueue.queued} waiting · {live.assignQueue.running} booking now{live.assignQueue.p95Ms ? ` · typical booking ${(live.assignQueue.p95Ms / 1000).toFixed(1)} s (slowest 5%)` : ''}
+            {live.assignQueue.queued > 0 && live.assignQueue.oldestWaitSeconds > 120 && <div style={{ marginTop: 3, color: '#9B6500' }}>The oldest order has waited {Math.round(live.assignQueue.oldestWaitSeconds / 60)} min. If this keeps growing, check that the worker container is running.</div>}
+          </section>
+        )}
 
         <section style={{ display: 'grid', gridTemplateColumns: cols(2), gap: 12, marginTop: 14 }}>
           <Card>

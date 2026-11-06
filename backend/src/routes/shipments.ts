@@ -34,7 +34,7 @@ export function publicShipment<T extends Record<string, unknown>>(row: T): Omit<
 }
 
 // One booking, inside the caller's seller transaction (wallet-checked, idempotent on the key).
-async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
+export async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
     const previous = await client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]); if (previous.rows[0]) return { shipment: previous.rows[0], replay: true };
     const lane = await client.query<{ wc: string; ws: string; cc: string; cs: string }>(`SELECT w.city AS wc, w.state AS ws, COALESCE(p.city, c.city) AS cc, COALESCE(p.state, c.state) AS cs FROM orders o JOIN warehouses w ON w.id=o.warehouse_id JOIN customers c ON c.id=o.customer_id LEFT JOIN pincodes p ON p.pincode=c.pincode WHERE o.id=$1 AND o.seller_id=$2`, [input.orderId, p.sellerId]);
     const zone = lane.rows[0] ? laneZone({ city: lane.rows[0].wc, state: lane.rows[0].ws }, { city: lane.rows[0].cc, state: lane.rows[0].cs }) : 'rest_of_india';
@@ -85,6 +85,63 @@ const READY_SQL = `(char_length(btrim(c.full_name)) >= 2 AND right(regexp_replac
                 AND c.pincode ~ '^[0-9]{6}$' AND COALESCE(c.city, '') <> '' AND COALESCE(c.state, '') <> '' AND o.total_weight_g > 0
                 AND o.package_length_mm IS NOT NULL AND o.package_width_mm IS NOT NULL AND o.package_height_mm IS NOT NULL
                 AND (o.payment_mode <> 'cod' OR o.cod_amount_paise > 0))`;
+
+/** The seller's courier priority list (Settings > Courier rules) as a ranking function: lower = tried first; unlisted couriers last. */
+export type CourierRank = (name: string, code: string) => number;
+export async function loadCourierRank(sellerId: string): Promise<CourierRank> {
+    const prefs = await withSellerTransaction(sellerId, async (client) => (await client.query<{ rules: Record<string, unknown> | null }>(`SELECT preferences->'courier-rules' AS rules FROM seller_preferences WHERE seller_id = $1`, [sellerId])).rows[0]?.rules ?? {});
+    const priority = [1, 2, 3, 4, 5, 6].map((n) => String(prefs[`priority${n}`] ?? '').toLowerCase().replace(/[^a-z]/g, '')).filter((x) => x && x !== 'notset');
+    return (name: string, code: string) => { const key = `${name}${code}`.toLowerCase().replace(/[^a-z]/g, ''); const i = priority.findIndex((x) => key.includes(x) || (x === 'xb' && key.includes('xpressbees'))); return i < 0 ? priority.length : i; };
+}
+
+export type AssignOutcome = { ok: boolean; awb?: string; courier?: string; error?: string; ms: number };
+
+/**
+ * Books ONE order: tries the seller's couriers in priority order (or only the chosen one) and stops at the first that books.
+ * Used by POST /v1/shipments/auto-assign and by the background assignment worker, so both behave identically.
+ * Never throws: a failure comes back as { ok: false, error }.
+ */
+export async function assignOneOrder(p: { userId: string; sellerId: string; role: string; permissions: string[] | null }, requestId: string, orderId: string, opts: { providerCode?: string; serviceCode?: string; rank: CourierRank }): Promise<AssignOutcome> {
+  const { providerCode, serviceCode, rank } = opts;
+  const refusals: { lane: LaneRefusal; reason: string }[] = [];
+  const started = Date.now();
+  try {
+    const out = await withSellerTransaction(p.sellerId, async (client) => {
+        const order = await client.query<{ state: string }>('SELECT state::text FROM orders WHERE id = $1 AND seller_id = $2 FOR UPDATE', [orderId, p.sellerId]);
+        if (!order.rows[0]) return { ok: false, error: 'Order not found' };
+        if (order.rows[0].state === 'booked') return { ok: false, error: 'Already assigned to a courier' };
+        if (!['new', 'ready_to_ship'].includes(order.rows[0].state)) return { ok: false, error: `Order is ${order.rows[0].state}` };
+        if (order.rows[0].state === 'new') await client.query(`UPDATE orders SET state = 'ready_to_ship', updated_at = now() WHERE id = $1`, [orderId]);
+        const services = await client.query<{ pcode: string; pname: string; scode: string }>(
+          `SELECT cp.code AS pcode, cp.name AS pname, cs.code AS scode FROM seller_courier_access sca JOIN courier_services cs ON cs.id = sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id = cs.provider_id AND cp.integration_state = 'live' WHERE sca.seller_id = $1 ORDER BY cp.name, cs.display_name`, [p.sellerId]);
+        const ordered = services.rows.filter((c) => !providerCode || (c.pcode === providerCode && (!serviceCode || c.scode === serviceCode))).sort((a, b) => rank(a.pname, a.pcode) - rank(b.pname, b.pcode));
+        if (!ordered.length) return { ok: false, error: providerCode ? 'The courier you chose is not enabled for this account' : 'No courier is enabled for this account' };
+        let lastError = 'No serviceable courier for this order';
+        for (const c of ordered) {
+          await client.query('SAVEPOINT try_courier');
+          try {
+            const booked = await bookInTx(client, p, requestId, { orderId, providerCode: c.pcode, serviceCode: c.scode }, `auto-assign:${orderId}:${c.pcode}:${c.scode}`);
+            await client.query('RELEASE SAVEPOINT try_courier');
+            return { ok: true, awb: booked.shipment.awb as string, courier: c.pname };
+          } catch (e) {
+            await client.query('ROLLBACK TO SAVEPOINT try_courier');
+            const status = (e as { statusCode?: number }).statusCode;
+            lastError = (e as Error).message || lastError;
+            const lane = laneRefusalOf(e); if (lane) refusals.push({ lane, reason: lastError });
+            if (status === 402) return { ok: false, error: lastError }; // wallet short: no point trying other couriers
+            if (status !== 422) throw e;
+          }
+        }
+        return { ok: false, error: lastError };
+    });
+    if (out.ok && out.awb) await pushTrackingForShipment(p.sellerId, orderId, out.awb);
+    return { ...out, ms: Date.now() - started };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'Could not assign a courier', ms: Date.now() - started };
+  } finally {
+    await rememberLaneRefusals(refusals); // after the rollback, so the refusal survives
+  }
+}
 
 export async function shipmentRoutes(app: FastifyInstance) {
   // Seller shipment register: everything the Track page filters, groups and exports on, in one round trip.
@@ -212,46 +269,12 @@ export async function shipmentRoutes(app: FastifyInstance) {
     // providerCode (+ optional serviceCode): the seller picked one courier for all these orders; nothing else is tried. Without it, the priority list decides.
     const { orderIds, providerCode, serviceCode } = z.object({ orderIds: z.array(uuid).min(1).max(100), providerCode: z.string().regex(/^[a-z0-9-]{2,64}$/).optional(), serviceCode: z.string().regex(/^[a-z0-9-]{2,64}$/).optional() }).parse(request.body);
     const p = principal(request);
-    const prefs = await withSellerTransaction(p.sellerId, async (client) => (await client.query<{ rules: Record<string, unknown> | null }>(`SELECT preferences->'courier-rules' AS rules FROM seller_preferences WHERE seller_id = $1`, [p.sellerId])).rows[0]?.rules ?? {});
-    const priority = [1, 2, 3, 4, 5, 6].map((n) => String(prefs[`priority${n}`] ?? '').toLowerCase().replace(/[^a-z]/g, '')).filter((x) => x && x !== 'notset');
-    const rank = (name: string, code: string) => { const key = `${name}${code}`.toLowerCase().replace(/[^a-z]/g, ''); const i = priority.findIndex((x) => key.includes(x) || (x === 'xb' && key.includes('xpressbees'))); return i < 0 ? priority.length : i; };
+    const rank = await loadCourierRank(p.sellerId);
     const results: { orderId: string; ok: boolean; awb?: string; courier?: string; error?: string }[] = [];
-    const refusals: { lane: LaneRefusal; reason: string }[] = [];
     for (const orderId of orderIds) {
-      try {
-        const out = await withSellerTransaction(p.sellerId, async (client) => {
-          const order = await client.query<{ state: string }>('SELECT state::text FROM orders WHERE id = $1 AND seller_id = $2 FOR UPDATE', [orderId, p.sellerId]);
-          if (!order.rows[0]) return { ok: false, error: 'Order not found' };
-          if (order.rows[0].state === 'booked') return { ok: false, error: 'Already assigned to a courier' };
-          if (!['new', 'ready_to_ship'].includes(order.rows[0].state)) return { ok: false, error: `Order is ${order.rows[0].state}` };
-          if (order.rows[0].state === 'new') await client.query(`UPDATE orders SET state = 'ready_to_ship', updated_at = now() WHERE id = $1`, [orderId]);
-          const services = await client.query<{ pcode: string; pname: string; scode: string }>(
-            `SELECT cp.code AS pcode, cp.name AS pname, cs.code AS scode FROM seller_courier_access sca JOIN courier_services cs ON cs.id = sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id = cs.provider_id AND cp.integration_state = 'live' WHERE sca.seller_id = $1 ORDER BY cp.name, cs.display_name`, [p.sellerId]);
-          const ordered = services.rows.filter((c) => !providerCode || (c.pcode === providerCode && (!serviceCode || c.scode === serviceCode))).sort((a, b) => rank(a.pname, a.pcode) - rank(b.pname, b.pcode));
-          if (!ordered.length) return { ok: false, error: providerCode ? 'The courier you chose is not enabled for this account' : 'No courier is enabled for this account' };
-          let lastError = 'No serviceable courier for this order';
-          for (const c of ordered) {
-            await client.query('SAVEPOINT try_courier');
-            try {
-              const booked = await bookInTx(client, p, request.id, { orderId, providerCode: c.pcode, serviceCode: c.scode }, `auto-assign:${orderId}:${c.pcode}:${c.scode}`);
-              await client.query('RELEASE SAVEPOINT try_courier');
-              return { ok: true, awb: booked.shipment.awb as string, courier: c.pname };
-            } catch (e) {
-              await client.query('ROLLBACK TO SAVEPOINT try_courier');
-              const status = (e as { statusCode?: number }).statusCode;
-              lastError = (e as Error).message || lastError;
-              const lane = laneRefusalOf(e); if (lane) refusals.push({ lane, reason: lastError });
-              if (status === 402) return { ok: false, error: lastError }; // wallet short: no point trying other couriers
-              if (status !== 422) throw e;
-            }
-          }
-          return { ok: false, error: lastError };
-        });
-        if (out.ok && out.awb) await pushTrackingForShipment(p.sellerId, orderId, out.awb);
-        results.push({ orderId, ...out });
-      } catch (e) { results.push({ orderId, ok: false, error: (e as Error).message || 'Could not assign a courier' }); }
+      const { ms: _ms, ...out } = await assignOneOrder(p, request.id, orderId, { providerCode, serviceCode, rank });
+      results.push({ orderId, ...out });
     }
-    await rememberLaneRefusals(refusals);
     return { results, assigned: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };
   });
   // Cancel before pickup: the courier booking is cancelled and the exact wallet debit taken at booking is credited back (once).

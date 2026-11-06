@@ -69,11 +69,14 @@ export class LorrigoAdapter implements CourierAdapter {
   private deadline = 0;
   private async call(method: 'GET' | 'POST', path: string, body?: unknown, attempt = 0): Promise<unknown> {
     if (this.deadline && Date.now() > this.deadline) throw new LorrigoError('Lorrigo is responding too slowly. Nothing was charged; try again in a moment.', 502);
+    const t0 = Date.now();
     let res: Response;
     try {
       res = await fetch(`${this.baseUrl}${path}`, { method, headers: { authorization: `Bearer ${this.apiKey}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(9_000) });
     } catch { throw new LorrigoError('Lorrigo did not respond in time. Try again.', 502); }
     const text = await res.text(); let json: unknown = null; try { json = text ? JSON.parse(text) : null; } catch { /* an HTML error page from a gateway */ }
+    // One line per aggregator call (method, path with ids masked, status, milliseconds): shows which step makes bookings slow.
+    console.log(JSON.stringify({ evt: 'aggregator.call', aggregator: 'lorrigo', method, path: path.split('?')[0].replace(/[A-Za-z0-9_-]{16,}/g, ':id'), status: res.status, ms: Date.now() - t0 }));
     if (res.ok) return json;
     if (res.status === 429) {
       if (attempt < 1) { await sleep(Math.min(2000, (Number(res.headers.get('retry-after')) || 1) * 1000)); return this.call(method, path, body, attempt + 1); }
@@ -135,7 +138,7 @@ export class LorrigoAdapter implements CourierAdapter {
   }
 
   /** Creates the Lorrigo order; if this exact order was already sent (an earlier courier attempt failed), the existing one is reused. */
-  private async createOrReuseOrder(d: BookingDetails, request: CourierBookingRequest, hubId: string): Promise<{ id: string; hubId: string }> {
+  private async createOrReuseOrder(d: BookingDetails, request: CourierBookingRequest, hubId: string): Promise<{ id: string; hubId: string; reused?: boolean }> {
     const cod = request.paymentMode === 'cod'; const ref = this.orderRef(d, request);
     const body = (hub: string) => ({
       pickupAddressId: hub, orderId: ref, orderChannel: 'CUSTOM', orderType: 'domestic',
@@ -158,7 +161,7 @@ export class LorrigoAdapter implements CourierAdapter {
       if (e.upstreamStatus === 409) { // "Order Id already exists": reuse it
         const id = await this.findOrderIdByRef(ref);
         if (!id) throw e; // "already exists" but we cannot find it: surface Lorrigo's message
-        return { id, hubId };
+        return { id, hubId, reused: true };
       }
       // The remembered pickup address was deleted or deactivated on Lorrigo's side: make (or find) a fresh one and retry once.
       if (d.pickupHubId && e.upstreamStatus === 400 && /hub|pickup/i.test(e.message)) { const fresh = await this.ensureHub(d.warehouse); if (fresh !== hubId) return { id: await create(fresh), hubId: fresh }; }
@@ -207,7 +210,8 @@ export class LorrigoAdapter implements CourierAdapter {
     const result = (awb: string, id: string | null, routing: string | null = null): CourierBookingResult => ({ providerShipmentId: id ?? order.id, awb, labelAvailable: true, routingCode: routing ?? undefined, pickupHubId: order.hubId !== d.pickupHubId ? order.hubId : undefined });
 
     // An earlier attempt may already have shipped this order (our side rolled back, or the response was lost): reuse it, never ship twice.
-    const earlier = await this.readShipment(order.id); if (earlier.awb) return result(earlier.awb, earlier.id, earlier.routing);
+    // Only an order that already existed can have shipped before; a freshly created one cannot, so the extra lookup is skipped (one call fewer per booking).
+    const earlier = order.reused ? await this.readShipment(order.id) : { id: null, awb: null, routing: null }; if (earlier.awb) return result(earlier.awb, earlier.id, earlier.routing);
     await this.assertServiceable(order.id, d.externalServiceId);
     let shipment: unknown = null;
     try {

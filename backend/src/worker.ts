@@ -3,6 +3,7 @@ import PDFDocument from 'pdfkit';
 import { storage } from './lib/storage.js';
 import { config } from './config.js';
 import { loadChannel, syncChannel } from './lib/shopify.js';
+import { startAssignProcessor } from './lib/assignQueue.js';
 
 type Job = { id: string; seller_id: string | null; job_type: string; payload: Record<string, unknown>; attempts: number };
 
@@ -116,7 +117,8 @@ async function tick() {
 
 const interval = setInterval(() => { void tick(); }, 1000);
 void tick();
+const stopAssign = startAssignProcessor({ error: (o, m) => console.error(m ?? 'assign queue', o), info: (m) => console.log(m) });
 console.log('NEXGO worker started');
 
-const shutdown = async () => { clearInterval(interval); await db.end(); process.exit(0); };
+const shutdown = async () => { clearInterval(interval); stopAssign(); await db.end(); process.exit(0); };
 process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown);

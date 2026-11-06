@@ -10,7 +10,7 @@ import * as T from '@/lib/theme';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import { diagnose, failedSheet, readCorrections, toPatch } from '@/lib/failedOrders';
 import { Pager } from './Kit';
-import CourierChooser from './CourierChooser';
+import CourierChooser, { ActiveAssignBanner } from './CourierChooser';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 12, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 10px 28px rgba(20,44,66,.055)' };
 const FIELD = { height: 36, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
@@ -397,6 +397,7 @@ export default function LiveTrack({ mobile }) {
 
   return (
     <div style={{ padding: pad, position: 'relative' }}>
+      <ActiveAssignBanner onFinished={load} />
       <div style={{ ...CARD, padding: 12, marginBottom: 12, boxShadow: 'none', background: 'var(--nx-surface-soft)' }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <input aria-label="Search shipments" value={f.q} onChange={set('q')} placeholder="Search AWB, order, customer, phone, pincode or product" style={{ ...FIELD, flex: '1 1 280px', height: 38 }} />

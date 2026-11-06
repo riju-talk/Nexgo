@@ -157,11 +157,18 @@ export async function analyticsRoutes(app: FastifyInstance) {
          LEFT JOIN LATERAL (SELECT u.email FROM seller_memberships m JOIN users u ON u.id = m.user_id WHERE m.seller_id = s.id ORDER BY (m.role = 'owner') DESC, m.created_at LIMIT 1) poc ON true
          ORDER BY s.created_at DESC LIMIT 6`),
     ]);
+    // Courier assignment queue: how many bookings wait, run, and how long a recent booking took (95th percentile).
+    const queue = await db.query<{ queued: number; running: number; p95: number | null; oldest: number | null }>(
+      `SELECT count(*) FILTER (WHERE state = 'queued')::int AS queued, count(*) FILTER (WHERE state = 'running')::int AS running,
+              (SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)::int FROM (SELECT duration_ms FROM assign_batch_items WHERE state IN ('ok','failed') AND duration_ms IS NOT NULL ORDER BY finished_at DESC LIMIT 200) r) AS p95,
+              (EXTRACT(EPOCH FROM now() - min(b.created_at) FILTER (WHERE i.state = 'queued')))::int AS oldest
+       FROM assign_batch_items i JOIN assign_batches b ON b.id = i.batch_id WHERE i.state IN ('queued','running')`);
     return {
       ...data, activeSellers: sellers.rows[0].value, ndrOpen: ndr.rows[0].value, kycPending: kyc.rows[0].value, codPendingPaise: Number(cod.rows[0].value),
       daily: daily.rows.map((r) => ({ day: r.day, prepaid: r.prepaid, cod: r.cod })),
       pickupPending: { total: pickupTotal.rows[0].total, sellers: pickups.rows.map((r) => ({ id: r.id, name: r.legal_name, code: r.nexgo_code, count: r.n, overdue: r.overdue })) },
       recentSignups: signups.rows,
+      assignQueue: { queued: queue.rows[0]?.queued ?? 0, running: queue.rows[0]?.running ?? 0, p95Ms: queue.rows[0]?.p95 ?? null, oldestWaitSeconds: queue.rows[0]?.oldest ?? null },
       trackingHealth: { lastWebhookAt: tracking.rows[0].last_at, webhooks24h: tracking.rows[0].last24, stuckBooked: tracking.rows[0].stuck, liveShipments: tracking.rows[0].live },
     };
   });
