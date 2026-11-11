@@ -195,6 +195,30 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
   }
 }
 
+// Cancel before pickup: the courier booking is cancelled and the exact wallet debit taken at booking is credited back (once).
+export const cancelShipment = async (p: ReturnType<typeof principal>, shipmentId: string, requestId: string) => {
+  const outcome = await withSellerTransaction(p.sellerId, async (client) => {
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
+    const found = await client.query<{ id: string; awb: string; state: string; order_id: string; code: string; provider_shipment_id: string | null; aggregator: string | null }>(`SELECT s.id, s.awb, s.provider_shipment_id, s.state::text, s.order_id, cp.code, cp.aggregator FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.id = $1 AND s.seller_id = $2 FOR UPDATE OF s`, [shipmentId, p.sellerId]);
+    const row = found.rows[0];
+    if (!row) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 });
+    if (row.state === 'cancelled') return { id: row.id, state: 'cancelled', refundedPaise: 0, replay: true };
+    if (!['booked', 'pickup_pending', 'pickup_scheduled'].includes(row.state)) throw Object.assign(new Error('Only shipments that have not been picked up can be cancelled'), { statusCode: 409 });
+    await courierAdapter(row.aggregator, row.code).cancel(row.provider_shipment_id ?? row.awb);
+    await client.query(`UPDATE shipments SET state = 'cancelled', cancelled_at = now(), updated_at = now() WHERE id = $1`, [row.id]);
+    await client.query(`UPDATE orders SET state = 'cancelled', updated_at = now() WHERE id = $1`, [row.order_id]);
+    await client.query(`INSERT INTO shipment_events (shipment_id, state, occurred_at, description, source) VALUES ($1, 'cancelled', now(), 'Shipment cancelled by seller', 'manual')`, [row.id]);
+    const debit = await client.query<{ amount_paise: string }>(`SELECT COALESCE(SUM(amount_paise), 0)::bigint AS amount_paise FROM wallet_entries WHERE seller_id = $1 AND reference_type = 'shipment' AND reference_id = $2 AND entry_type = 'debit'`, [p.sellerId, row.id]);
+    const refund = Number(debit.rows[0].amount_paise);
+    if (refund > 0) await client.query(`INSERT INTO wallet_entries (seller_id, entry_type, amount_paise, reference_type, reference_id, idempotency_key, description) VALUES ($1, 'credit', $2, 'shipment_cancel', $3, $4, $5) ON CONFLICT DO NOTHING`, [p.sellerId, refund, row.id, `shipment-cancel:${row.id}`, `Refund for cancelled shipment ${row.awb}`]);
+    await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'shipment.cancelled', targetType: 'shipment', targetId: row.id, requestId, metadata: { awb: row.awb, refundedPaise: refund } });
+    return { id: row.id, state: 'cancelled', refundedPaise: refund };
+  });
+  invalidateMetrics(p.sellerId);
+  if (!('replay' in outcome)) await cancelTracking(p.sellerId, shipmentId); // the storefront must not keep showing the order as fulfilled
+  return outcome;
+};
+
 export async function shipmentRoutes(app: FastifyInstance) {
   // Seller shipment register: everything the Track page filters, groups and exports on, in one round trip.
   app.get('/v1/shipments', { preHandler: requireSeller }, async (request) => {
@@ -331,29 +355,6 @@ export async function shipmentRoutes(app: FastifyInstance) {
     }
     return { results, assigned: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };
   });
-  // Cancel before pickup: the courier booking is cancelled and the exact wallet debit taken at booking is credited back (once).
-  const cancelShipment = async (p: ReturnType<typeof principal>, shipmentId: string, requestId: string) => {
-    const outcome = await withSellerTransaction(p.sellerId, async (client) => {
-      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
-      const found = await client.query<{ id: string; awb: string; state: string; order_id: string; code: string; provider_shipment_id: string | null; aggregator: string | null }>(`SELECT s.id, s.awb, s.provider_shipment_id, s.state::text, s.order_id, cp.code, cp.aggregator FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.id = $1 AND s.seller_id = $2 FOR UPDATE OF s`, [shipmentId, p.sellerId]);
-      const row = found.rows[0];
-      if (!row) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 });
-      if (row.state === 'cancelled') return { id: row.id, state: 'cancelled', refundedPaise: 0, replay: true };
-      if (!['booked', 'pickup_pending', 'pickup_scheduled'].includes(row.state)) throw Object.assign(new Error('Only shipments that have not been picked up can be cancelled'), { statusCode: 409 });
-      await courierAdapter(row.aggregator, row.code).cancel(row.provider_shipment_id ?? row.awb);
-      await client.query(`UPDATE shipments SET state = 'cancelled', cancelled_at = now(), updated_at = now() WHERE id = $1`, [row.id]);
-      await client.query(`UPDATE orders SET state = 'cancelled', updated_at = now() WHERE id = $1`, [row.order_id]);
-      await client.query(`INSERT INTO shipment_events (shipment_id, state, occurred_at, description, source) VALUES ($1, 'cancelled', now(), 'Shipment cancelled by seller', 'manual')`, [row.id]);
-      const debit = await client.query<{ amount_paise: string }>(`SELECT COALESCE(SUM(amount_paise), 0)::bigint AS amount_paise FROM wallet_entries WHERE seller_id = $1 AND reference_type = 'shipment' AND reference_id = $2 AND entry_type = 'debit'`, [p.sellerId, row.id]);
-      const refund = Number(debit.rows[0].amount_paise);
-      if (refund > 0) await client.query(`INSERT INTO wallet_entries (seller_id, entry_type, amount_paise, reference_type, reference_id, idempotency_key, description) VALUES ($1, 'credit', $2, 'shipment_cancel', $3, $4, $5) ON CONFLICT DO NOTHING`, [p.sellerId, refund, row.id, `shipment-cancel:${row.id}`, `Refund for cancelled shipment ${row.awb}`]);
-      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'shipment.cancelled', targetType: 'shipment', targetId: row.id, requestId, metadata: { awb: row.awb, refundedPaise: refund } });
-      return { id: row.id, state: 'cancelled', refundedPaise: refund };
-    });
-    invalidateMetrics(p.sellerId);
-    if (!('replay' in outcome)) await cancelTracking(p.sellerId, shipmentId); // the storefront must not keep showing the order as fulfilled
-    return outcome;
-  };
   app.post('/v1/shipments/:shipmentId/cancel', { preHandler: requireSeller }, async (request) => cancelShipment(principal(request), uuid.parse((request.params as { shipmentId: string }).shipmentId), request.id));
   // Up to 50 at once. Each cancel is its own transaction (a courier refusing one never undoes the others) and they run one after another because the
   // wallet lock serialises them anyway; a 22 s budget keeps it inside the 30 s function limit, and whatever is left is reported so it can be retried.

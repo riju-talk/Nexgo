@@ -26,6 +26,8 @@ const schema = z.object({
   // Background courier assignment (lib/assignQueue.ts): bookings in flight per process, and per seller.
   ASSIGN_WORKERS: z.coerce.number().int().min(1).max(64).default(20),
   ASSIGN_PER_SELLER: z.coerce.number().int().min(1).max(16).default(8),
+  CANCEL_WORKERS: z.coerce.number().int().min(1).max(32).default(6),
+  CANCEL_PER_SELLER: z.coerce.number().int().min(1).max(8).default(2),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().max(30).default(14), // absolute lifetime of one sign-in
   SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(720), // signed out after this long without user activity
   // Cookies are Secure whenever NODE_ENV=production. Only set false to test a production image over plain http://localhost.

@@ -4,6 +4,7 @@ import { storage } from './lib/storage.js';
 import { config } from './config.js';
 import { loadChannel, syncChannel } from './lib/shopify.js';
 import { startAssignProcessor } from './lib/assignQueue.js';
+import { startCancelProcessor } from './lib/cancelQueue.js';
 import { startCredentialRefresh } from './couriers/credentials.js';
 import { startTrackingPoll } from './lib/trackingPoll.js';
 
@@ -122,7 +123,8 @@ void tick();
 const stopCredentials = startCredentialRefresh({ error: (o, m) => console.error(m ?? 'aggregator credentials', o) });
 const stopPoll = startTrackingPoll({ error: (o, m) => console.error(m ?? 'tracking poll', o), warn: (o, m) => console.warn(m, o), info: (m) => console.log(m) });
 const stopAssign = startAssignProcessor({ error: (o, m) => console.error(m ?? 'assign queue', o), info: (m) => console.log(m) });
+const stopCancel = startCancelProcessor({ error: (o, m) => console.error(m ?? 'cancel queue', o), info: (m) => console.log(m) });
 console.log('NEXGO worker started');
 
-const shutdown = async () => { clearInterval(interval); stopAssign(); stopCredentials(); stopPoll(); await db.end(); process.exit(0); };
+const shutdown = async () => { clearInterval(interval); stopAssign(); stopCancel(); stopCredentials(); stopPoll(); await db.end(); process.exit(0); };
 process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown);

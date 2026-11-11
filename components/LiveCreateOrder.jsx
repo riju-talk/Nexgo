@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, ApiError, bookingErrorToast } from '@/lib/api';
+import { Spinner } from './Kit';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
@@ -346,7 +347,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
           {quoteMode === 'cod' && <SummaryRow label="Collect on delivery" value={inr(Math.max(totals.total, 0))} />}
           {totals.discount > totals.gross && <small style={{ display: 'block', color: T.RED, fontSize: 11.5 }}>Discount is larger than the order value.</small>}
           <button disabled={busy || !warehouse || !!placed} type="submit" style={{ marginTop: 12, width: '100%', height: 42, border: 0, borderRadius: 9, background: T.NAVY, color: '#fff', fontWeight: 800, fontSize: 14, cursor: busy ? 'wait' : 'pointer' }}>
-            {busy ? 'Creating…' : placed ? 'Order created ✓' : isReverse ? 'Create return pickup' : 'Create order'}
+            {busy ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}><Spinner size={14} />Creating…</span> : placed ? 'Order created ✓' : isReverse ? 'Create return pickup' : 'Create order'}
           </button>
           {placed && (
             <div style={{ marginTop: 14, borderTop: `1px solid ${T.DIVIDER}`, paddingTop: 12 }}>
@@ -370,7 +371,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
                   );
                 })}
               </div>
-              {offer.quotes.length > 0 && <button type="button" disabled={booking || !pick} onClick={bookCourier} style={{ marginTop: 10, width: '100%', height: 40, border: 0, borderRadius: 9, background: T.ACCENT, color: '#fff', fontWeight: 800, fontSize: 13.5, cursor: booking ? 'wait' : 'pointer' }}>{booking ? 'Booking…' : 'Book selected courier'}</button>}
+              {offer.quotes.length > 0 && <button type="button" disabled={booking || !pick} onClick={bookCourier} style={{ marginTop: 10, width: '100%', height: 40, border: 0, borderRadius: 9, background: T.ACCENT, color: '#fff', fontWeight: 800, fontSize: 13.5, cursor: booking ? 'wait' : 'pointer' }}>{booking ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}><Spinner size={14} />Booking…</span> : 'Book selected courier'}</button>}
               <button type="button" onClick={() => nav('orders')} style={{ marginTop: 8, width: '100%', height: 34, border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 9, background: T.SURFACE, color: T.TEXT_SECONDARY, fontWeight: 650, fontSize: 12.5, cursor: 'pointer' }}>Book later from All orders</button>
             </div>
           )}

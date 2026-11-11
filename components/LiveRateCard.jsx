@@ -16,19 +16,13 @@ const modeOf = (s) => (/air|express/i.test(s.serviceType || '') ? 'Air' : 'Surfa
 
 // The seller's rate card as a zone matrix (read-only information: prices are worked out in the rate calculator).
 // Each zone cell reads Forward | RTO, Add. Forward | Add. RTO, COD charges | COD %.
-// Price of a parcel of `weightG` on this slab: first slab + every started additional slab.
-const priceAt = (rate, weightG, base, add) => {
-  const extra = Math.max(0, weightG - (rate.baseWeightG || 0));
-  return Number(base || 0) + (rate.additionalWeightG ? Math.ceil(extra / rate.additionalWeightG) * Number(add || 0) : 0);
-};
-
-function ZoneCell({ rate, cod, weightG }) {
+function ZoneCell({ rate, cod }) {
   if (!rate) return <td style={{ ...CELL, color: T.TEXT_MUTED, textAlign: 'center' }}>—</td>;
   const row = (a, b, strong) => <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontVariantNumeric: 'tabular-nums', fontWeight: strong ? 700 : 500, color: strong ? T.TEXT : T.TEXT_SECONDARY }}><span>{a}</span><span>{b}</span></div>;
   return (
     <td style={CELL}>
       <div style={{ display: 'grid', gap: 3, fontSize: 12.5, minWidth: 128 }}>
-        {weightG ? row(rs(priceAt(rate, weightG, rate.basePaise, rate.additionalPaise)), rs(priceAt(rate, weightG, rate.rtoBasePaise, rate.rtoAdditionalPaise)), true) : row(rs(rate.basePaise), rs(rate.rtoBasePaise), true)}
+        {row(rs(rate.basePaise), rs(rate.rtoBasePaise), true)}
         {row(rs(rate.additionalPaise), rs(rate.rtoAdditionalPaise))}
         {row(cod ? rs(rate.codFeePaise) : '—', cod ? `${(rate.codPercentBps / 100).toFixed(rate.codPercentBps % 100 ? 1 : 0)}%` : '—')}
       </div>
@@ -40,14 +34,11 @@ const CELL = { padding: '12px 10px', borderTop: `1px solid ${T.DIVIDER}`, vertic
 const HEAD = { padding: '10px', textAlign: 'center', fontSize: 12.5, fontWeight: 750, color: T.TEXT, background: T.TABLE_HEAD_BG, borderLeft: `1px solid ${T.DIVIDER}` };
 const SUBHEAD = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 6, fontSize: 10, fontWeight: 600, color: T.TEXT_MUTED, textAlign: 'left' };
 
-const WEIGHT_SLABS = [['0.25', '0.25 kg'], ['0.5', '0.50 kg'], ['1', '1 kg'], ['2', '2 kg'], ['5', '5 kg'], ['10', '10 kg'], ['20', '20 kg']];
 
 export default function LiveRateCard({ mobile, embedded = false }) {
   const { showToast, nav } = useAppState();
   const [data, setData] = useState(null); const [error, setError] = useState('');
   const [courier, setCourier] = useState(''); const [mode, setMode] = useState(''); const [format, setFormat] = useState('csv');
-  const [slab, setSlab] = useState({});
-  const [weightKg, setWeightKg] = useState(''); // global weight-slab filter (kg); blank = each service's own slab
 
   useEffect(() => {
     let live = true;
@@ -58,14 +49,8 @@ export default function LiveRateCard({ mobile, embedded = false }) {
   const services = useMemo(() => (data?.services || []).filter((s) => (!courier || s.providerCode === courier) && (!mode || modeOf(s) === mode)), [data, courier, mode]);
   const couriers = useMemo(() => [...new Map((data?.services || []).map((s) => [s.providerCode, s.providerName])).entries()], [data]);
 
-  // A service can have several weight slabs; show one at a time (default: the lightest).
+  // A service can have several weight bands: every band is its own row, so nothing is hidden behind a dropdown.
   const slabsOf = (s) => [...new Set(s.slabs.map((l) => l.fromWeightG))].sort((a, b) => a - b);
-  const slabFor = (s) => {
-    const key = `${s.providerCode}:${s.serviceName}`; const all = slabsOf(s);
-    // The weight filter picks the slab a parcel of that weight falls into (the heaviest slab starting at or below it).
-    if (weightKg) { const g = Number(weightKg) * 1000; return [...all].reverse().find((x) => x <= g) ?? all[0]; }
-    return all.includes(slab[key]) ? slab[key] : all[0];
-  };
   // Zone rows fall back to the national row where a service has no row for that zone.
   const rateFor = (s, zoneCode, from) => s.slabs.find((l) => l.zone === zoneCode && l.fromWeightG === from) || s.slabs.find((l) => l.zone === 'national' && l.fromWeightG === from) || null;
 
@@ -88,7 +73,6 @@ export default function LiveRateCard({ mobile, embedded = false }) {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <select aria-label="Courier" style={FIELD} value={courier} onChange={(e) => setCourier(e.target.value)}><option value="">All couriers</option>{couriers.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select>
-          <select aria-label="Weight slab" style={FIELD} value={weightKg} onChange={(e) => setWeightKg(e.target.value)}><option value="">All weight slabs</option>{WEIGHT_SLABS.map(([kg, label]) => <option key={kg} value={kg}>{label}</option>)}</select>
           <select aria-label="Mode" style={FIELD} value={mode} onChange={(e) => setMode(e.target.value)}><option value="">All modes</option><option value="Surface">Surface</option><option value="Air">Air</option></select>
           <select aria-label="Export format" style={FIELD} value={format} onChange={(e) => setFormat(e.target.value)}>{FORMATS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select>
           <Btn onClick={exportChart}>⤓ Export</Btn>
@@ -117,19 +101,20 @@ export default function LiveRateCard({ mobile, embedded = false }) {
                 </tr>
               </thead>
               <tbody>
-                {services.map((s) => {
-                  const from = slabFor(s); const slabs = slabsOf(s); const first = rateFor(s, 'within_city', from) || s.slabs[0];
+                {services.flatMap((s) => slabsOf(s).map((from, idx) => ({ s, from, idx }))).map(({ s, from, idx }) => {
+                  const first = rateFor(s, 'within_city', from) || s.slabs.find((l) => l.fromWeightG === from) || s.slabs[0];
+                  const bandText = from > 0 ? `Parcels from ${grams(from)}` : 'Light parcels (from 0 g)';
                   return (
-                    <tr key={`${s.providerCode}:${s.serviceName}`}>
+                    <tr key={`${s.providerCode}:${s.serviceName}:${from}`}>
                       <td style={{ ...CELL, borderLeft: 0 }}>
-                        <b style={{ color: BRAND[s.providerName] || T.TEXT, fontSize: 14 }}>{s.providerName}</b>
+                        {idx === 0 && <><b style={{ color: BRAND[s.providerName] || T.TEXT, fontSize: 14 }}>{s.providerName}</b>
                         <div style={{ color: T.TEXT, fontSize: 13, fontWeight: 650, marginTop: 2 }}>{s.serviceName}</div>
-                        <small style={{ display: 'block', color: T.TEXT_MUTED, marginTop: 3 }}>(extra weight: {grams(first?.additionalWeightG || 500)})</small>
-                        {s.minDays ? <small style={{ display: 'block', color: T.TEXT_MUTED }}>Delivery: {s.minDays === s.maxDays ? `${s.minDays} day${s.minDays === 1 ? '' : 's'}` : `${s.minDays}–${s.maxDays} days`}</small> : null}
-                        {slabs.length > 1 && !weightKg && <select aria-label={`Weight slab for ${s.serviceName}`} value={from} onChange={(e) => setSlab((o) => ({ ...o, [`${s.providerCode}:${s.serviceName}`]: Number(e.target.value) }))} style={{ ...FIELD, height: 28, marginTop: 7, fontSize: 12 }}>{slabs.map((g) => <option key={g} value={g}>From {grams(g)}</option>)}</select>}
+                        {s.minDays ? <small style={{ display: 'block', color: T.TEXT_MUTED, marginTop: 2 }}>Delivery: {s.minDays === s.maxDays ? `${s.minDays} day${s.minDays === 1 ? '' : 's'}` : `${s.minDays}–${s.maxDays} days`}</small> : null}</>}
+                        {(slabsOf(s).length > 1 || from > 0) && <small style={{ display: 'block', marginTop: idx === 0 ? 6 : 0, color: T.ACCENT, fontWeight: 700 }}>{bandText}</small>}
+                        <small style={{ display: 'block', color: T.TEXT_MUTED, marginTop: 3 }}>(first {grams(first?.baseWeightG || 500)}, then every {grams(first?.additionalWeightG || 500)})</small>
                       </td>
                       <td style={{ ...CELL, textAlign: 'center', fontSize: 12, fontWeight: 650, color: T.TEXT_SECONDARY }}><span aria-hidden="true" style={{ display: 'block', fontSize: 18 }}>{modeOf(s) === 'Air' ? '✈' : '🚚'}</span>{modeOf(s)}</td>
-                      {ZONES.map(([code]) => <ZoneCell key={code} rate={rateFor(s, code, from)} cod={s.codEnabled} weightG={weightKg ? Number(weightKg) * 1000 : 0} />)}
+                      {ZONES.map(([code]) => <ZoneCell key={code} rate={rateFor(s, code, from)} cod={s.codEnabled} />)}
                     </tr>
                   );
                 })}

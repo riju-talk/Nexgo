@@ -1,4 +1,5 @@
 import { startAssignProcessor } from './lib/assignQueue.js';
+import { startCancelProcessor } from './lib/cancelQueue.js';
 import { PLUGINS } from './couriers/aggregators/index.js';
 import { config } from './config.js';
 import { db } from './db/client.js';
@@ -11,7 +12,7 @@ process.on('SIGTERM', close); process.on('SIGINT', close);
 await app.listen({ port: config.PORT, host: '0.0.0.0' });
 
 // In production the worker container runs the courier-assignment queue. Elsewhere (local development, tests) there is no worker, so the API runs it.
-if (config.NODE_ENV !== 'production') startAssignProcessor({ error: (o, m) => app.log.error(o as object, m), info: (m) => app.log.info(m) });
+if (config.NODE_ENV !== 'production') { startAssignProcessor({ error: (o, m) => app.log.error(o as object, m), info: (m) => app.log.info(m) }); startCancelProcessor({ error: (o, m) => app.log.error(o as object, m), info: (m) => app.log.info(m) }); }
 
 // Tracking only arrives by Lorrigo's webhook (there is no polling fallback), so say loudly at start-up if it cannot be received.
 for (const plugin of PLUGINS) {

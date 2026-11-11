@@ -131,8 +131,8 @@ function SingleOrder({ order, onClose, onDone }) {
         </details>
       )}
       <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
-        <Btn primary disabled={!chosen || busy} onClick={book}>{busy ? 'Booking…' : chosen ? `Book with ${chosen.provider.name} · ${inr(chosen.price.total)}` : 'Select a courier to book'}</Btn>
-        <Btn disabled={busy} onClick={async () => { setBusy(true); await assignCouriers([order.id], showToast, async () => onDone()); setBusy(false); }}>Let NEXGO pick by my courier priority</Btn>
+        <Btn primary loading={busy} disabled={!chosen} onClick={book}>{busy ? 'Booking…' : chosen ? `Book with ${chosen.provider.name} · ${inr(chosen.price.total)}` : 'Select a courier to book'}</Btn>
+        <Btn loading={busy} onClick={async () => { setBusy(true); await assignCouriers([order.id], showToast, async () => onDone()); setBusy(false); }}>Let NEXGO pick by my courier priority</Btn>
       </div>
       <div style={{ marginTop: 10, fontSize: 12, color: T.TEXT_MUTED }}>Booking charges your wallet the freight shown (GST is invoiced separately) and creates the AWB.</div>
     </>
@@ -181,7 +181,7 @@ function ManyOrders({ orders, onClose, onDone }) {
         </div>
       )}
       <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-        <Btn primary disabled={busy || (mode === 'one' && !courier)} onClick={go}>{busy ? 'Assigning…' : `Assign ${orders.length} order${orders.length === 1 ? '' : 's'}`}</Btn>
+        <Btn primary loading={busy} disabled={mode === 'one' && !courier} onClick={go}>{busy ? 'Assigning…' : `Assign ${orders.length} order${orders.length === 1 ? '' : 's'}`}</Btn>
         <Btn disabled={busy} onClick={onClose}>Cancel</Btn>
       </div>
     </>

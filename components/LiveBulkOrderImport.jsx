@@ -4,6 +4,7 @@ import { assignInBatches } from '@/lib/assignBatches';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { apiFetch, ApiError, isFundsMessage } from '@/lib/api';
+import { Spinner } from './Kit';
 import { useAppState } from '@/lib/AppStateContext';
 import { TEMPLATE_COLUMNS, TEMPLATE_HEADERS, TEMPLATE_SAMPLE_ROWS } from '@/lib/bulkTemplate.mjs';
 import { saveRows } from '@/lib/exportFile';
@@ -404,7 +405,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           onDrop={onDrop}
           style={{ marginTop: 18, padding: mobile ? '26px 14px' : '34px 20px', textAlign: 'center', borderRadius: 12, border: `1.5px dashed ${dragging ? T.ACCENT : T.INPUT_BORDER}`, background: dragging ? 'rgba(56,119,252,.07)' : T.SURFACE_SOFT, cursor: loading ? 'wait' : 'pointer' }}
         >
-          <b style={{ display: 'block', color: T.TEXT, fontSize: 14 }}>{loading ? (progress || 'Reading and validating…') : 'Drop your order file here, or click to browse'}</b>
+          <b style={{ display: 'block', color: T.TEXT, fontSize: 14 }}>{loading ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Spinner size={15} />{progress || 'Reading and validating…'}</span> : 'Drop your order file here, or click to browse'}</b>
           <span style={{ display: 'block', marginTop: 5, color: T.TEXT_MUTED, fontSize: 12.5 }}>{fileName && !loading ? fileName : '.xlsx, .xls or .csv · up to 5 MB · NEXGO bulk upload format'}</span>
           <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; importFile(f); }} />
         </div>
@@ -423,7 +424,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
               {unassignedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => { const n = downloadFailedOrders(orders, fileName, fmt); showToast(`${n} failed order${n === 1 ? '' : 's'} saved as ${fmt === 'xlsx' ? 'Excel' : 'CSV'}. Correct the errors and upload the file again.`); }}>⬇ Failed orders ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
               {failedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => downloadErrorReport(orders, fileName, fmt)}>Error report ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
               {result?.created > 0 && <Action primary onClick={() => nav('shipments')}>{assignMode === 'none' ? 'Go to Track > Ready to ship' : 'Go to Track'}</Action>}
-              {(validOrders.length > 0 || creating) && <Action primary disabled={!validOrders.length || creating} onClick={() => createOrders()}>{creating ? (progress || 'Creating orders…') : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>}
+              {(validOrders.length > 0 || creating) && <Action primary disabled={!validOrders.length || creating} onClick={() => createOrders()}>{creating ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Spinner size={13} />{progress || 'Creating orders…'}</span> : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>}
             </div>
           </div>
 

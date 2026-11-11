@@ -9,7 +9,9 @@ import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import { diagnose, failedSheet, readCorrections, toPatch } from '@/lib/failedOrders';
-import { Pager } from './Kit';
+import { Pager, Spinner } from './Kit';
+import { cancelInBackground } from '@/lib/cancelBatches';
+import { ActiveCancelBanner, BatchProgressDialog } from './BatchProgress';
 import CourierChooser, { ActiveAssignBanner } from './CourierChooser';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 12, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 10px 28px rgba(20,44,66,.055)' };
@@ -61,8 +63,9 @@ function Pill({ state }) {
   return <span style={{ display: 'inline-flex', padding: '3px 8px', borderRadius: 99, color: c, background: `${c}14`, fontWeight: 740, fontSize: 11.5, whiteSpace: 'nowrap' }}>{label(state)}</span>;
 }
 
-function Btn({ children, onClick, primary, disabled, small }) {
-  return <button type="button" disabled={disabled} onClick={onClick} style={{ height: small ? 28 : 32, padding: `0 ${small ? 9 : 11}px`, borderRadius: 8, border: `1px solid ${primary ? T.NAVY : T.INPUT_BORDER}`, background: primary ? T.NAVY : T.SURFACE, color: primary ? '#fff' : T.TEXT, fontSize: small ? 11.5 : 12, fontWeight: 720, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1, whiteSpace: 'nowrap' }}>{children}</button>;
+function Btn({ children, onClick, primary, danger, loading, disabled, small }) {
+  const off = disabled || loading;
+  return <button type="button" disabled={off} aria-busy={loading || undefined} onClick={onClick} style={{ height: small ? 28 : 32, padding: `0 ${small ? 9 : 11}px`, borderRadius: 8, border: `1px solid ${primary ? T.NAVY : danger ? T.RED : T.INPUT_BORDER}`, background: primary ? T.NAVY : T.SURFACE, color: primary ? '#fff' : danger ? T.RED : T.TEXT, fontSize: small ? 11.5 : 12, fontWeight: 720, cursor: loading ? 'progress' : disabled ? 'not-allowed' : 'pointer', opacity: off ? 0.65 : 1, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 6 }}>{loading && <Spinner size={12} />}{children}</button>;
 }
 
 // Four-step progress rail for the happy path; NDR/RTO/cancelled show as a flagged state instead.
@@ -90,10 +93,13 @@ function Detail({ shipment, mobile, onClose, reload, onChoose }) {
   const { showToast, nav } = useAppState();
   const [events, setEvents] = useState(null);
   const cancellable = ['booked', 'pickup_pending', 'pickup_scheduled'].includes(shipment.state);
+  const [cancelling, setCancelling] = useState(false);
   const cancelShipment = async () => {
+    if (cancelling) return;
     if (!(await askConfirm({ title: 'Are you sure?', message: `Cancel shipment ${shipment.awb}? The shipping charge is credited back to your wallet.`, confirmLabel: 'Yes, continue', danger: true }))) return;
+    setCancelling(true);
     try { const r = await apiFetch(`/v1/shipments/${shipment.id}/cancel`, { method: 'POST' }); showToast(`Shipment cancelled. ${inr(r.refundedPaise)} credited to your wallet.`); await reload(); onClose(); }
-    catch (e) { showToast(e.message || 'Shipment could not be cancelled', 'error'); }
+    catch (e) { showToast(e.message || 'Shipment could not be cancelled', 'error'); setCancelling(false); }
   };
 
   useEffect(() => {
@@ -142,7 +148,7 @@ function Detail({ shipment, mobile, onClose, reload, onChoose }) {
       </div>
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
         {failedOrder ? <Btn primary onClick={() => onChoose([shipment])}>Choose courier</Btn> : <><Btn primary onClick={() => openDocs('label', [shipment.id])}>Print label</Btn><Btn onClick={() => openDocs('invoice', [shipment.id])}>Invoice</Btn><Btn onClick={() => copyText(shipment.awb, showToast, 'AWB copied')}>Copy AWB</Btn></>}
-        {cancellable && <Btn danger onClick={cancelShipment}>Cancel shipment</Btn>}
+        {cancellable && <Btn danger loading={cancelling} onClick={cancelShipment}>Cancel shipment</Btn>}
         {shipment.state === 'ndr' && <Btn onClick={() => nav('ndr')}>Resolve NDR</Btn>}
         {RTO.includes(shipment.state) && <Btn onClick={() => nav('rto')}>View RTO</Btn>}
       </div>
@@ -174,6 +180,7 @@ export default function LiveTrack({ mobile }) {
   const [rows, setRows] = useState(null);
   const [failed, setFailed] = useState([]);
   const [totals, setTotals] = useState(null);
+  const [cancelDlg, setCancelDlg] = useState(null); // the cancellation progress dialog (see runCancel)
   const [loadingMore, setLoadingMore] = useState(false);
   const [chooser, setChooser] = useState(null); // not-yet-shipped orders the seller is choosing a courier for
   const [error, setError] = useState(null);
@@ -292,17 +299,31 @@ export default function LiveTrack({ mobile }) {
     showToast(`${source.length} shipments exported (${exportFormat === 'xlsx' ? 'Excel' : 'CSV'})`);
   };
 
-  // Orders that never got a courier can be cancelled here (nothing was booked, so nothing is charged or refunded).
+  // Cancelling runs in the background queue (no limit on how many), with a progress dialog and a summary at the end.
+  const runCancel = async ({ shipmentIds, orderIds }) => {
+    const total = shipmentIds.length + orderIds.length;
+    setCancelDlg({ running: true, hidden: false, title: `Cancelling ${total} item${total === 1 ? '' : 's'}`, done: 0, total });
+    try {
+      const r = await cancelInBackground({ shipmentIds, orderIds }, { onProgress: (p) => setCancelDlg((d) => (d ? { ...d, done: p.done, total: p.total || d.total } : d)) });
+      const lines = [`${r.cancelled} cancelled`];
+      if (r.refundedPaise) lines.push(`₹${(r.refundedPaise / 100).toLocaleString('en-IN')} credited back to your wallet`);
+      if (r.failed) lines.push(`${r.failed} could not be cancelled`);
+      if (r.skipped) lines.push(`${r.skipped} were already cancelled, picked up or waiting in another cancellation`);
+      setCancelDlg((d) => {
+        if (d?.hidden) { showToast(lines.join(' · '), r.failed ? 'error' : 'success'); return null; }
+        return { running: false, hidden: false, title: r.failed ? 'Finished with some problems' : 'Cancellation finished', done: total, total, summary: { tone: r.failed ? 'error' : 'success', lines, errors: r.errors } };
+      });
+    } catch (e) {
+      setCancelDlg({ running: false, hidden: false, title: 'Could not cancel', done: 0, total, summary: { tone: 'error', lines: [], errors: [e instanceof ApiError ? e.message : 'The cancellation could not be started. Try again.'] } });
+    }
+    setPicked(new Set()); await load();
+  };
+  // Orders that never got a courier: nothing was booked, so nothing is charged or refunded.
   const cancelOrders = async () => {
     const chosen = visible.filter((r) => picked.has(r.id) && isUnassigned(r));
     if (!chosen.length) return;
     if (!(await askConfirm({ title: 'Are you sure?', message: `Cancel ${chosen.length} order${chosen.length === 1 ? '' : 's'}? Nothing has been booked, so nothing is charged.`, confirmLabel: 'Yes, continue', danger: true }))) return;
-    let done = 0; let failedCount = 0;
-    for (const r of chosen) {
-      try { await apiFetch(`/v1/orders/${r.id}/state`, { method: 'PATCH', body: { state: 'cancelled' } }); done += 1; } catch { failedCount += 1; }
-    }
-    showToast(failedCount ? `${done} cancelled, ${failedCount} could not be cancelled` : `${done} order${done === 1 ? '' : 's'} cancelled`, failedCount ? 'error' : 'success');
-    setPicked(new Set()); await load();
+    await runCancel({ shipmentIds: [], orderIds: chosen.map((r) => r.id) });
   };
 
   // The server sends the newest 1,000 orders without a courier; this fetches the next 1,000.
@@ -388,15 +409,9 @@ export default function LiveTrack({ mobile }) {
     const chosen = visible.filter((r) => picked.has(r.id) && !isUnassigned(r));
     const ids = chosen.filter((r) => ['booked', 'pickup_pending', 'pickup_scheduled'].includes(r.state)).map((r) => r.id);
     if (!ids.length) return showToast('None of the selected shipments can be cancelled. Only shipments that are not yet picked up can.', 'error');
-    if (ids.length > 50) return showToast('Cancel up to 50 shipments at a time.', 'error');
     const skipped = chosen.length - ids.length;
     if (!(await askConfirm({ title: 'Are you sure?', message: `Cancel ${ids.length} shipment${ids.length === 1 ? '' : 's'}? The shipping charges are credited back to your wallet.${skipped ? ` ${skipped} selected shipment${skipped === 1 ? ' is' : 's are'} already picked up and will be left as they are.` : ''}`, confirmLabel: 'Yes, continue', danger: true }))) return;
-    try {
-      const r = await apiFetch('/v1/shipments/bulk-cancel', { method: 'POST', body: { shipmentIds: ids } });
-      const bad = r.results.find((x) => !x.ok);
-      showToast(`${r.cancelled} cancelled${r.refundedPaise ? ` · ₹${(r.refundedPaise / 100).toLocaleString('en-IN')} refunded to your wallet` : ''}${r.failed ? ` · ${r.failed} could not be cancelled: ${bad?.error}` : ''}`, r.failed ? 'error' : 'success');
-      setPicked(new Set()); await load();
-    } catch (e) { showToast(e instanceof ApiError ? e.message : 'Shipments could not be cancelled', 'error'); }
+    await runCancel({ shipmentIds: ids, orderIds: [] });
   };
   const allOnPage = pageRows.length > 0 && pageRows.every((r) => picked.has(r.id));
   const togglePage = () => setPicked((s) => { const n = new Set(s); pageRows.forEach((r) => (allOnPage ? n.delete(r.id) : n.add(r.id))); return n; });
@@ -405,6 +420,8 @@ export default function LiveTrack({ mobile }) {
   return (
     <div style={{ padding: pad, position: 'relative' }}>
       <ActiveAssignBanner onFinished={load} />
+      <ActiveCancelBanner onFinished={load} />
+      <BatchProgressDialog state={cancelDlg && !cancelDlg.hidden ? cancelDlg : null} onClose={() => setCancelDlg((d) => (d?.running ? { ...d, hidden: true } : null))} />
       <div style={{ ...CARD, padding: 12, marginBottom: 12, boxShadow: 'none', background: 'var(--nx-surface-soft)' }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <input aria-label="Search shipments" value={f.q} onChange={set('q')} placeholder="Search AWB, order, customer, phone, pincode or product" style={{ ...FIELD, flex: '1 1 280px', height: 38 }} />
@@ -470,11 +487,11 @@ export default function LiveTrack({ mobile }) {
         <div style={{ ...CARD, padding: '9px 12px', marginBottom: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', background: 'rgba(56,119,252,.08)', boxShadow: 'none' }}>
           <b style={{ fontSize: 13, color: T.TEXT }}>{picked.size} selected</b>
           <Btn small onClick={() => copyText(visible.filter((r) => picked.has(r.id)).map((r) => r.awb).join('\n'), showToast, 'AWBs copied')}>Copy AWBs</Btn>
-          {visible.some((r) => picked.has(r.id) && isUnassigned(r)) && <><Btn small primary onClick={() => setChooser(visible.filter((r) => picked.has(r.id) && isUnassigned(r)))}>Choose courier</Btn><Btn small onClick={cancelOrders}>Cancel orders</Btn></>}
+          {visible.some((r) => picked.has(r.id) && isUnassigned(r)) && <><Btn small primary onClick={() => setChooser(visible.filter((r) => picked.has(r.id) && isUnassigned(r)))}>Choose courier</Btn><Btn small loading={!!cancelDlg?.running} onClick={cancelOrders}>Cancel orders</Btn></>}
           {visible.some((r) => picked.has(r.id) && !isUnassigned(r)) && <><Btn small onClick={() => downloadManifest(visible.filter((r) => picked.has(r.id) && !isUnassigned(r)), 'xlsx')}>Manifest (Excel)</Btn><Btn small onClick={() => downloadManifest(visible.filter((r) => picked.has(r.id) && !isUnassigned(r)), 'csv')}>Manifest (CSV)</Btn></>}
           <Btn small onClick={() => printSelected('label')}>Print labels</Btn>
           <Btn small onClick={() => printSelected('invoice')}>Print invoices</Btn>
-          <Btn small onClick={cancelSelected}>Cancel shipments</Btn>
+          <Btn small loading={!!cancelDlg?.running} onClick={cancelSelected}>Cancel shipments</Btn>
           {canExport && <Btn small onClick={exportRows}>Export selected</Btn>}
           <input aria-label="Tag name" value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="Tag name" maxLength={30} style={{ ...FIELD, height: 28, width: 130 }} />
           <Btn small disabled={!tagInput.trim()} onClick={() => tagSelected('add')}>Add tag</Btn>
