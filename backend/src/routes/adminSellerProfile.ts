@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/client.js';
-import { requireAccountAdmin, requireCommercialAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
+import { requireAccountAdmin, requireCommercialAdmin, requireFinanceAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
 import { sessionCookieOptions } from '../lib/cookies.js';
 import { issueCsrfCookie, clearCsrfCookie } from '../lib/csrf.js';
 import { calculateRate } from '../lib/money.js';
@@ -13,12 +13,6 @@ const uuid = z.string().uuid();
 const BALANCE_SQL = `COALESCE(SUM(CASE WHEN entry_type IN ('credit','release') THEN amount_paise WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END),0)::bigint`;
 const IMPERSONATION_MINUTES = 120;
 
-// Only finance-accountable roles move money; analysts/support can look but not touch.
-async function requireFinanceAdmin(request: FastifyRequest) {
-  if (!['super_admin', 'finance_admin'].includes(request.adminPrincipal!.role)) {
-    throw Object.assign(new Error('This administrator role cannot add or deduct wallet money'), { statusCode: 403 });
-  }
-}
 async function requireImpersonationAdmin(request: FastifyRequest) {
   if (!['super_admin', 'operations_admin', 'support_admin'].includes(request.adminPrincipal!.role)) {
     throw Object.assign(new Error('This administrator role cannot view the seller panel as a seller'), { statusCode: 403 });

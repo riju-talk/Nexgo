@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { db, withSellerTransaction, withTransaction } from '../db/client.js';
-import { requireAccountAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
+import { requireAccountAdmin, requireFinanceAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
 import { requireSeller } from './seller.js';
 import { storage, STORAGE_NOT_CONNECTED } from '../lib/storage.js';
 import { config } from '../config.js';
@@ -68,7 +68,7 @@ export async function invoiceRoutes(app: FastifyInstance) {
     return reply.code(201).send(invoice);
   });
 
-  app.post('/v1/admin/invoices/:invoiceId/issue', { preHandler: [requirePlatformAdmin, requireAccountAdmin] }, async (request, reply) => {
+  app.post('/v1/admin/invoices/:invoiceId/issue', { preHandler: [requirePlatformAdmin, requireFinanceAdmin] }, async (request, reply) => {
     const invoiceId = z.string().uuid().parse((request.params as { invoiceId: string }).invoiceId);
     const outcome = await withTransaction(async (client) => {
       // Row lock held for the whole transaction, so a double-click cannot create two documents and two PDF jobs.

@@ -22,8 +22,8 @@ const GROUPS = [
   ['Shipments', [['All orders', 'a-orders', '▤'], ['All shipments', 'a-shipments', '□'], ['NDR centre', 'a-ndr', '!'], ['RTO centre', 'a-rto', '↩'], ['Pickups', 'a-pickups', '⌁']]],
   ['Finance', [['COD settlements', 'a-cod', '₹'], ['Invoices', 'a-invoices', '▤'], ['Credit notes & TDS', 'a-notes', '▥'], ['GST reports', 'a-gst', '▧']]],
   ['Reports', [['Revenue', 'a-revenue', '↗'], ['SLA', 'a-sla-report', '◷'], ['Courier analytics', 'a-analytics', '◉']]],
-  ['Support centre', [['Tickets', 'a-tickets', '◌'], ['Live chat', 'a-live-chat', '◍'], ['Escalations', 'a-escalations', '↑'], ['Weight disputes', 'a-disputes', '◇']]],
-  ['Settings', [['System settings', 'a-system', '⚙'], ['API management', 'a-api', '⌁'], ['Audit logs', 'a-audit', '◫'], ['Role permissions', 'a-roles', '♙']]],
+  ['Support centre', [['Tickets', 'a-tickets', '◌'], ['Escalations', 'a-escalations', '↑'], ['Weight disputes', 'a-disputes', '◇']]],
+  ['Settings', [['System settings', 'a-system', '⚙'], ['Audit logs', 'a-audit', '◫'], ['Role permissions', 'a-roles', '♙']]],
 ];
 
 function AdminNav({ mobile }) {

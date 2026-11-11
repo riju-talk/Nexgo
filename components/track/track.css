@@ -1,0 +1,30 @@
+/* Public parcel tracking. Builds on the .lp tokens from landing.css. Solid colours only. */
+.tk-hero { background: var(--page); border-bottom: 1px solid var(--line); padding: 56px 0 44px; }
+.tk-hero h1 { margin: 0; font-size: clamp(30px, 4vw, 46px); }
+.tk-hero p { margin: 14px 0 0; max-width: 640px; color: var(--mute); font-size: 17px; }
+.tk-form { display: flex; gap: 10px; margin-top: 26px; max-width: 560px; flex-wrap: wrap; }
+.tk-form input { flex: 1 1 260px; min-height: 48px; border: 1px solid var(--line); border-radius: 12px; padding: 0 16px; font-size: 16px; background: #fff; color: var(--ink); }
+.tk-form input:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+.tk-form button { min-height: 48px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--blue); color: #fff; font-weight: 700; font-size: 16px; cursor: pointer; }
+.tk-form button:hover { background: var(--blue-dark); }
+.tk-body { padding: 40px 0 96px; display: grid; gap: 20px; max-width: 760px; }
+.tk-card { border: 1px solid var(--line); border-radius: 16px; background: #fff; padding: 22px; }
+.tk-top { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+.tk-top small { display: block; color: var(--mute); font-size: 13px; font-weight: 600; }
+.tk-top b { font-size: 20px; letter-spacing: -.01em; }
+.tk-pill { display: inline-block; border-radius: 99px; padding: 6px 14px; font-weight: 800; font-size: 14px; background: var(--blue-soft); color: var(--blue-dark); }
+.tk-pill.good { background: #e3f4ec; color: #14724f; }
+.tk-pill.bad { background: #fbe9e6; color: #b23a2b; }
+.tk-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-top: 18px; }
+.tk-meta span { display: block; color: var(--mute); font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.tk-meta b { display: block; margin-top: 3px; font-size: 15px; }
+.tk-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.tk-steps li { position: relative; padding: 0 0 22px 28px; }
+.tk-steps li::before { content: ''; position: absolute; left: 5px; top: 6px; width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+.tk-steps li:first-child::before { background: var(--blue); }
+.tk-steps li::after { content: ''; position: absolute; left: 10px; top: 20px; bottom: 0; width: 1px; background: var(--line); }
+.tk-steps li:last-child::after { display: none; }
+.tk-steps b { display: block; font-size: 15px; }
+.tk-steps small { display: block; color: var(--mute); font-size: 13px; margin-top: 2px; }
+.tk-error { border: 1px solid #f0c7c0; background: #fbe9e6; color: #8a2a1e; border-radius: 12px; padding: 14px 16px; font-weight: 600; }
+@media (max-width: 560px) { .tk-hero { padding: 36px 0 30px; } .tk-form button { width: 100%; } }

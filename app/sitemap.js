@@ -5,6 +5,7 @@ export default function sitemap() {
     { url: SITE_URL, changeFrequency: 'monthly', priority: 1 },
     { url: `${SITE_URL}/login`, changeFrequency: 'monthly', priority: 1 },
     { url: `${SITE_URL}/signup`, changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${SITE_URL}/track`, changeFrequency: 'yearly', priority: 0.6 },
     { url: `${SITE_URL}/terms`, changeFrequency: 'yearly', priority: 0.4 },
     { url: `${SITE_URL}/privacy-policy`, changeFrequency: 'yearly', priority: 0.4 },
     { url: `${SITE_URL}/cookie-policy`, changeFrequency: 'yearly', priority: 0.4 },

@@ -8,7 +8,6 @@ import Sidebar from './Sidebar';
 import MobileOverlay from './MobileOverlay';
 import TopBar from './TopBar';
 import CommandPalette from './CommandPalette';
-import NdrDrawer from './NdrDrawer';
 import Toast from './Toast';
 import AdminShell from './AdminShell';
 import ImpersonationBanner from './ImpersonationBanner';
@@ -34,7 +33,6 @@ export default function AppShell({ children }) {
           <TopBar activeId={activeId} mobile={mobile} />
           <OnboardingGate mobile={mobile}>{children}</OnboardingGate>
         </div>
-        <NdrDrawer />
         <CommandPalette />
         <Toast />
       </div>

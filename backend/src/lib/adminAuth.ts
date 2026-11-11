@@ -37,3 +37,10 @@ export async function requireAccountAdmin(request: FastifyRequest) {
     throw Object.assign(new Error('This administrator role cannot review seller accounts'), { statusCode: 403 });
   }
 }
+
+// Money leaving the platform (COD payouts, wallet adjustments, issuing invoices) is finance-only.
+export async function requireFinanceAdmin(request: FastifyRequest) {
+  if (!['super_admin', 'finance_admin'].includes(request.adminPrincipal!.role)) {
+    throw Object.assign(new Error('This administrator role cannot move or approve money'), { statusCode: 403 });
+  }
+}

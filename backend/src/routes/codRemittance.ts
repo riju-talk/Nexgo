@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { db, withSellerTransaction, withTransaction } from '../db/client.js';
-import { requireAccountAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
+import { requireAccountAdmin, requireFinanceAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
 import { requireSeller } from './seller.js';
 import { notify } from '../lib/notify.js';
 import { invalidateMetrics } from '../lib/metrics.js';
@@ -56,7 +56,7 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
     return reply.code(201).send(cycle);
   });
 
-  app.post('/v1/admin/cod-remittances/:cycleId/approve', { preHandler: [requirePlatformAdmin, requireAccountAdmin] }, async (request, reply) => {
+  app.post('/v1/admin/cod-remittances/:cycleId/approve', { preHandler: [requirePlatformAdmin, requireFinanceAdmin] }, async (request, reply) => {
     const cycleId = z.string().uuid().parse((request.params as { cycleId: string }).cycleId);
     const outcome = await withTransaction(async (client) => {
       // Status change and audit row commit together; the WHERE clause makes the transition a compare-and-set.
@@ -76,7 +76,7 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
   // accept the same admin roles: this is where "the bank transfer actually
   // happened" gets recorded, and splitting it from approval leaves room to
   // require a second, different approver here later without a schema change.
-  app.post('/v1/admin/cod-remittances/:cycleId/remit', { preHandler: [requirePlatformAdmin, requireAccountAdmin] }, async (request, reply) => {
+  app.post('/v1/admin/cod-remittances/:cycleId/remit', { preHandler: [requirePlatformAdmin, requireFinanceAdmin] }, async (request, reply) => {
     const cycleId = z.string().uuid().parse((request.params as { cycleId: string }).cycleId);
     const { bankReference } = z.object({ bankReference: z.string().trim().min(3).max(120) }).parse(request.body);
     const outcome = await withTransaction(async (client) => {

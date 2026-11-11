@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { TABLES, FORMS, CONNECTORS } from '@/lib/data';
+import { FORMS, CONNECTORS } from '@/lib/data';
 import { useAppState } from '@/lib/AppStateContext';
 import { MOBILE_BREAK, NARROW_BREAK, PHONE_BREAK } from '@/lib/theme';
 import PageHeader from './PageHeader';
@@ -9,11 +9,10 @@ import PageContainer from './PageContainer';
 
 // Each page loads its own code when it is opened (a route used to download every page's code).
 const DashboardContent = dynamic(() => import('./DashboardContent'));
-const TablePage = dynamic(() => import('./TablePage'));
 const FormPage = dynamic(() => import('./FormPage'));
 const AccountConfiguration = dynamic(() => import('./AccountConfiguration'));
 const AdminDashboard = dynamic(() => import('./AdminDashboard'));
-const AdminUtilityPage = dynamic(() => import('./AdminUtilityPage'));
+const AdminPlatformPages = dynamic(() => import('./AdminPlatformPages'));
 const LiveSellerOperations = dynamic(() => import('./LiveSellerOperations'));
 const LiveAdminQueues = dynamic(() => import('./LiveAdminQueues'));
 const AdminPickups = dynamic(() => import('./AdminPickups'));
@@ -63,8 +62,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
   const narrow = vw <= NARROW_BREAK;
 
   // These three admin courier pages are live components; their old sample tables must not render underneath.
-  const hasTable = !!TABLES[id] && !['a-zones', 'a-sla', 'a-performance'].includes(id);
-  const hasForm = !isDashboard && !hasTable && !!(FORMS[id] || CONNECTORS[id]);
+  const hasForm = !isDashboard && !!(FORMS[id] || CONNECTORS[id]);
   const isAccountConfig = id === 'account-config';
   const isAdminOverview = id === 'a-overview';
   const isAdminPage = id.startsWith('a-');
@@ -109,9 +107,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
   const isIntegrations = id === 'a-integrations';
   const isCourierSla = id === 'a-sla';
   // Admin screens that have no backend yet say so instead of showing sample figures.
-  const ADMIN_SOON = { 'a-escalations': 'Escalations', 'a-credit': 'Credit limits', 'a-live-chat': 'Live chat', 'a-system': 'System settings', 'a-api': 'API management', 'a-roles': 'Role permissions' };
-  const isAdminSoon = id in ADMIN_SOON;
-  const isAdminUtility = isAdminPage && !isAdminSoon && !isAdminOverview && !hasTable && !isCourierZones && !isCourierPerformance && !isCourierSla && !isIntegrations && !isLiveAdminReport && !isAdminDisputes && !isAdminNotes && !isSellerProfile && !isAdminRates;
+  const isAdminPlatform = ['a-credit', 'a-roles', 'a-escalations', 'a-system'].includes(id);
 
   return (
     <>
@@ -134,7 +130,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isRto && <LiveRto mobile={mobile} />}
         {isAdminDisputes && <LiveAdminDisputes mobile={mobile} />}
         {isAdminNotes && <LiveAdminNotes mobile={mobile} />}
-        {isAdminSoon && <ComingSoon mobile={mobile} name={ADMIN_SOON[id]} blurb="This admin screen is not connected to live data yet, so it shows nothing rather than sample numbers." back="a-overview" backLabel="Back to dashboard" />}
+        {isAdminPlatform && <AdminPlatformPages id={id} mobile={mobile} />}
         {isSellerProfile && <AdminSellerProfile sellerId={sellerId} />}
         {isCourierZones && <LiveCourierZones mobile={mobile} />}
         {isCourierPerformance && <LiveCourierPerformance mobile={mobile} />}
@@ -161,9 +157,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isAdminAudit && <AdminAuditTrail mobile={mobile} />}
         {isLiveAdminReport && <LiveAdminReports activeId={id} mobile={mobile} />}
         {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
-        {hasTable && !isNew && !isNdr && !isWeight && !isAdminOverview && !isTrack && !isLiveSellerPage && !isLiveAdminPage && !isLiveShipmentDetail && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isLiveAdminOperations && !isCustomSetting && <TablePage activeId={id} mobile={mobile} phone={phone} />}
         {hasForm && !isNew && !isWeight && !isWarehouse && !isRateCalc && !isPincode && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isCustomSetting && <FormPage activeId={id} mobile={mobile} phone={phone} />}
-        {isAdminUtility && !isLiveAdminPage && !isLiveAdminOperations && !isLiveWorkspaceTool && <AdminUtilityPage activeId={id} mobile={mobile} />}
         {isAccountConfig && <AccountConfiguration mobile={mobile} phone={phone} />}
       </PageContainer>
     </>
