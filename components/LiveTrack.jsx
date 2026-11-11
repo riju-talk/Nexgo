@@ -46,7 +46,8 @@ const TABS = [
   ['rto', 'RTO', (r) => RTO.includes(r.state)],
   ['lost', 'Lost', (r) => r.state === 'lost' || r.rto_status === 'lost'],
   ['cancelled', 'Cancelled', (r) => r.state === 'cancelled'],
-  ['failed', 'Failed', (r) => r.state === 'failed'],
+  // Orders that could not be booked (fix and re-assign) and parcels the courier cancelled on its side (re-book).
+  ['failed', 'Exception & Error', (r) => r.state === 'failed' || (!!r.courier_cancelled_at && r.state !== 'cancelled')],
 ];
 const CHANNELS = [['single', 'Single created'], ['bulk_upload', 'Bulk upload'], ['shopify', 'Shopify'], ['amazon', 'Amazon'], ['woocommerce', 'WooCommerce'], ['opencart', 'OpenCart'], ['magento', 'Magento']];
 const channelName = (c) => (CHANNELS.find(([k]) => k === c) || [null, title(c || 'single')])[1];
@@ -360,7 +361,7 @@ export default function LiveTrack({ mobile }) {
     setFixing(true); setFixReport(null);
     try {
       const rows = await readCorrections(file);
-      if (!rows) throw new Error('"NEXGO order ID" column not found. Upload the file downloaded from the Failed tab.');
+      if (!rows) throw new Error('"NEXGO order ID" column not found. Upload the file downloaded from the Exception & Error tab.');
       if (!rows.length) throw new Error('The file has no order rows.');
       if (rows.length > 500) throw new Error('Upload up to 500 orders at a time.');
       const byId = new Map(failed.map((o) => [o.nexgo_order_id, o]));

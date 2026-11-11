@@ -103,7 +103,7 @@ if (w) {
 // --- public tracking: only parcel journey comes back
 const sh = (await db.query(`SELECT s.id, s.awb FROM shipments s WHERE s.state <> 'cancelled' ORDER BY s.created_at DESC LIMIT 1`)).rows[0];
 if (sh) {
-  await db.query(`INSERT INTO shipment_events (shipment_id, state, occurred_at, description, source) VALUES ($1, 'in_transit', now(), 'Shipment moved to Lorrigo hub via aggregator', 'manual')`, [sh.id]);
+  await db.query(`INSERT INTO shipment_events (shipment_id, state, occurred_at, description, source, source_event_id) VALUES ($1, 'in_transit', now(), 'Shipment moved to Lorrigo hub via aggregator', 'manual', $2)`, [sh.id, 'plat-' + Date.now()]);
   const pub = client();
   const p = await pub('GET', `/v1/public/track/${encodeURIComponent(sh.awb.toLowerCase())}`);
   T('Public tracking finds a parcel by AWB (any case) without signing in', p.s === 200 && p.j.awb === sh.awb && p.j.events.length >= 1, String(p.s));

@@ -14,7 +14,7 @@ export function requiredPermission(method: string, route: string, body: unknown)
   if (route.startsWith('/v1/analytics/dashboard')) return 'dashboard';
   if (route.startsWith('/v1/weight-disputes')) return 'weight.discrepancy';
   if (route === '/v1/shipments/:shipmentId/cancel') return 'shipments.cancel';
-  if (route.startsWith('/v1/shipments')) return 'shipments.manage';
+  if (route.startsWith('/v1/shipments') || route.startsWith('/v1/manifests')) return 'shipments.manage';
   if (route.startsWith('/v1/orders')) {
     if (route === '/v1/orders/:orderId/state' && b.state === 'cancelled') return 'orders.cancel';
     if (method !== 'GET' && b.paymentMode !== undefined && route.endsWith('/details')) return 'orders.change_payment';

@@ -16,7 +16,8 @@ const REASONS = { customer_unavailable: 'Customer Not Available', address_incomp
 const STATUS = {
   new: ['New NDR', '#C2410C', '#F5822018'], action_pending: ['Action Pending', '#B45309', '#F5B30018'], redelivery_scheduled: ['Redelivery Scheduled', '#3877fc', '#3877fc14'], resolved: ['Resolved', T.GREEN, `${T.GREEN}18`], rto: ['RTO', T.RED, `${T.RED}16`],
 };
-const TABS = [['all', 'All NDR'], ['new', 'New NDR'], ['action_pending', 'Action Pending'], ['redelivery_scheduled', 'Redelivery Scheduled'], ['resolved', 'Resolved'], ['rto', 'RTO']];
+// Same four tabs as the courier-network consoles sellers know: what needs an answer, what was answered, what ended delivered, what went back.
+const TABS = [['all', 'All NDR'], ['action_required', 'Action Required'], ['action_requested', 'Action Requested'], ['delivered', 'Delivered'], ['rto', 'RTO']];
 const when = (v) => (v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 const dayInput = (offset) => { const d = new Date(Date.now() + offset * 864e5); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const inr = (paise) => `₹${(Number(paise || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;

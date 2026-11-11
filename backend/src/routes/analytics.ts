@@ -84,6 +84,46 @@ const summarize = async (client: Pool | PoolClient, q: Range, sellerId?: string)
        WHERE ${win('sh.booked_at')} AND sh.state <> 'cancelled' AND sh.courier_cancelled_at IS NULL ${al('sh')}`, args),
   ]);
   const s = ship.rows[0]; const n = now.rows[0]; const o = orders.rows[0];
+  // Extra views of the same window: the previous period of equal length, pickup speed, delivery quality and promised-date adherence per zone.
+  const istDay = (offsetMs = 0) => new Date(Date.now() + 19_800_000 + offsetMs).toISOString().slice(0, 10);
+  const shift = (iso: string, days: number) => new Date(Date.parse(iso) + days * 864e5).toISOString().slice(0, 10);
+  const curTo = explicit ? explicit.to : istDay();
+  const curFrom = explicit ? explicit.from : shift(curTo, -(q.days - 1));
+  const span = Math.round((Date.parse(curTo) - Date.parse(curFrom)) / 864e5) + 1;
+  const prevTo = shift(curFrom, -1); const prevFrom = shift(prevTo, -(span - 1));
+  const pargs: unknown[] = sellerId ? [sellerId, prevFrom, prevTo, 1] : [prevFrom, prevTo, 1];
+  const pf = pargs.length - 2, pt = pargs.length - 1, pd = pargs.length;
+  const pwin = (col: string) => windowSql(col, pf, pt, pd);
+  const firstScan = "LEFT JOIN LATERAL (SELECT min(e.occurred_at) AS first_scan FROM shipment_events e WHERE e.shipment_id = sh.id AND e.state IN ('in_transit','out_for_delivery','delivered','ndr','rto','rto_in_transit')) fs ON true";
+  const inTime = `(sh.delivered_at ${IST})::date <= (sh.promised_delivery_at ${IST})::date`;
+  const [prev, prevOrders, buckets, quality, zones] = await Promise.all([
+    client.query<{ shipped: number; delivered: number; rto: number; lost: number }>(
+      `SELECT count(*) FILTER (WHERE sh.state <> 'cancelled')::int AS shipped, count(*) FILTER (WHERE sh.state = 'delivered')::int AS delivered,
+              count(*) FILTER (WHERE sh.state IN ('rto','rto_in_transit'))::int AS rto, count(*) FILTER (WHERE sh.state = 'lost')::int AS lost
+       FROM shipments sh WHERE ${pwin('sh.created_at')} ${al('sh')}`, pargs),
+    client.query<{ placed: number }>(`SELECT count(*) FILTER (WHERE state NOT IN ('draft','cancelled'))::int AS placed FROM orders sh WHERE ${pwin('created_at')} ${sc}`, pargs),
+    client.query<{ booked: number; h24: number; h48: number; hmore: number }>(
+      `SELECT count(*)::int AS booked,
+              count(*) FILTER (WHERE fs.first_scan <= sh.booked_at + interval '24 hours')::int AS h24,
+              count(*) FILTER (WHERE fs.first_scan > sh.booked_at + interval '24 hours' AND fs.first_scan <= sh.booked_at + interval '48 hours')::int AS h48,
+              count(*) FILTER (WHERE fs.first_scan > sh.booked_at + interval '48 hours')::int AS hmore
+       FROM shipments sh ${firstScan}
+       WHERE ${win('sh.booked_at')} AND sh.state <> 'cancelled' AND sh.courier_cancelled_at IS NULL ${al('sh')}`, args),
+    client.query<{ delivered: number; first_attempt: number; with_edd: number; in_edd: number }>(
+      `SELECT count(*) FILTER (WHERE sh.state = 'delivered')::int AS delivered,
+              count(*) FILTER (WHERE sh.state = 'delivered' AND NOT EXISTS (SELECT 1 FROM ndr_cases n WHERE n.shipment_id = sh.id))::int AS first_attempt,
+              count(*) FILTER (WHERE sh.state = 'delivered' AND sh.promised_delivery_at IS NOT NULL AND sh.delivered_at IS NOT NULL)::int AS with_edd,
+              count(*) FILTER (WHERE sh.state = 'delivered' AND sh.promised_delivery_at IS NOT NULL AND sh.delivered_at IS NOT NULL AND ${inTime})::int AS in_edd
+       FROM shipments sh WHERE ${win('sh.created_at')} ${al('sh')}`, args),
+    client.query<{ zone: string | null; with_edd: number; in_edd: number }>(
+      `SELECT sh.quote_snapshot->>'zone' AS zone,
+              count(*) FILTER (WHERE sh.promised_delivery_at IS NOT NULL AND sh.delivered_at IS NOT NULL)::int AS with_edd,
+              count(*) FILTER (WHERE sh.promised_delivery_at IS NOT NULL AND sh.delivered_at IS NOT NULL AND ${inTime})::int AS in_edd
+       FROM shipments sh WHERE sh.state = 'delivered' AND ${win('sh.created_at')} ${al('sh')} GROUP BY 1`, args),
+  ]);
+  const pv = prev.rows[0]; const pFinished = pv.delivered + pv.rto + pv.lost;
+  const bk = buckets.rows[0]; const ql = quality.rows[0];
+  const ZONE_ORDER: [string, string][] = [['within_city', 'Zone A'], ['within_state', 'Zone B'], ['metro_to_metro', 'Zone C'], ['rest_of_india', 'Zone D'], ['ne_jk', 'Zone E']];
   const finished = s.delivered + s.rto + s.lost;
   const payMix = (mode: string) => { const r = payments.rows.find((x) => x.mode === mode); return { orders: r ? Number(r.orders) : 0, valuePaise: r ? Number(r.value) : 0 }; };
   return {
@@ -105,6 +145,13 @@ const summarize = async (client: Pool | PoolClient, q: Range, sellerId?: string)
     stateDelivery: states.rows.map((x) => ({ state: x.state, delivered: Number(x.delivered), total: Number(x.total) })),
     courierMix: couriers.rows.map((x) => ({ name: x.name, total: Number(x.total), delivered: Number(x.delivered), finished: Number(x.finished) })),
     paymentMix: { cod: payMix('cod'), prepaid: payMix('prepaid') },
+    // The period right before this one, same length: what the cards are compared against.
+    previous: { from: prevFrom, to: prevTo, orderVolume: prevOrders.rows[0].placed, shipped: pv.shipped, delivered: pv.delivered, rto: pv.rto, deliveryRate: pct(pv.delivered, pFinished), rtoRate: pct(pv.rto, pFinished) },
+    // Booked parcels (not cancelled) by how long the first courier scan took. Parcels with no scan yet are in none of the three.
+    pickupSpeed: { booked: bk.booked, within24h: bk.h24, between24and48h: bk.h48, beyond48h: bk.hmore, within24hPct: pct(bk.h24, bk.booked), between24and48hPct: pct(bk.h48, bk.booked), beyond48hPct: pct(bk.hmore, bk.booked) },
+    // Delivered parcels: delivered without any NDR, and delivered on or before the promised date (booking date + 5 days until couriers send their own date).
+    deliveryQuality: { delivered: ql.delivered, firstAttemptPct: pct(ql.first_attempt, ql.delivered), withinPromisedDatePct: pct(ql.in_edd, ql.with_edd) },
+    zoneSla: ZONE_ORDER.map(([code, label]) => { const z = zones.rows.find((r) => r.zone === code); return { zone: label, delivered: z?.with_edd ?? 0, withinPromisedDatePct: z ? pct(z.in_edd, z.with_edd) : null }; }),
     ndrReasons: (() => { const total = ndrReasons.rows.reduce((a, r) => a + r.n, 0); return ndrReasons.rows.map((r) => ({ reason: r.reason, count: r.n, pct: pct(r.n, total) })); })(),
   };
 };

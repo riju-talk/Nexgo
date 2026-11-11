@@ -38,7 +38,9 @@ export async function ndrRoutes(app: FastifyInstance) {
   // Board status shown to sellers, derived from the case state and age:
   // new (open < 48h) -> action_pending (open, older) -> redelivery_scheduled | rto | resolved.
   const STATUS_SQL = `CASE WHEN nc.state = 'resolved' THEN 'resolved' WHEN nc.state = 'rto_requested' THEN 'rto' WHEN nc.state = 'reattempt_requested' THEN 'redelivery_scheduled' WHEN nc.opened_at > now() - interval '48 hours' THEN 'new' ELSE 'action_pending' END`;
-  const TABS = ['all', 'new', 'action_pending', 'redelivery_scheduled', 'resolved', 'rto'] as const;
+  const TABS = ['all', 'new', 'action_pending', 'redelivery_scheduled', 'resolved', 'rto', 'action_required', 'action_requested', 'delivered'] as const;
+  // The four tabs sellers work from: what needs an answer, what was answered and is waiting, what ended delivered, what went back.
+  const TAB_GROUPS: Record<string, string[]> = { action_required: ['new', 'action_pending'], action_requested: ['redelivery_scheduled'], delivered: ['resolved'], rto: ['rto'] };
 
   // NDR cases for the seller: tabs, search, reason/courier/date filters, pagination.
   app.get('/v1/ndr/cases', { preHandler: requireSeller }, async (request) => {
@@ -59,7 +61,7 @@ export async function ndrRoutes(app: FastifyInstance) {
     return withSellerTransaction(p.sellerId, async (client) => {
       const where = ['nc.seller_id = $1']; const params: unknown[] = [p.sellerId];
       const add = (sql: string, value: unknown) => { params.push(value); where.push(sql.replaceAll('?', `$${params.length}`)); };
-      if (query.tab !== 'all') add(`(${STATUS_SQL}) = ?`, query.tab);
+      if (query.tab !== 'all') add(`(${STATUS_SQL}) = ANY(?::text[])`, TAB_GROUPS[query.tab] ?? [query.tab]);
       if (query.reason) add('nc.ndr_reason::text = ?', query.reason);
       if (query.courier) add('cp.code = ?', query.courier);
       if (query.attemptNumber) add('nc.attempt_number = ?', query.attemptNumber);
@@ -377,7 +379,7 @@ export async function ndrRoutes(app: FastifyInstance) {
       const total = Object.values(by).reduce((a, b) => a + b, 0);
       return {
         total, shipped: cohort.rows[0].shipped, shareOfShipmentsPct: pct(cohort.rows[0].hit, cohort.rows[0].shipped),
-        counts: { new: by.new ?? 0, action_pending: by.action_pending ?? 0, redelivery_scheduled: by.redelivery_scheduled ?? 0, resolved: by.resolved ?? 0, rto: by.rto ?? 0 },
+        counts: { action_required: (by.new ?? 0) + (by.action_pending ?? 0), action_requested: by.redelivery_scheduled ?? 0, delivered: by.resolved ?? 0, new: by.new ?? 0, action_pending: by.action_pending ?? 0, redelivery_scheduled: by.redelivery_scheduled ?? 0, resolved: by.resolved ?? 0, rto: by.rto ?? 0 },
         codAtRiskPaise: Number(cod.rows[0].v),
         reasons: reasons.rows.map((r) => ({ reason: r.reason, count: Number(r.n), pct: pct(Number(r.n), total) })),
         couriers: couriers.rows.map((r) => ({ code: r.code, name: r.name, count: Number(r.n) })),

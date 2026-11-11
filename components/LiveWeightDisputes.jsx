@@ -10,7 +10,9 @@ import * as T from '@/lib/theme';
 const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`, borderRadius: 12 };
 const FIELD = { height: 38, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
 const STATUS = { open: ['Action needed', '#C2410C', '#F5822018'], disputed: ['Disputed', '#3877fc', '#3877fc14'], accepted: ['Accepted', '#6B7280', '#6B728018'], won: ['Won', T.GREEN, `${T.GREEN}18`], lost: ['Lost', T.RED, `${T.RED}16`], withdrawn: ['Withdrawn', '#6B7280', '#6B728018'] };
-const TABS = [['', 'All'], ['open', 'Action needed'], ['disputed', 'Disputed'], ['accepted', 'Accepted'], ['won', 'Won'], ['lost', 'Lost'], ['withdrawn', 'Withdrawn']];
+// Pending = needs your answer, Raised by You = you disputed it, Resolved = accepted or won, Rejected = the courier rejected the dispute.
+const TABS = [['pending', 'Pending'], ['raised', 'Raised by You'], ['resolved', 'Resolved'], ['rejected', 'Rejected'], ['', 'All']];
+const TAB_COUNT = { pending: (s) => s.open_count, raised: (s) => s.disputed_count, resolved: (s) => Number(s.accepted_count || 0) + Number(s.won_count || 0), rejected: (s) => s.lost_count };
 const kg = (g) => `${(Number(g) / 1000).toFixed(2)} kg`;
 const inr = (paise) => `₹${(Number(paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const day = (v) => (v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
@@ -72,7 +74,7 @@ export default function LiveWeightDisputes({ mobile }) {
   const [busy, setBusy] = useState(false); const [format, setFormat] = useState('csv');
 
   useEffect(() => { const t = window.setTimeout(() => { setQ(qInput.trim()); setPage(1); }, 300); return () => window.clearTimeout(t); }, [qInput]);
-  const params = useMemo(() => { const p = new URLSearchParams({ page: String(page), pageSize: '8' }); if (status) p.set('status', status); if (q) p.set('q', q); if (courier) p.set('courier', courier); if (from) p.set('from', from); if (to) p.set('to', to); return p.toString(); }, [status, page, q, courier, from, to]);
+  const params = useMemo(() => { const p = new URLSearchParams({ page: String(page), pageSize: '8' }); if (status) p.set('group', status); if (q) p.set('q', q); if (courier) p.set('courier', courier); if (from) p.set('from', from); if (to) p.set('to', to); return p.toString(); }, [status, page, q, courier, from, to]);
   const key = `${params}#${tick}`;
   useEffect(() => {
     let live = true;
@@ -123,7 +125,7 @@ export default function LiveWeightDisputes({ mobile }) {
       </div>
       <section style={CARD}>
         <div role="tablist" style={{ display: 'flex', gap: 4, padding: '4px 14px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
-          {TABS.map(([id, label]) => { const on = status === id; const count = id ? n(s[`${id}_count`]) : null; return <button key={id || 'all'} role="tab" aria-selected={on} type="button" onClick={() => { setStatus(id); setPage(1); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#3877fc' : 'transparent'}`, background: 'transparent', color: on ? '#3877fc' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{count > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'open' ? T.RED : '#3877fc', color: '#fff', fontSize: 11 }}>{count}</span>}</button>; })}
+          {TABS.map(([id, label]) => { const on = status === id; const count = id ? n(TAB_COUNT[id](s)) : null; return <button key={id || 'all'} role="tab" aria-selected={on} type="button" onClick={() => { setStatus(id); setPage(1); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#3877fc' : 'transparent'}`, background: 'transparent', color: on ? '#3877fc' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{count > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'open' ? T.RED : '#3877fc', color: '#fff', fontSize: 11 }}>{count}</span>}</button>; })}
         </div>
         <div style={{ padding: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <input aria-label="Search" style={{ ...FIELD, flex: '1 1 200px', minWidth: 160 }} placeholder="Search by AWB or Order ID…" value={qInput} onChange={(e) => setQInput(e.target.value)} />

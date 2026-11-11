@@ -11,6 +11,7 @@ import * as T from '@/lib/theme';
 import ScenicBackdrop from './ScenicBackdrop';
 import DashboardStatCard from './DashboardStatCard';
 import DashboardStatCardModal from './DashboardStatCardModal';
+import DashboardInsights from './DashboardInsights';
 import TrendChart from './TrendChart';
 import BarChartV from './BarChartV';
 import { Btn } from './Kit';
@@ -169,6 +170,8 @@ export default function DashboardContent({ mobile, narrow, phone }) {
             ))}
           </div>
         </div>
+
+        <DashboardInsights live={live} rangeLabel={rangeLabel} phone={phone} />
 
         <div style={{ ...GLASS, marginTop: 20, overflow: 'hidden' }}>
           <GlassSheen />

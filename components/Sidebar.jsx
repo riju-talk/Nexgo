@@ -32,7 +32,7 @@ const MENU = [
   ['dashboard', 'Dashboard', 'dashboard', []],
   ['alerts', 'Notifications', 'notif-center', []],
   ['intake', 'Orders Management', 'b2c', [['Create B2C order', 'b2c', ['bulk-orders']]]],
-  ['flight', 'Track', 'shipments', [['Track shipments', 'shipments'], ['Bulk AWB tracking', 'bulk-track']]],
+  ['flight', 'Track', 'shipments', [['Track shipments', 'shipments'], ['Pickup & Manifests', 'manifests'], ['Bulk AWB tracking', 'bulk-track']]],
   ['reports', 'Reports', 'ndr', [['NDR Management', 'ndr'], ['RTO Dashboard', 'rto'], ['MIS Report', 'mis'], ['Weight Management', 'weight']]],
   ['book', 'Tools', 'ratecard', [['Rate card', 'ratecard'], ['Rate calculator', 'ratecalc'], ['Pincode serviceability', 'pincode']]],
   ['addons', 'Marketplace', 'shopify', [['Shopify', 'shopify'], ['Magento', 'magento'], ['WooCommerce', 'woo'], ['Amazon.in', 'amazon']]],

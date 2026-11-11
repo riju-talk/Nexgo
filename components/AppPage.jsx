@@ -16,6 +16,7 @@ const AdminPlatformPages = dynamic(() => import('./AdminPlatformPages'));
 const LiveSellerOperations = dynamic(() => import('./LiveSellerOperations'));
 const LiveAdminQueues = dynamic(() => import('./LiveAdminQueues'));
 const AdminPickups = dynamic(() => import('./AdminPickups'));
+const LiveManifests = dynamic(() => import('./LiveManifests'));
 const LiveNotifications = dynamic(() => import('./LiveNotifications'));
 const LiveCreateOrder = dynamic(() => import('./LiveCreateOrder'));
 const LiveSellerWorkspace = dynamic(() => import('./LiveSellerWorkspace'));
@@ -123,6 +124,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isLiveSellerPage && <LiveSellerOperations activeId={id} mobile={mobile} />}
         {isLiveAdminPage && id !== 'a-pickups' && <LiveAdminQueues activeId={id} mobile={mobile} />}
         {id === 'a-pickups' && <AdminPickups mobile={mobile} />}
+        {id === 'manifests' && <LiveManifests mobile={mobile} />}
         {id === 'notif-center' && <LiveNotifications mobile={mobile} />}
         {isCreateOrder && <CreateOrder tab={id === 'bulk-orders' ? 'bulk' : 'single'} mobile={mobile} />}
         {isLiveCreateOrder && <LiveCreateOrder mobile={mobile} flow={id === 'shipnow' ? 'ship_now' : id} />}

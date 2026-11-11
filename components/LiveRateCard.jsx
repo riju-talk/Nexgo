@@ -18,6 +18,8 @@ const modeOf = (s) => (/air|express/i.test(s.serviceType || '') ? 'Air' : 'Surfa
 // Each zone cell reads Forward | RTO, Add. Forward | Add. RTO, COD charges | COD %.
 function ZoneCell({ rate, cod }) {
   if (!rate) return <td style={{ ...CELL, color: T.TEXT_MUTED, textAlign: 'center' }}>—</td>;
+  // Returns cost exactly what the forward leg costs.
+  const sameRto = Number(rate.rtoBasePaise) === Number(rate.basePaise) && Number(rate.rtoAdditionalPaise) === Number(rate.additionalPaise);
   const row = (a, b, strong) => <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontVariantNumeric: 'tabular-nums', fontWeight: strong ? 700 : 500, color: strong ? T.TEXT : T.TEXT_SECONDARY }}><span>{a}</span><span>{b}</span></div>;
   return (
     <td style={CELL}>
@@ -25,6 +27,7 @@ function ZoneCell({ rate, cod }) {
         {row(rs(rate.basePaise), rs(rate.rtoBasePaise), true)}
         {row(rs(rate.additionalPaise), rs(rate.rtoAdditionalPaise))}
         {row(cod ? rs(rate.codFeePaise) : '—', cod ? `${(rate.codPercentBps / 100).toFixed(rate.codPercentBps % 100 ? 1 : 0)}%` : '—')}
+        {sameRto && <span style={{ justifySelf: 'start', marginTop: 2, padding: '1px 8px', borderRadius: 99, background: '#E3F4EC', color: '#14724F', fontSize: 10.5, fontWeight: 750 }}>Same RTO</span>}
       </div>
     </td>
   );

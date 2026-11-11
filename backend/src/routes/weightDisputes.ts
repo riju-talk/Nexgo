@@ -29,6 +29,8 @@ export async function weightDisputeRoutes(app: FastifyInstance) {
     const p = principal(request);
     const query = z.object({
       status: z.enum(['open', 'disputed', 'accepted', 'won', 'lost', 'withdrawn']).optional(),
+      // The tabs sellers see: Pending (needs you), Raised by you, Resolved (accepted or won), Rejected (lost).
+      group: z.enum(['pending', 'raised', 'resolved', 'rejected']).optional(),
       q: z.string().trim().max(80).optional(),
       courier: z.string().trim().max(64).optional(),
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -41,6 +43,7 @@ export async function weightDisputeRoutes(app: FastifyInstance) {
       const where = ['wd.seller_id = $1']; const params: unknown[] = [p.sellerId];
       const add = (sql: string, value: unknown) => { params.push(value); where.push(sql.replaceAll('?', `$${params.length}`)); };
       if (query.status) add('wd.status = ?::dispute_status_enum', query.status);
+      if (query.group) add('wd.status::text = ANY(?::text[])', { pending: ['open'], raised: ['disputed'], resolved: ['accepted', 'won'], rejected: ['lost'] }[query.group]);
       if (query.courier) add('cp.code = ?', query.courier);
       if (query.from) add('wd.raised_at >= ?::date', query.from);
       if (query.to) add('wd.raised_at < ?::date + 1', query.to);
