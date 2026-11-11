@@ -2,6 +2,7 @@ import { db, withTransaction } from '../db/client.js';
 import { config } from '../config.js';
 import { assignOneOrder, loadCourierRank, type CourierRank } from '../routes/shipments.js';
 import { sellerSafeMessage } from './sellerSafeError.js';
+import { notify, notifyFunds } from './notify.js';
 
 /**
  * Works through assign_batch_items (courier assignment queued by POST /v1/shipments/assign-batch).
@@ -49,9 +50,12 @@ async function claim(limit: number): Promise<Claimed[]> {
 }
 
 async function finishBatchIfDone(batchId: string) {
-  await db.query(
+  const done = await db.query<{ seller_id: string }>(
     `UPDATE assign_batches SET finished_at = now() WHERE id = $1 AND finished_at IS NULL
-       AND NOT EXISTS (SELECT 1 FROM assign_batch_items WHERE batch_id = $1 AND state IN ('queued', 'running'))`, [batchId]);
+       AND NOT EXISTS (SELECT 1 FROM assign_batch_items WHERE batch_id = $1 AND state IN ('queued', 'running')) RETURNING seller_id`, [batchId]);
+  if (!done.rows[0]) return;
+  const c = (await db.query<{ ok: number; failed: number }>(`SELECT count(*) FILTER (WHERE state = 'ok')::int AS ok, count(*) FILTER (WHERE state = 'failed')::int AS failed FROM assign_batch_items WHERE batch_id = $1`, [batchId])).rows[0];
+  await notify(done.rows[0].seller_id, { kind: 'batch', title: c.failed ? `Courier assignment finished: ${c.ok} booked, ${c.failed} not` : `Courier assignment finished: ${c.ok} booked`, body: c.failed ? 'Open Track > Ready to ship to see what needs fixing.' : undefined, screen: 'shipments', entityId: batchId, dedupeKey: `assign-batch:${batchId}` });
 }
 
 async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void }) {
@@ -70,6 +74,7 @@ async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void
     // Out of money (or debit limit reached): the rest of this batch cannot succeed either, so stop it now instead of trying every order.
     if (!out.ok && out.error && FUNDS.test(out.error)) {
       await db.query(`UPDATE assign_batch_items SET state = 'failed', error = $2, finished_at = now() WHERE batch_id = $1 AND state = 'queued'`, [item.batch_id, sellerSafeMessage(out.error).slice(0, 500)]);
+      await notifyFunds(item.seller_id, sellerSafeMessage(out.error));
     }
     await finishBatchIfDone(item.batch_id);
   } catch (error) {

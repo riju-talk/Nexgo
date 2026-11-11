@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db, withTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
 import { requireAccountAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
+import { notify } from '../lib/notify.js';
 
 // Admin side of weight management: the platform sees every seller's discrepancy and records the courier's decision.
 //   won  -> the courier withdrew the extra charge; nothing is debited (the seller was never charged).
@@ -43,9 +44,10 @@ export async function adminDisputeRoutes(app: FastifyInstance) {
           [current.seller_id, current.additional_charge_paise, id, `weight-dispute-${id}`, `Weight dispute lost: additional charge for dispute ${id}`]);
       }
       await audit(client, { sellerId: current.seller_id, actorUserId: admin.userId, action: `weight_dispute.admin_${input.outcome}`, targetType: 'weight_dispute', targetId: id, requestId: request.id, metadata: { outcome: input.outcome, amountPaise: input.outcome === 'lost' ? current.additional_charge_paise : 0 } });
-      return { row: updated };
+      return { row: updated, sellerId: current.seller_id };
     });
     if (!('row' in result)) return reply.code(result.status).send({ error: result.error });
+    await notify(result.sellerId, { kind: 'weight', title: input.outcome === 'won' ? 'Weight dispute won' : 'Weight dispute lost', body: input.outcome === 'won' ? 'The courier accepted your dispute. No extra charge was made.' : 'The courier upheld its weight. The extra charge was debited from your wallet.', screen: 'weight', entityId: id, dedupeKey: `weight-dispute:${id}` });
     return result.row;
   });
 

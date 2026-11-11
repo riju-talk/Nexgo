@@ -6,6 +6,7 @@ import { encryptSecret, maskAccountNumber } from '../lib/crypto.js';
 import { requireAccountAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
 import { requireSeller } from './seller.js';
 import { ID_PROOF_TYPES, idLast4, idNumberProblem } from '../lib/idProof.js';
+import { notify } from '../lib/notify.js';
 
 function principal(request: FastifyRequest) {
   if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
@@ -127,6 +128,7 @@ export async function kycRoutes(app: FastifyInstance) {
        VALUES ($1, $2, $3, 'seller_kyc', $4, $5, $6)`,
       [sellerId, request.adminPrincipal!.userId, `kyc.${input.decision}`, sellerId, request.id, JSON.stringify({ rejectionReason: input.rejectionReason ?? null })],
     );
+    await notify(sellerId, { kind: 'kyc', title: input.decision === 'verified' ? 'KYC verified' : 'KYC needs your attention', body: input.decision === 'verified' ? 'Your documents were verified.' : (input.rejectionReason ?? 'Please review and resubmit your KYC.'), screen: 'kyc', entityId: sellerId, dedupeKey: `kyc:${sellerId}:${Date.now()}` });
     return result.rows[0];
   });
 }

@@ -17,6 +17,7 @@ import { courierAdapter } from '../couriers/registry.js';
 import { sellerSafeMessage } from '../lib/sellerSafeError.js';
 import { invalidateMetrics } from '../lib/metrics.js';
 import { pickupPendingSql } from '../lib/metrics.js';
+import { notifyFunds } from '../lib/notify.js';
 
 const uuid = z.string().uuid();
 const bookingInput = z.object({ orderId: uuid, providerCode: z.string().regex(/^[a-z0-9-]{2,64}$/), serviceCode: z.string().regex(/^[a-z0-9-]{2,64}$/) });
@@ -112,7 +113,7 @@ export async function bookInTx(client: PoolClient, p: ReturnType<typeof principa
 }
 
 /** The same booking with no connection held during the courier call, so many bookings can run at once. Safe to retry: the key makes it idempotent. */
-export async function bookDetached(p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
+async function bookDetachedInner(p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
   const prep = await withSellerTransaction(p.sellerId, (client) => prepareBooking(client, p, input, key));
   if (prep.replay) return { shipment: prep.shipment, replay: true as const };
   const providerBooking = await callCourier(prep.ctx);
@@ -138,6 +139,16 @@ const READY_SQL = `(char_length(btrim(c.full_name)) >= 2 AND right(regexp_replac
 
 /** The seller's courier priority list (Settings > Courier rules) as a ranking function: lower = tried first; unlisted couriers last. */
 export type CourierRank = (name: string, code: string) => number;
+/** bookDetachedInner plus: a booking refused for lack of money (empty wallet or debit limit used up) tells the seller once an hour in their notifications. */
+export async function bookDetached(p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
+  try { return await bookDetachedInner(p, requestId, input, key); }
+  catch (e) {
+    const code = (e as { code?: string }).code;
+    if (code === 'DEBIT_LIMIT_REACHED' || code === 'INSUFFICIENT_BALANCE') void notifyFunds(p.sellerId, (e as Error).message);
+    throw e;
+  }
+}
+
 export async function loadCourierRank(sellerId: string): Promise<CourierRank> {
     const prefs = await withSellerTransaction(sellerId, async (client) => (await client.query<{ rules: Record<string, unknown> | null }>(`SELECT preferences->'courier-rules' AS rules FROM seller_preferences WHERE seller_id = $1`, [sellerId])).rows[0]?.rules ?? {});
     const priority = [1, 2, 3, 4, 5, 6].map((n) => String(prefs[`priority${n}`] ?? '').toLowerCase().replace(/[^a-z]/g, '')).filter((x) => x && x !== 'notset');

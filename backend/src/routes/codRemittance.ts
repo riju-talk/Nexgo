@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { db, withSellerTransaction, withTransaction } from '../db/client.js';
 import { requireAccountAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
 import { requireSeller } from './seller.js';
+import { notify } from '../lib/notify.js';
+import { invalidateMetrics } from '../lib/metrics.js';
 
 function principal(request: FastifyRequest) {
   if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
@@ -94,10 +96,13 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
       }
       const updated = await client.query('UPDATE cod_remittance_cycles SET status=\'remitted\', bank_reference=$1, remitted_by=$2, remitted_at=now(), wallet_offset_paise=$4, payout_paise=$5 WHERE id=$3 AND status=\'approved\' RETURNING id, status, remitted_at, bank_reference, seller_id, wallet_offset_paise, payout_paise', [bankReference, request.adminPrincipal!.userId, cycleId, offset.toString(), (net - offset).toString()]);
       await client.query(`INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id, metadata) VALUES ($1,$2,'cod_remittance.remitted','cod_remittance_cycle',$3,$4,$5)`, [c.seller_id, request.adminPrincipal!.userId, cycleId, request.id, JSON.stringify({ bankReference, walletOffsetPaise: offset.toString(), payoutPaise: (net - offset).toString() })]);
-      const { seller_id: _seller, ...row } = updated.rows[0];
-      return { row };
+      const { seller_id: sellerOfCycle, ...row } = updated.rows[0];
+      return { row, sellerId: sellerOfCycle as string };
     });
     if (!('row' in outcome)) return reply.code(outcome.status).send({ error: outcome.error });
+    const paid = Number(outcome.row.payout_paise ?? outcome.row.net_remitted_paise ?? 0) / 100;
+    await notify(outcome.sellerId, { kind: 'cod', title: 'COD payout sent', body: `₹${paid.toLocaleString('en-IN')} was paid out to your bank account${outcome.row.bank_reference ? ` (reference ${outcome.row.bank_reference})` : ''}.`, screen: 'cod', entityId: String(outcome.row.id), dedupeKey: `cod-remitted:${outcome.row.id}` });
+    invalidateMetrics(outcome.sellerId);
     return outcome.row;
   });
 

@@ -23,6 +23,7 @@ import { adminSellerProfileRoutes, impersonationAudit, impersonationGuard } from
 import { adminWriteAudit } from './lib/adminWriteAudit.js';
 import { assignBatchRoutes } from './routes/assignBatches.js';
 import { cancelBatchRoutes } from './routes/cancelBatches.js';
+import { notificationRoutes } from './routes/notifications.js';
 import { adminVisibilityRoutes } from './routes/adminVisibility.js';
 import { kycRoutes } from './routes/kyc.js';
 import { kycSectionRoutes } from './routes/kycSections.js';
@@ -119,6 +120,7 @@ await app.register(operationsRoutes);
 await app.register(shipmentRoutes);
 await app.register(assignBatchRoutes);
 await app.register(cancelBatchRoutes);
+await app.register(notificationRoutes);
 await app.register(trackingRoutes);
 await app.register(exceptionRoutes);
 await app.register(walletRoutes);

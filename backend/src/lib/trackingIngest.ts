@@ -6,6 +6,7 @@ import { applyShipmentStateEffects } from './shipmentEffects.js';
 import { isProgressionAllowed, type CanonicalShipmentState } from './courier.js';
 import { sellerSafeMessage } from './sellerSafeError.js';
 import { invalidateMetrics } from './metrics.js';
+import { notify, type Note } from './notify.js';
 
 // The shared part of tracking ingestion: record one courier event on a shipment, move its state forward (never backwards) and run the
 // side effects (RTO freight billed once, NDR case opened / closed). Used by every aggregator's webhook and by tests that replay eventsator.
@@ -64,6 +65,7 @@ export async function ingestUpdate(aggregator: string, update: NormalizedUpdate,
   if (!update.awb || update.awb.length > 64) return 'unknown';
   const bodyHash = createHash('sha256').update(`${update.awb}|${rawBody}`).digest('hex');
   let sellerTouched: string | undefined;
+  const notes: Note[] = [];
   const outcome = await withTransaction(async (tx) => {
     const delivery = await tx.query(
       'INSERT INTO webhook_deliveries (provider_code,external_event_id,payload_hash,payload) VALUES ($1,$2,$3,$4) ON CONFLICT (provider_code, external_event_id) DO NOTHING RETURNING id',
@@ -73,9 +75,19 @@ export async function ingestUpdate(aggregator: string, update: NormalizedUpdate,
     const shipment = found.rows[0];
     sellerTouched = shipment?.seller_id;
     if (!shipment) { await tx.query('DELETE FROM webhook_deliveries WHERE id=$1', [delivery.rows[0].id]); return 'unknown' as const; }
+    const startState = shipment.state;
     for (const e of update.events) await applyEvent(tx, shipment, e.mapped, e.at, e.location, e.description, e.eventId, e);
     const c = update.current;
     if (c && c.mapped.state !== shipment.state) await applyEvent(tx, shipment, c.mapped, c.at, c.location, c.description, c.eventId, { status: c.description });
+    // What the seller should hear about (stored once per event; sent after commit).
+    if (startState !== shipment.state) {
+      if (shipment.state === 'delivered') notes.push({ kind: 'delivered', title: 'Shipment delivered', body: `AWB ${update.awb} was delivered to the customer.`, screen: 'shipments', entityId: shipment.id, dedupeKey: `delivered:${shipment.id}` });
+      if (shipment.state === 'rto') notes.push({ kind: 'rto', title: 'Shipment is returning to you (RTO)', body: `AWB ${update.awb} is on its way back to your warehouse.`, screen: 'rto', entityId: shipment.id, dedupeKey: `rto:${shipment.id}` });
+    }
+    if (shipment.state === 'ndr') {
+      const ndr = (await tx.query<{ attempt_number: number; reason_detail: string | null }>('SELECT attempt_number, reason_detail FROM ndr_cases WHERE shipment_id = $1', [shipment.id])).rows[0];
+      if (ndr) notes.push({ kind: 'ndr', title: `Delivery attempt failed (attempt ${ndr.attempt_number})`, body: `AWB ${update.awb}: ${ndr.reason_detail ?? 'the customer could not be reached'}. Choose reattempt or return.`, screen: 'ndr', entityId: shipment.id, dedupeKey: `ndr:${shipment.id}:${ndr.attempt_number}` });
+    }
     let note: string | null = null;
     // A cancellation made on the courier's side is not applied (the refund goes through NEXGO's own cancel), but the parcel stops counting as a pending pickup.
     if (update.unmappedStatus && /^CANCEL/i.test(update.unmappedStatus)) await tx.query("UPDATE shipments SET courier_cancelled_at = COALESCE(courier_cancelled_at, now()) WHERE id = $1 AND state IN ('booked','pickup_pending','pickup_scheduled')", [shipment.id]);
@@ -83,6 +95,6 @@ export async function ingestUpdate(aggregator: string, update: NormalizedUpdate,
     await tx.query('UPDATE webhook_deliveries SET processed_at=now(),processing_error=$2 WHERE id=$1', [delivery.rows[0].id, note]);
     return 'processed' as const;
   });
-  if (outcome === 'processed') invalidateMetrics(sellerTouched); // this seller's dashboards recalculate on the next request
+  if (outcome === 'processed') { invalidateMetrics(sellerTouched); for (const n of notes) await notify(sellerTouched, n); } // this seller's dashboards recalculate on the next request
   return outcome;
 }

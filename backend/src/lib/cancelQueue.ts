@@ -4,6 +4,7 @@ import { audit } from './audit.js';
 import { invalidateMetrics } from './metrics.js';
 import { sellerSafeMessage } from './sellerSafeError.js';
 import { cancelShipment } from '../routes/shipments.js';
+import { notify } from './notify.js';
 
 /**
  * Works through cancel_batch_items (cancellations queued by POST /v1/shipments/cancel-batch).
@@ -41,9 +42,13 @@ async function claim(limit: number): Promise<Claimed[]> {
 }
 
 async function finishBatchIfDone(batchId: string) {
-  await db.query(
+  const done = await db.query<{ seller_id: string }>(
     `UPDATE cancel_batches SET finished_at = now() WHERE id = $1 AND finished_at IS NULL
-       AND NOT EXISTS (SELECT 1 FROM cancel_batch_items WHERE batch_id = $1 AND state IN ('queued', 'running'))`, [batchId]);
+       AND NOT EXISTS (SELECT 1 FROM cancel_batch_items WHERE batch_id = $1 AND state IN ('queued', 'running')) RETURNING seller_id`, [batchId]);
+  if (!done.rows[0]) return;
+  const c = (await db.query<{ ok: number; failed: number; refunded: string }>(`SELECT count(*) FILTER (WHERE state = 'ok')::int AS ok, count(*) FILTER (WHERE state = 'failed')::int AS failed, COALESCE(sum(refunded_paise) FILTER (WHERE state = 'ok'), 0)::text AS refunded FROM cancel_batch_items WHERE batch_id = $1`, [batchId])).rows[0];
+  const refund = Number(c.refunded) / 100;
+  await notify(done.rows[0].seller_id, { kind: 'batch', title: `Cancellation finished: ${c.ok} cancelled${c.failed ? `, ${c.failed} not` : ''}`, body: refund ? `₹${refund.toLocaleString('en-IN')} was credited back to your wallet.` : undefined, screen: 'shipments', entityId: batchId, dedupeKey: `cancel-batch:${batchId}` });
 }
 
 /** An order that never got a courier: cancelled in place (nothing to refund). */
