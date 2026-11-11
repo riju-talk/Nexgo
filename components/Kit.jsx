@@ -25,8 +25,24 @@ export function AwbLink({ awb, style }) {
   return <button type="button" title="Open tracking" onClick={(e) => { e.stopPropagation(); setTrackFocus(awb); nav('shipments'); }} style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: BLUE, fontFamily: T.MONO, fontSize: 12, textDecoration: 'underline', textUnderlineOffset: 2, ...style }}>{awb}</button>;
 }
 
-export function Btn({ children, onClick, primary, danger, disabled, small, type = 'button', style }) {
-  return <button type={type} disabled={disabled} onClick={onClick} style={{ height: small ? 32 : 38, padding: `0 ${small ? 11 : 16}px`, borderRadius: 8, border: `1px solid ${primary ? BLUE : danger ? T.RED : T.BORDER}`, background: primary ? BLUE : danger ? T.RED : T.SURFACE, color: primary || danger ? '#fff' : T.TEXT, fontWeight: 700, fontSize: small ? 12.5 : 13.5, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, whiteSpace: 'nowrap', ...style }}>{children}</button>;
+// A small rotating ring (CSS keyframes in app/globals.css). Colour follows the text it sits in.
+export function Spinner({ size = 16, color = 'currentColor' }) {
+  return <span role="status" aria-label="Loading" style={{ display: 'inline-block', width: size, height: size, borderRadius: '50%', border: `2px solid ${color}`, borderRightColor: 'transparent', animation: 'nx-spin .7s linear infinite', flex: 'none' }} />;
+}
+
+// Determinate progress (value/total); with no total it shows a moving bar.
+export function ProgressBar({ value = 0, total = 0, color = BLUE }) {
+  const pct = total > 0 ? Math.min(100, Math.round((value / total) * 100)) : null;
+  return (
+    <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined} style={{ height: 8, borderRadius: 4, background: T.BORDER, overflow: 'hidden' }}>
+      <div style={{ height: '100%', width: pct === null ? '40%' : `${pct}%`, borderRadius: 4, background: color, transition: 'width .3s ease', animation: pct === null ? 'nx-indeterminate 1.1s ease-in-out infinite' : 'none' }} />
+    </div>
+  );
+}
+
+export function Btn({ children, onClick, primary, danger, disabled, loading, small, type = 'button', style }) {
+  const off = disabled || loading;
+  return <button type={type} disabled={off} aria-busy={loading || undefined} onClick={onClick} style={{ height: small ? 32 : 38, padding: `0 ${small ? 11 : 16}px`, borderRadius: 8, border: `1px solid ${primary ? BLUE : danger ? T.RED : T.BORDER}`, background: primary ? BLUE : danger ? T.RED : T.SURFACE, color: primary || danger ? '#fff' : T.TEXT, fontWeight: 700, fontSize: small ? 12.5 : 13.5, cursor: loading ? 'progress' : disabled ? 'not-allowed' : 'pointer', opacity: off ? 0.65 : 1, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, ...style }}>{loading && <Spinner size={14} />}{children}</button>;
 }
 
 export function Pill({ children, color = T.GREEN, bg }) {

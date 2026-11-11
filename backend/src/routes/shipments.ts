@@ -14,6 +14,7 @@ import { laneRefusalOf, rememberLaneRefusals, type LaneRefusal } from '../lib/la
 import { storage, STORAGE_NOT_CONNECTED } from '../lib/storage.js';
 import { config } from '../config.js';
 import { courierAdapter } from '../couriers/registry.js';
+import { sellerSafeMessage } from '../lib/sellerSafeError.js';
 
 const uuid = z.string().uuid();
 const bookingInput = z.object({ orderId: uuid, providerCode: z.string().regex(/^[a-z0-9-]{2,64}$/), serviceCode: z.string().regex(/^[a-z0-9-]{2,64}$/) });
@@ -34,12 +35,14 @@ export function publicShipment<T extends Record<string, unknown>>(row: T): Omit<
 }
 
 // One booking, inside the caller's seller transaction (wallet-checked, idempotent on the key).
-const noFunds = () => Object.assign(new Error('Insufficient wallet balance. Recharge your wallet to book this shipment.'), { statusCode: 402 });
-/** True when the wallet (plus the seller's overdraft limit) cannot cover this amount. */
+// 402 with a code the screens recognise: a seller with a debit limit is told the limit is reached (a different cause from an empty wallet).
+const noFunds = (kind: 'limit' | 'balance' = 'balance') => Object.assign(new Error(kind === 'limit' ? 'Debit limit reached: you cannot push more orders until you recharge your wallet.' : 'Insufficient wallet balance. Recharge your wallet to book this shipment.'), { statusCode: 402, code: kind === 'limit' ? 'DEBIT_LIMIT_REACHED' : 'INSUFFICIENT_BALANCE' });
+/** false when the wallet (plus the seller's debit limit) covers this amount; otherwise why not: 'limit' (the seller has a debit limit and it is used up) or 'balance'. */
 async function fundsShort(client: PoolClient, sellerId: string, amountPaise: number) {
   const balance = await client.query<{ balance_paise: string }>(`SELECT COALESCE(SUM(CASE WHEN entry_type IN ('credit','release') THEN amount_paise WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END),0)::bigint AS balance_paise FROM wallet_entries WHERE seller_id=$1`, [sellerId]);
   const debitLimit = Number((await client.query<{ l: string }>('SELECT wallet_debit_limit_paise AS l FROM sellers WHERE id=$1', [sellerId])).rows[0]?.l ?? 0);
-  return Number(balance.rows[0].balance_paise) + debitLimit < amountPaise;
+  if (Number(balance.rows[0].balance_paise) + debitLimit >= amountPaise) return false;
+  return debitLimit > 0 ? ('limit' as const) : ('balance' as const);
 }
 
 /**
@@ -62,7 +65,8 @@ export async function prepareBooking(client: PoolClient, p: ReturnType<typeof pr
     if (selection.payment_mode === 'cod' && pinLane && pinLane.cod_available === false) throw Object.assign(new Error('Cash on delivery is not available at this pincode. Switch the order to prepaid or choose another courier.'), { statusCode: 422 });
     const price = calculateRate(selection, selection.total_weight_g || 1, selection.payment_mode === 'cod', selection.cod_amount_paise || 0);
     // A quick look at the wallet before the (slow) courier call; it is checked again under the wallet lock once the courier has answered.
-    if (await fundsShort(client, p.sellerId, price.totalPaise)) throw noFunds();
+    const short = await fundsShort(client, p.sellerId, price.totalPaise);
+    if (short) throw noFunds(short);
     const details = await loadBookingDetails(client, p.sellerId, input.orderId, selection.service_id);
     return { replay: false, ctx: { input, key, zone, selection, price, details } };
 }
@@ -82,11 +86,12 @@ export async function completeBooking(client: PoolClient, p: ReturnType<typeof p
   const { input, key, zone, selection, price } = ctx;
     // The courier has answered: only now take the wallet lock, so two concurrent bookings cannot both spend the same balance.
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
-    if (await fundsShort(client, p.sellerId, price.totalPaise)) {
+    const stillShort = await fundsShort(client, p.sellerId, price.totalPaise);
+    if (stillShort) {
       // Another booking used the money while this one was with the courier: undo the courier booking so nothing is shipped unpaid.
       try { await courierAdapter(selection.aggregator, selection.provider_code).cancel(providerBooking.providerShipmentId ?? providerBooking.awb); }
       catch (cancelError) { console.error(`Booking ${providerBooking.awb} could not be cancelled after a failed wallet re-check; cancel it at the courier by hand`, cancelError); }
-      throw noFunds();
+      throw noFunds(stillShort);
     }
     const shipment = await client.query(`INSERT INTO shipments (seller_id,order_id,provider_id,service_id,awb,chargeable_weight_g,shipping_charge_paise,quote_snapshot,idempotency_key,destination_pincode,destination_city,promised_delivery_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,cu.pincode,cu.city,now()+interval '5 days' FROM orders o JOIN customers cu ON cu.id=o.customer_id WHERE o.id=$2 RETURNING *`, [p.sellerId, input.orderId, selection.provider_id, selection.service_id, providerBooking.awb, Math.max(selection.total_weight_g, 1), price.totalPaise, JSON.stringify({ zone, provider: selection.provider_code, providerShipmentId: providerBooking.providerShipmentId, service: selection.service_code, destinationPincode: selection.destination_pincode, paymentMode: selection.payment_mode, price }), key]);
     await client.query('UPDATE shipments SET provider_shipment_id=$1, routing_code=$3 WHERE id=$2', [providerBooking.providerShipmentId, shipment.rows[0].id, providerBooking.routingCode ?? null]);
@@ -172,7 +177,7 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
         return { ok: true, awb, courier: c.pname, ms: Date.now() - started };
       } catch (e) {
         const status = (e as { statusCode?: number }).statusCode;
-        lastError = (e as Error).message || lastError;
+        lastError = sellerSafeMessage((e as Error).message || lastError);
         const lane = laneRefusalOf(e); if (lane) refusals.push({ lane, reason: lastError });
         if (status === 402) return { ok: false, error: lastError, ms: Date.now() - started }; // wallet short: no point trying other couriers
         if (status !== 422) throw e;
@@ -180,7 +185,7 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
     }
     return { ok: false, error: lastError, ms: Date.now() - started };
   } catch (e) {
-    return { ok: false, error: (e as Error).message || 'Could not assign a courier', ms: Date.now() - started };
+    return { ok: false, error: sellerSafeMessage((e as Error).message || 'Could not assign a courier'), ms: Date.now() - started };
   } finally {
     await rememberLaneRefusals(refusals); // the refusal is remembered even though nothing was written for the failed attempt
   }
@@ -294,7 +299,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
   });
   app.get('/v1/shipments/:shipmentId', { preHandler: requireSeller }, async (request) => {
     const p = principal(request); const shipmentId = uuid.parse((request.params as { shipmentId: string }).shipmentId);
-    return withSellerTransaction(p.sellerId, async (client) => { const shipment = await client.query('SELECT * FROM shipments WHERE id=$1 AND seller_id=$2', [shipmentId, p.sellerId]); if (!shipment.rows[0]) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 }); const events = await client.query('SELECT state,occurred_at,location,description,source FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at DESC', [shipmentId]); return { ...publicShipment(shipment.rows[0]), events: events.rows }; });
+    return withSellerTransaction(p.sellerId, async (client) => { const shipment = await client.query('SELECT * FROM shipments WHERE id=$1 AND seller_id=$2', [shipmentId, p.sellerId]); if (!shipment.rows[0]) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 }); const events = await client.query('SELECT state,occurred_at,location,description,\'courier\' AS source FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at DESC', [shipmentId]); return { ...publicShipment(shipment.rows[0]), events: events.rows }; });
   });
   app.post('/v1/shipments/book', { preHandler: [requireSeller, requireOnboarded('ship')] }, async (request, reply) => {
     const input = bookingInput.parse(request.body); const p = principal(request); const key = request.headers['idempotency-key'];
@@ -352,7 +357,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
     for (const shipmentId of ids) {
       if (Date.now() - started > 22_000) { results.push({ shipmentId, ok: false, error: 'Not processed in time. Select it again to retry.' }); continue; }
       try { const r = await cancelShipment(p, shipmentId, request.id); results.push({ shipmentId, ok: true, refundedPaise: r.refundedPaise }); }
-      catch (e) { results.push({ shipmentId, ok: false, error: (e as Error).message || 'Could not cancel' }); }
+      catch (e) { results.push({ shipmentId, ok: false, error: sellerSafeMessage((e as Error).message || 'Could not cancel') }); }
     }
     return { results, cancelled: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, refundedPaise: results.reduce((t, r) => t + (r.refundedPaise ?? 0), 0) };
   });

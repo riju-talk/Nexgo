@@ -131,8 +131,8 @@ export function AppStateProvider({ children }) {
     notifySidebar();
   }, []);
 
-  const showToast = useCallback((message, tone = 'success') => {
-    setToast({ id: Date.now(), message, tone });
+  const showToast = useCallback((message, tone = 'success', ms) => {
+    setToast({ id: Date.now(), message, tone, ms });
   }, []);
 
   const clearToast = useCallback(() => setToast(null), []);

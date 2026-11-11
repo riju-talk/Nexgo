@@ -2,6 +2,7 @@ import { courierAdapter } from '../couriers/registry.js';
 import type { NdrCourierAction } from '../couriers/types.js';
 import { withSellerTransaction } from '../db/client.js';
 import { audit } from './audit.js';
+import { sellerSafeMessage } from './sellerSafeError.js';
 
 // What the seller chose on the NDR board, translated to what the courier is told. Choices that need no courier action
 // (customer_contact: the seller phoned the buyer) map to null and are not sent.
@@ -23,7 +24,7 @@ export async function pushNdrToCourier(input: { sellerId: string; userId: string
     await withSellerTransaction(input.sellerId, (c) => audit(c, { sellerId: input.sellerId, actorUserId: input.userId, action: 'ndr.courier_notified', targetType: 'ndr_case', targetId: input.caseId, requestId: input.requestId, metadata: { action } }));
     return { status: 'sent' };
   } catch (e) {
-    const message = ((e as Error).message || 'The courier did not accept the request.').slice(0, 300);
+    const message = sellerSafeMessage((e as Error).message || 'The courier did not accept the request.').slice(0, 300);
     await withSellerTransaction(input.sellerId, (c) => audit(c, { sellerId: input.sellerId, actorUserId: input.userId, action: 'ndr.courier_notify_failed', targetType: 'ndr_case', targetId: input.caseId, requestId: input.requestId, metadata: { resolution: input.resolution, message } })).catch(() => undefined);
     return { status: 'failed', message };
   }

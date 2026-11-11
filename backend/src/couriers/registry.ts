@@ -1,6 +1,5 @@
 import { AGGREGATOR_IDS, pluginById } from './aggregators/index.js';
 import { credentialsFor } from './credentials.js';
-import { MockCourierAdapter } from './mock.js';
 import type { CourierAdapter } from './types.js';
 
 /** The ids of every aggregator plugin (couriers/aggregators/index.ts). */
@@ -14,8 +13,8 @@ export function aggregatorAdapter(aggregator: string): CourierAdapter {
   return plugin.create(credentialsFor(aggregator));
 }
 
-// A courier books through its aggregator; a courier with no aggregator is a sandbox one and uses the deterministic adapter.
-export function courierAdapter(aggregator: string | null, providerCode: string): CourierAdapter {
+// A courier books through its aggregator. A courier without one cannot be booked (there is no test courier any more).
+export function courierAdapter(aggregator: string | null, _providerCode: string): CourierAdapter {
   if (aggregator) return aggregatorAdapter(aggregator);
-  return new MockCourierAdapter(providerCode);
+  throw Object.assign(new Error('This courier is not available for booking right now. Choose another courier.'), { statusCode: 422 });
 }

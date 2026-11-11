@@ -58,7 +58,7 @@ export async function adminAggregatorRoutes(app: FastifyInstance) {
       const adapter = aggregatorAdapter(plugin.id);
       if (!adapter.listServices) throw new Error('This aggregator has no test call.');
       services = (await adapter.listServices()).length; ok = true; message = `Connected. ${services} courier service${services === 1 ? '' : 's'} available.`;
-    } catch (e) { message = ((e as Error).message || 'The connection test failed.').slice(0, 300); }
+    } catch (e) { message = (((e as { detail?: string }).detail ?? (e as Error).message) || 'The connection test failed.').slice(0, 300); }
     await db.query(`UPDATE aggregator_credentials SET last_tested_at = now(), last_test_ok = $2, last_test_message = $3 WHERE aggregator = $1`, [plugin.id, ok, message]);
     await db.query(`INSERT INTO audit_events (actor_user_id, action, target_type, target_id, request_id, metadata) VALUES ($1, 'aggregator.tested', 'aggregator', $2, $3, $4)`,
       [request.adminPrincipal!.userId, plugin.id, request.id, JSON.stringify({ ok })]);

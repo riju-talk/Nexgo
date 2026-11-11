@@ -2,7 +2,7 @@
 
 import { assignInBatches } from '@/lib/assignBatches';
 import { useEffect, useRef, useState } from 'react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch, ApiError, bookingErrorToast, isFundsMessage } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 import { Btn } from './Kit';
@@ -18,7 +18,7 @@ export async function assignCouriers(orderIds, showToast, reload, courier) {
   const results = await assignInBatches(orderIds, { courier, onProgress: (n, total) => { if (total > 3) showToast(`Assigning couriers… ${n} of ${total}`); } });
   const assigned = results.filter((r) => r.ok).length; const failed = results.length - assigned;
   const firstError = results.find((x) => !x.ok)?.error || '';
-  showToast(failed ? `${assigned} assigned, ${failed} not assigned: ${firstError}` : `${assigned} order${assigned === 1 ? '' : 's'} assigned to a courier`, failed ? 'error' : 'success');
+  showToast(failed ? `${assigned} assigned, ${failed} not assigned: ${firstError}` : `${assigned} order${assigned === 1 ? '' : 's'} assigned to a courier`, failed ? 'error' : 'success', failed && isFundsMessage(firstError) ? 8000 : undefined);
   await reload();
 }
 
@@ -88,7 +88,7 @@ function SingleOrder({ order, onClose, onDone }) {
       onDone();
     } catch (e) {
       const reason = e instanceof ApiError ? e.message : 'Booking failed';
-      showToast(reason, 'error');
+      bookingErrorToast(e instanceof ApiError ? e : new Error(reason), showToast);
       // 422 = this courier cannot take this parcel: move it to the "not available" list with the reason, so it is not tried again.
       if (e instanceof ApiError && e.status === 422) {
         setState((s) => ({ ...s, quotes: s.quotes.filter((q) => q !== chosen), unavailable: [...s.unavailable, { ...chosen, reason }], refusal: `${chosen.provider.name} ${chosen.service.name} could not take this parcel. ${reason}${/choose another courier.?$/i.test(reason) ? "" : " Choose another courier."}` }));

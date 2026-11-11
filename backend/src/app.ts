@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import { sellerSafeMessage } from './lib/sellerSafeError.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
@@ -21,7 +22,6 @@ import { codConfirmationRoutes } from './routes/codConfirmation.js';
 import { adminSellerProfileRoutes, impersonationAudit, impersonationGuard } from './routes/adminSellerProfile.js';
 import { adminWriteAudit } from './lib/adminWriteAudit.js';
 import { assignBatchRoutes } from './routes/assignBatches.js';
-import { adminSandboxRoutes } from './routes/adminSandbox.js';
 import { adminVisibilityRoutes } from './routes/adminVisibility.js';
 import { kycRoutes } from './routes/kyc.js';
 import { kycSectionRoutes } from './routes/kycSections.js';
@@ -97,7 +97,9 @@ app.setErrorHandler((error, request, reply) => {
   // `expose` marks 5xx errors we raise on purpose with a seller-safe reason (courier / storefront outage, missing configuration).
   if ((error as { statusCode?: number }).statusCode && ((error as { statusCode?: number }).statusCode! < 500 || (error as { expose?: boolean }).expose)) {
     const errCode = (error as { code?: unknown }).code;
-    return reply.code((error as { statusCode: number }).statusCode).send({ error: (error as Error).message, ...(typeof errCode === 'string' && /^[A-Z_]+$/.test(errCode) ? { code: errCode } : {}) });
+    // Outside the admin panel nothing may name the courier aggregator, whatever raised the error.
+    const text = request.url.startsWith('/v1/admin') ? (error as Error).message : sellerSafeMessage((error as Error).message);
+    return reply.code((error as { statusCode: number }).statusCode).send({ error: text, ...(typeof errCode === 'string' && /^[A-Z_]+$/.test(errCode) ? { code: errCode } : {}) });
   }
   request.log.error(error);
   return reply.code((error as { statusCode?: number }).statusCode || 500).send({ error: 'INTERNAL_ERROR' });
@@ -115,7 +117,6 @@ await app.register(shippingRoutes);
 await app.register(operationsRoutes);
 await app.register(shipmentRoutes);
 await app.register(assignBatchRoutes);
-await app.register(adminSandboxRoutes);
 await app.register(trackingRoutes);
 await app.register(exceptionRoutes);
 await app.register(walletRoutes);

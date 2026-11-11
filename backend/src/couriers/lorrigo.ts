@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { sellerSafeMessage } from '../lib/sellerSafeError.js';
 import { volumetricWeightG } from '../lib/money.js';
 import type { BookingDetails, CourierAdapter, CourierBookingRequest, CourierBookingResult, NdrCourierAction } from './types.js';
 
@@ -42,7 +43,9 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export class LorrigoError extends Error {
   // 4xx from Lorrigo (unserviceable pincode, bad data...) is a 422 so auto-assign moves on to the next courier; anything else is a 502.
   readonly expose = true; // the message is safe to show the seller (see the error handler in app.ts)
-  constructor(message: string, readonly statusCode: number, readonly upstreamStatus?: number) { super(message); }
+  // The message a seller can see is scrubbed (no aggregator name); `detail` keeps the original for logs and the admin connection test.
+  readonly detail: string;
+  constructor(message: string, readonly statusCode: number, readonly upstreamStatus?: number) { super(sellerSafeMessage(message)); this.detail = message; }
 }
 const invalid = (message: string) => new LorrigoError(message, 422);
 

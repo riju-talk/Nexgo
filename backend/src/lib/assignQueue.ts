@@ -1,6 +1,7 @@
 import { db, withTransaction } from '../db/client.js';
 import { config } from '../config.js';
 import { assignOneOrder, loadCourierRank, type CourierRank } from '../routes/shipments.js';
+import { sellerSafeMessage } from './sellerSafeError.js';
 
 /**
  * Works through assign_batch_items (courier assignment queued by POST /v1/shipments/assign-batch).
@@ -12,6 +13,7 @@ import { assignOneOrder, loadCourierRank, type CourierRank } from '../routes/shi
  * Booking itself is assignOneOrder(): the same code the page's own request used, so wallet checks, idempotency and refusals behave the same.
  */
 type Claimed = { id: string; batch_id: string; seller_id: string; order_id: string; attempts: number; created_by: string | null; provider_code: string | null; service_code: string | null };
+const FUNDS = /^(debit limit reached|insufficient wallet balance)/i;
 const TEMPORARY = /did not respond|too slowly|rate limit|temporarily unavailable|timed out|ECONNRESET|fetch failed/i;
 const MAX_ATTEMPTS = 3;
 const STALE_MINUTES = 5;
@@ -59,12 +61,16 @@ async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void
     const p = { userId: item.created_by ?? item.seller_id, sellerId: item.seller_id, role: 'owner', permissions: null };
     const out = await assignOneOrder(p, `batch-${item.batch_id.slice(0, 8)}`, item.order_id, { providerCode: item.provider_code ?? undefined, serviceCode: item.service_code ?? undefined, rank });
     if (!out.ok && out.error && TEMPORARY.test(out.error) && item.attempts < MAX_ATTEMPTS) {
-      await db.query(`UPDATE assign_batch_items SET state = 'queued', retry_at = now() + (($2::int * 5) || ' seconds')::interval, error = $3 WHERE id = $1`, [item.id, item.attempts, out.error.slice(0, 500)]);
+      await db.query(`UPDATE assign_batch_items SET state = 'queued', retry_at = now() + (($2::int * 5) || ' seconds')::interval, error = $3 WHERE id = $1`, [item.id, item.attempts, sellerSafeMessage(out.error).slice(0, 500)]);
       return;
     }
     await db.query(
       `UPDATE assign_batch_items SET state = $2, awb = $3, courier = $4, error = $5, duration_ms = $6, finished_at = now() WHERE id = $1`,
-      [item.id, out.ok ? 'ok' : 'failed', out.awb ?? null, out.courier ?? null, out.ok ? null : (out.error ?? 'Could not assign a courier').slice(0, 500), out.ms]);
+      [item.id, out.ok ? 'ok' : 'failed', out.awb ?? null, out.courier ?? null, out.ok ? null : sellerSafeMessage(out.error ?? 'Could not assign a courier').slice(0, 500), out.ms]);
+    // Out of money (or debit limit reached): the rest of this batch cannot succeed either, so stop it now instead of trying every order.
+    if (!out.ok && out.error && FUNDS.test(out.error)) {
+      await db.query(`UPDATE assign_batch_items SET state = 'failed', error = $2, finished_at = now() WHERE batch_id = $1 AND state = 'queued'`, [item.batch_id, sellerSafeMessage(out.error).slice(0, 500)]);
+    }
     await finishBatchIfDone(item.batch_id);
   } catch (error) {
     log.error(error, 'assign queue item crashed');

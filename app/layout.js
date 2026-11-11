@@ -11,7 +11,7 @@ export const metadata = {
   title: { default: SITE_TITLE, template: `%s | ${SITE_NAME}` },
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
-  keywords: ['multi-courier shipping', 'courier aggregator India', 'shipping rate calculator', 'order tracking', 'NDR management', 'COD remittance', 'e-commerce logistics'],
+ 
   openGraph: { type: 'website', siteName: SITE_NAME, locale: 'en_IN', url: '/', title: SITE_TITLE, description: SITE_DESCRIPTION },
   twitter: { card: 'summary_large_image', title: SITE_TITLE, description: SITE_DESCRIPTION },
   robots: { index: true, follow: true },

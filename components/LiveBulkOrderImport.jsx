@@ -3,7 +3,7 @@
 import { assignInBatches } from '@/lib/assignBatches';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch, ApiError, isFundsMessage } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { TEMPLATE_COLUMNS, TEMPLATE_HEADERS, TEMPLATE_SAMPLE_ROWS } from '@/lib/bulkTemplate.mjs';
 import { saveRows } from '@/lib/exportFile';
@@ -339,7 +339,9 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     setResult({ total: next.length, created, failed, existing });
     if (existing) showToast(`${Math.max(created - existing, 0)} unique order${created - existing === 1 ? '' : 's'} added. ${existing} duplicate${existing === 1 ? '' : 's'} discarded (already in NEXGO).`);
     if (created && !existing) showToast(assignMode === 'none' ? `${created} order${created === 1 ? '' : 's'} created. Choose couriers in Track > Ready to ship.` : `${created} order${created === 1 ? '' : 's'} created and assigned to a courier.`);
-    if (failed) showToast(`${failed} order${failed === 1 ? '' : 's'} failed or not assigned — download the failed orders file.`, 'error');
+    const fundsStop = next.find((o) => isFundsMessage(o.failure));
+    if (fundsStop) showToast(fundsStop.failure, 'error', 8000); // debit limit reached or wallet empty: said plainly and left on screen longer
+    else if (failed) showToast(`${failed} order${failed === 1 ? '' : 's'} failed or not assigned — download the failed orders file.`, 'error');
   };
 
   const onDrop = (e) => { e.preventDefault(); setDragging(false); importFile(e.dataTransfer.files?.[0]); };

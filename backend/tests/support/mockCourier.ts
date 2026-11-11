@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { CourierAdapter, CourierBookingRequest, CourierBookingResult } from './types.js';
+import type { CourierAdapter, CourierBookingRequest, CourierBookingResult } from '../../src/couriers/types.js';
 
 // Deterministic local adapter. A production provider adapter implements this
 // exact contract and is selected only after its credentials pass verification.

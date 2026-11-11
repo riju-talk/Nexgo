@@ -20,18 +20,18 @@ const AGGREGATOR_LABEL = (id: string) => pluginById(id)?.label ?? id;
 const courierInput = z.object({
   code: z.string().regex(/^[a-z0-9-]{2,64}$/),
   name: z.string().min(2).max(120),
-  integrationState: z.enum(['sandbox', 'live', 'maintenance', 'disabled']).default('sandbox'),
+  integrationState: z.enum(['live', 'maintenance', 'disabled']).default('live'),
   supportsCod: z.boolean().default(false),
   supportsReverse: z.boolean().default(false),
-  // The aggregator this courier books through (null = sandbox). Each service then needs the aggregator's own id for it.
-  aggregator: z.enum(AGGREGATORS).nullable().default(null),
+  // The aggregator this courier books through. Each service needs the aggregator's own id for it.
+  aggregator: z.enum(AGGREGATORS),
   services: z.array(z.object({
     code: z.string().regex(/^[a-z0-9-]{2,64}$/),
     displayName: z.string().min(2).max(120),
     serviceType: z.enum(['surface', 'express', 'air', 'reverse']),
     externalServiceId: z.string().trim().min(1).max(120).optional(),
   })).min(1).max(20),
-}).refine((c) => !c.aggregator || c.services.every((s) => s.externalServiceId), { message: 'Every service needs the aggregator service id.', path: ['services'] });
+}).refine((c) => c.services.every((s) => s.externalServiceId), { message: 'Every service needs the aggregator service id.', path: ['services'] });
 
 const accessInput = z.object({
   serviceId: z.string().uuid(),

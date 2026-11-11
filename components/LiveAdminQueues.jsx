@@ -30,11 +30,11 @@ function AddCourier({ onAdded }) {
   const save = async () => {
     const code = slug(f.name);
     if (f.name.trim().length < 2 || code.length < 2) { showToast('Enter the courier name.', 'error'); return; }
-    if (f.services.some((s) => s.name.trim().length < 2 || (f.aggregator && !s.externalId.trim()))) { showToast('Each service needs a name and its aggregator service.', 'error'); return; }
+    if (f.services.some((s) => s.name.trim().length < 2 || !s.externalId.trim())) { showToast('Each service needs a name and its aggregator service.', 'error'); return; }
     setBusy(true);
     try {
-      await adminApi.createCourier({ code, name: f.name.trim(), integrationState: f.aggregator ? 'live' : 'sandbox', supportsCod: f.cod, aggregator: f.aggregator || null,
-        services: f.services.map((s) => ({ code: slug(s.name), displayName: s.name.trim(), serviceType: s.type, ...(f.aggregator ? { externalServiceId: s.externalId.trim() } : {}) })) });
+      await adminApi.createCourier({ code, name: f.name.trim(), integrationState: 'live', supportsCod: f.cod, aggregator: f.aggregator,
+        services: f.services.map((s) => ({ code: slug(s.name), displayName: s.name.trim(), serviceType: s.type, externalServiceId: s.externalId.trim() })) });
       showToast(`${f.name.trim()} added`); setF(blank); setOpen(false); onAdded();
     } catch (e) { showToast(e instanceof ApiError ? e.message : 'Could not add the courier', 'error'); } finally { setBusy(false); }
   };
@@ -45,7 +45,7 @@ function AddCourier({ onAdded }) {
       <p style={{ margin: '5px 0 12px', fontSize: 12.5, color: 'var(--ops-muted)' }}>Add the courier sellers will see, for example Delhivery. Bookings go through the aggregator; the aggregator itself is never shown to sellers as a courier.</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 10 }}>
         <input aria-label="Courier name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Courier name (e.g. Delhivery)" maxLength={120} style={FIELD} />
-        <select aria-label="Books through" value={f.aggregator} onChange={(e) => setF({ ...f, aggregator: e.target.value })} style={FIELD}><option value="lorrigo">Books through Lorrigo</option><option value="">Sandbox (no aggregator)</option></select>
+        <select aria-label="Books through" value={f.aggregator} onChange={(e) => setF({ ...f, aggregator: e.target.value })} style={FIELD}><option value="lorrigo">Books through Lorrigo</option></select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5 }}><input type="checkbox" checked={f.cod} onChange={(e) => setF({ ...f, cod: e.target.checked })} /> Supports COD</label>
       </div>
       <div style={{ marginTop: 12, fontSize: 11.5, fontWeight: 750, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--ops-muted)' }}>Services</div>

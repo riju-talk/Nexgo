@@ -15,7 +15,7 @@ export async function trackingRoutes(app: FastifyInstance) {
     return withSellerTransaction(seller.sellerId, async (client) => {
       const exists = await client.query('SELECT 1 FROM shipments WHERE id=$1 AND seller_id=$2', [shipmentId, seller.sellerId]);
       if (!exists.rows[0]) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 });
-      return { items: (await client.query('SELECT state,occurred_at,location,description,source FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at DESC', [shipmentId])).rows };
+      return { items: (await client.query('SELECT state,occurred_at,location,description,\'courier\' AS source FROM shipment_events WHERE shipment_id=$1 ORDER BY occurred_at DESC', [shipmentId])).rows };
     });
   });
 

@@ -280,3 +280,7 @@ a:hover {
 @supports (-moz-appearance: none) {
   .nx-side-scroll { scrollbar-width: thin; scrollbar-color: #3877fc transparent; }
 }
+
+@keyframes nx-spin { to { transform: rotate(360deg); } }
+@keyframes nx-indeterminate { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+@media (prefers-reduced-motion: reduce) { [role="status"][aria-label="Loading"] { animation-duration: 2s !important; } }

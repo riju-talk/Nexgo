@@ -292,38 +292,6 @@ function Reports({ sellerId }) {
 const STATE_TONE = { active: ['#E6F6EE', '#1C7C4D'], suspended: ['#FDECEA', '#B23A2B'] };
 const TABS = [['overview', 'Overview'], ['account', 'Account & wallet'], ['documents', 'Documents'], ['performance', 'Performance']];
 
-// QA tools: the Sandbox courier books instantly with no real shipment (₹1 in the wallet), and a sandbox shipment can be moved to delivered / NDR / RTO by hand.
-const SIM_EVENTS = [['picked_up', 'Picked up'], ['in_transit', 'In transit'], ['out_for_delivery', 'Out for delivery'], ['delivered', 'Delivered'], ['ndr', 'NDR (not delivered)'], ['rto_initiated', 'RTO started'], ['rto_delivered', 'RTO delivered']];
-function SandboxTools({ sellerId }) {
-  const { showToast } = useAppState();
-  const [data, setData] = useState(null); const [tick, setTick] = useState(0); const [busy, setBusy] = useState(false); const [pick, setPick] = useState({});
-  useEffect(() => { let live = true; apiFetch(`/v1/admin/sellers/${sellerId}/sandbox`).then((x) => { if (live) setData(x); }).catch(() => { if (live) setData({ enabled: false, shipments: [] }); }); return () => { live = false; }; }, [sellerId, tick]);
-  const reload = () => setTick((n) => n + 1);
-  const toggle = async () => {
-    setBusy(true);
-    try { await apiFetch(`/v1/admin/sellers/${sellerId}/sandbox`, { method: 'POST', body: { enabled: !data.enabled } }); showToast(data.enabled ? 'Sandbox courier switched off' : 'Sandbox courier switched on'); reload(); }
-    catch (e) { showToast(e.message || 'Could not change the sandbox courier', 'error'); } finally { setBusy(false); }
-  };
-  const simulate = async (s) => {
-    const event = pick[s.id] || 'picked_up'; setBusy(true);
-    try { const r = await apiFetch(`/v1/admin/shipments/${s.id}/simulate`, { method: 'POST', body: { event } }); showToast(`${s.awb} is now ${title(r.state)}`); reload(); }
-    catch (e) { showToast(e.message || 'Could not apply the event', 'error'); } finally { setBusy(false); }
-  };
-  if (!data) return <div style={{ fontSize: 13, color: 'var(--ops-muted)' }}>Loading…</div>;
-  return (
-    <div style={{ display: 'grid', gap: 10 }}>
-      <div style={{ fontSize: 12.5, color: 'var(--ops-muted)', lineHeight: 1.5 }}>For test accounts only. With the Sandbox courier on, this seller can book instantly with no real courier and no real cost, then you can move those parcels to delivered, NDR or RTO here.</div>
-      <Btn onClick={toggle} disabled={busy} tone={data.enabled ? undefined : 'primary'}>{data.enabled ? 'Switch sandbox courier off' : 'Switch sandbox courier on'}</Btn>
-      {data.enabled && (data.shipments.length ? data.shipments.map((s) => (
-        <div key={s.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12.5 }}>
-          <code style={{ flex: '1 1 150px' }}>{s.awb}</code><span style={{ color: 'var(--ops-muted)' }}>{s.order_number} · {title(s.state)}</span>
-          <select aria-label={`Event for ${s.awb}`} value={pick[s.id] || 'picked_up'} onChange={(e) => setPick({ ...pick, [s.id]: e.target.value })} style={{ ...FIELD, width: 150 }}>{SIM_EVENTS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select>
-          <Btn onClick={() => simulate(s)} disabled={busy}>Apply</Btn>
-        </div>
-      )) : <div style={{ fontSize: 12.5, color: 'var(--ops-muted)' }}>No sandbox shipments yet. Book an order with the Sandbox courier first.</div>)}
-    </div>
-  );
-}
 function StateBadge({ state }) {
   const [bg, fg] = STATE_TONE[state] || ['#FFF4DB', '#8A5A00'];
   return <span style={{ background: bg, color: fg, borderRadius: 99, padding: '3px 10px', fontSize: 12, fontWeight: 600 }}>● {title(state)}</span>;
@@ -451,7 +419,6 @@ export default function AdminSellerProfile({ sellerId }) {
             <Btn onClick={() => setModal('pincodes')}>Pincode access{p.blockedPincodeCount ? ` (${p.blockedPincodeCount} blocked)` : ''}</Btn>
             <Btn onClick={() => setModal('password')}>Update password</Btn>
           </div></Section>
-          <Section heading="Test tools · sandbox courier"><SandboxTools sellerId={sellerId} /></Section>
           <Section heading="System info">
             <Row k="Opened by" v={p.account_opened_by} /><Row k="KYC approved by" v={p.kyc_status === 'verified' ? p.kyc_reviewed_by || 'Verified' : '—'} /><Row k="Created" v={dateTime(p.created_at)} /><Row k="Updated" v={dateTime(p.updated_at)} />
             <div style={{ fontSize: 12, color: 'var(--ops-muted)', marginTop: 6 }}>D in D+N is the delivery date. A negative wallet balance is recovered from the COD before payout.</div>

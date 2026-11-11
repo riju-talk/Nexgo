@@ -3,12 +3,40 @@
 Date: 2026-11-06. Tested on the live site (mynexgo.com) as an admin and as a seller.
 
 ## Index
+- At a glance
+- How the numbers are calculated
 1. Problems you reported and how they were fixed
 2. What the test accounts were given
 3. What was tested and works
 4. Decisions taken
 5. Bug list from the audit report
 6. What is left
+
+## At a glance
+- ==Booking is fast:== 70 real courier bookings took 31.5 seconds, and each parcel was charged exactly the quoted price.
+- ==No double charges:== booking the same order twice books once. A cancel refunds once. A return (RTO) fee is charged once.
+- ==Money is exact:== every wallet change is recorded as its own entry, so the balance can always be re-added from the history.
+- ==Admin sign-in is protected:== password, then a 6-digit code sent to the admin's email.
+- ==Tested live as admin and as seller:== orders, booking, cancel, NDR, RTO, COD payout, SLA, zones, pincode rules, tickets all work.
+- Left on purpose: KYC does not block users yet; one database role; payment amount check on recharge waits for the client.
+- Being built now: one set of rules for every dashboard number (see the next section), a Notifications page, cancel-all with progress, no courier-network names shown to sellers.
+
+## How the numbers are calculated
+**Working now (checked live)**
+- ==Shipping charge== = price of the matching weight band + (extra weight steps × extra-step price). GST (18%) is added on the invoice, and the wallet is debited the amount before GST.
+- ==COD fee== = the higher of the flat fee or a percentage of the order value.
+- ==Cancel refund== = exactly what was debited for that booking, once.
+- ==Return (RTO) fee== = RTO price minus the forward freight already charged, once.
+- ==Wallet balance== = sum of all wallet entries (credits minus debits). A seller can go below zero only down to their debit limit.
+- ==COD payout== = COD collected minus charges. If the wallet is negative, that is taken from the payout first. It is due on the delivery date plus the seller's number of days, and cannot be paid before that.
+
+**Being rebuilt in this round (not live yet, so figures on today's dashboards may still change)**
+- ==One date rule:== every filter uses Indian dates, midnight to midnight.
+- ==Cancelled== shipments are left out of every rate.
+- ==RTO rate== = returned shipments out of those that finished (delivered, returned or lost).
+- ==Pickup pending== = booked parcels the courier has not scanned yet. It becomes "missed" after 24 hours.
+- ==COD pending== = delivered COD not yet paid out. The "upcoming COD" card is removed.
+- ==Speed:== each figure is calculated once and shared (a few seconds on the server, instantly from memory in the browser).
 
 ## 1. Problems you reported and how they were fixed
 

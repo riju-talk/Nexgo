@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch, ApiError, bookingErrorToast } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
@@ -213,7 +213,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
       nav('shipments');
     } catch (x) {
       const reason = x instanceof ApiError ? x.message : 'Booking failed';
-      showToast(reason, 'error');
+      bookingErrorToast(x instanceof ApiError ? x : new Error(reason), showToast);
       // 422 = this courier cannot take this parcel (lane not served, COD not available...): take it off the list and keep the reason on screen.
       if (x instanceof ApiError && x.status === 422) {
         setOffer((o) => ({ ...o, quotes: o.quotes.filter((c) => `${c.provider.code}:${c.service.code}` !== pick) }));

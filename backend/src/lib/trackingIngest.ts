@@ -4,14 +4,16 @@ import { withTransaction } from '../db/client.js';
 import type { NormalizedUpdate } from '../couriers/aggregators/types.js';
 import { applyShipmentStateEffects } from './shipmentEffects.js';
 import { isProgressionAllowed, type CanonicalShipmentState } from './courier.js';
+import { sellerSafeMessage } from './sellerSafeError.js';
 
 // The shared part of tracking ingestion: record one courier event on a shipment, move its state forward (never backwards) and run the
-// side effects (RTO freight billed once, NDR case opened / closed). Used by every aggregator's webhook and by the sandbox event simulator.
+// side effects (RTO freight billed once, NDR case opened / closed). Used by every aggregator's webhook and by tests that replay eventsator.
 export type Mapped = { state: CanonicalShipmentState; rto?: 'in_transit' | 'out_for_delivery' | 'delivered' };
 
 export type Shipment = { id: string; seller_id: string; state: CanonicalShipmentState };
 
 export async function applyEvent(tx: PoolClient, s: Shipment, m: Mapped, at: string, location: string | null, description: string, eventId: string, raw: unknown): Promise<void> {
+  description = sellerSafeMessage(description); // courier wording shown to sellers never names the aggregator
   const fresh = await tx.query("INSERT INTO shipment_events (shipment_id,state,occurred_at,location,description,source,source_event_id,raw_payload) VALUES ($1,$2,$3,$4,$5,'courier_webhook',$6,$7) ON CONFLICT DO NOTHING RETURNING id", [s.id, m.state, at, location?.slice(0, 200) ?? null, description.slice(0, 500), eventId, JSON.stringify(raw)]);
   if (!fresh.rows[0]) return; // already processed on an earlier delivery
   // Couriers skip scans and a history can have gaps, so a booked shipment may jump ahead (e.g. straight to delivered). Going backwards is still refused.
