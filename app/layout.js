@@ -19,16 +19,14 @@ export const metadata = {
 
 export const viewport = { themeColor: '#3877fc' };
 
-// Structured data: tells search engines who runs the site.
+// Structured data: who runs the site, the site itself and the product, in one graph.
 const ORG_JSON_LD = JSON.stringify({
   '@context': 'https://schema.org',
-  '@type': 'Organization',
-  name: SITE_NAME,
-  legalName: 'NEXGO Logistics Technologies Pvt. Ltd.',
-  url: SITE_URL,
-  logo: `${SITE_URL}/nexgo-mark.png`,
-  description: SITE_DESCRIPTION,
-  areaServed: 'IN',
+  '@graph': [
+    { '@type': 'Organization', '@id': `${SITE_URL}/#org`, name: SITE_NAME, legalName: 'NEXGO Logistics Technologies Pvt. Ltd.', url: SITE_URL, logo: `${SITE_URL}/nexgo-mark.png`, description: SITE_DESCRIPTION, areaServed: 'IN' },
+    { '@type': 'WebSite', '@id': `${SITE_URL}/#site`, url: SITE_URL, name: SITE_NAME, description: SITE_DESCRIPTION, inLanguage: 'en-IN', publisher: { '@id': `${SITE_URL}/#org` } },
+    { '@type': 'SoftwareApplication', name: SITE_NAME, applicationCategory: 'BusinessApplication', operatingSystem: 'Web', description: SITE_DESCRIPTION, url: SITE_URL, publisher: { '@id': `${SITE_URL}/#org` }, areaServed: 'IN' },
+  ],
 }).replace(/</g, '\\u003c');
 
 const THEME_INIT = `
