@@ -31,20 +31,14 @@ export default function DashboardStatCard({ card, hidden, onOpen }) {
 
       <div style={{ fontSize: 11.5, fontWeight: 750, letterSpacing: '.1em', textTransform: 'uppercase', color: T.TEXT_MUTED }}>{card.label}</div>
 
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, marginTop: 13 }}>
-        <div style={{ fontVariantNumeric: 'tabular-nums', fontSize: 28, fontWeight: 650, letterSpacing: '-.025em', lineHeight: .9, color: T.TEXT }}>{card.value}</div>
-        <div style={{ position: 'relative', width: 68, height: 26, flex: '0 0 68px' }}>
-          <div style={{ position: 'absolute', inset: '-4px -2px', background: `${card.sparkColor}14`, borderRadius: 8 }} />
-          <svg viewBox="0 0 72 26" preserveAspectRatio="none" style={{ position: 'relative', width: '100%', height: '100%', display: 'block' }}>
-            <path d={card.sparkPath} fill="none" stroke={card.sparkColor} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
+      <div style={{ marginTop: 13 }}>
+        <div style={{ fontVariantNumeric: 'tabular-nums', fontSize: 28, fontWeight: 650, letterSpacing: '-.025em', lineHeight: 1, color: T.TEXT }}>{card.value}</div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
         <div style={{
           fontVariantNumeric: 'tabular-nums', fontSize: 12, fontWeight: 700, color: card.deltaColor,
-          background: `${card.deltaColor}17`, padding: '2px 7px', borderRadius: 20,
+          background: `${card.deltaColor}17`, padding: '2px 7px', borderRadius: 20, whiteSpace: 'nowrap', flex: '0 0 auto',
         }}>{card.delta}</div>
         <div style={{ fontSize: 12, color: T.TEXT_MUTED }}>{card.sub}</div>
       </div>

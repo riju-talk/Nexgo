@@ -1,11 +1,11 @@
 'use client';
 
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { METRICS } from '@/lib/data';
+import { CARDS, CARD_GROUPS } from '@/lib/dashboardCards';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
-const GROUPS = ['Volume & fulfilment', 'Exceptions & risk', 'Money', 'Charts'];
+const GROUPS = CARD_GROUPS;
 const PANEL_SPRING = { type: 'spring', bounce: 0, duration: 0.26 };
 const TAP = { scale: 0.97 };
 
@@ -15,7 +15,7 @@ export default function KpiDropdown({ mobile }) {
 
   const kpiSections = GROUPS.map((g) => ({
     label: g,
-    items: METRICS.filter((m) => m[3] === g),
+    items: CARDS.filter((m) => m[3] === g),
   }));
 
   return (
@@ -27,7 +27,7 @@ export default function KpiDropdown({ mobile }) {
         style={{ height: 32, padding: '0 12px', border: `1px solid ${kpiOpen ? T.NAVY : T.INPUT_BORDER}`, background: kpiOpen ? T.NAVY : T.SURFACE, color: kpiOpen ? '#fff' : T.TEXT, display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
       >
         Customize KPIs
-        <div style={{ fontFamily: T.MONO, fontSize: 10.5, opacity: .7 }}>{kpis.length}/11</div>
+        <div style={{ fontFamily: T.MONO, fontSize: 10.5, opacity: .7 }}>{kpis.length}/{CARDS.length}</div>
         <div style={{ fontSize: 10.5, opacity: .7 }}>▾</div>
       </motion.div>
       <AnimatePresence>

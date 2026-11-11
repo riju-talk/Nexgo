@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/client.js';
 import { requireAccountAdmin, requireCommercialAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
+import { IST, pickupMissedSql, pickupPendingSql } from '../lib/metrics.js';
 
 const uuid = z.string().uuid();
 // Escape LIKE wildcards so a search for "50%" matches literally.
@@ -45,18 +46,43 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
     return { items: result.rows };
   });
 
-  // Live pickups = shipments booked but not yet collected: exactly the sellers' "Pickup pending" tab, across all sellers.
-  app.get('/v1/admin/pickups', { preHandler: requirePlatformAdmin }, async () => {
-    const result = await db.query(
-      `SELECT sh.id, sh.awb, sh.state::text AS state, sh.booked_at, sh.pickup_scheduled_at, sh.pickup_deadline_at,
-              COALESCE(sh.pickup_deadline_at, sh.booked_at + interval '1 day') < now() AS overdue,
-              s.legal_name AS seller_name, w.name AS warehouse_name, o.order_number, cp.name AS courier_name
-       FROM shipments sh JOIN orders o ON o.id=sh.order_id JOIN sellers s ON s.id=sh.seller_id
-       LEFT JOIN warehouses w ON w.id=o.warehouse_id JOIN courier_providers cp ON cp.id=sh.provider_id
-       WHERE sh.state IN ('booked','pickup_pending','pickup_scheduled')
-       ORDER BY sh.booked_at DESC LIMIT 500`,
-    );
-    return { items: result.rows };
+  // Pickups pending across all sellers: the same definition as every other pickup figure (lib/metrics.ts). Exact totals, filters and paging (no 500-row cap).
+  app.get('/v1/admin/pickups', { preHandler: requirePlatformAdmin }, async (request) => {
+    const q = z.object({
+      sellerId: uuid.optional(), courier: z.string().trim().max(64).optional(), warehouse: z.string().trim().max(120).optional(),
+      age: z.enum(['all', 'missed', 'today', 'yesterday', 'older']).default('all'), q: z.string().trim().max(80).optional(),
+      page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(1000).default(50),
+    }).parse(request.query);
+    const dayStart = `((now() ${IST})::date::timestamp ${IST})`;
+    const where = [pickupPendingSql('sh.')]; const params: unknown[] = [];
+    const add = (sql: string, v: unknown) => { params.push(v); where.push(sql.replaceAll('?', `$${params.length}`)); };
+    if (q.sellerId) add('sh.seller_id = ?', q.sellerId);
+    if (q.courier) add('cp.code = ?', q.courier);
+    if (q.warehouse) add('w.name = ?', q.warehouse);
+    if (q.q) add("(sh.awb ILIKE ? OR o.order_number ILIKE ?)".replace(/\?/g, `$${params.length + 1}`), `%${q.q}%`);
+    // The age tab narrows the list only; the headline counts below use the other filters alone.
+    const ageClause = q.age === 'missed' ? pickupMissedSql('sh.') : q.age === 'today' ? `sh.booked_at >= ${dayStart}` : q.age === 'yesterday' ? `(sh.booked_at >= ${dayStart} - interval '1 day' AND sh.booked_at < ${dayStart})` : q.age === 'older' ? `sh.booked_at < ${dayStart} - interval '1 day'` : 'true';
+    const from = `FROM shipments sh JOIN orders o ON o.id = sh.order_id JOIN sellers s ON s.id = sh.seller_id LEFT JOIN warehouses w ON w.id = o.warehouse_id JOIN courier_providers cp ON cp.id = sh.provider_id`;
+    const [rows, sum, sellers, couriers, warehouses] = await Promise.all([
+      db.query(`SELECT sh.id, sh.awb, sh.state::text AS state, sh.booked_at, sh.pickup_scheduled_at, sh.pickup_deadline_at, ${pickupMissedSql('sh.')} AS overdue,
+                 (EXTRACT(EPOCH FROM now() - sh.booked_at) / 3600)::int AS age_hours, s.id AS seller_id, s.legal_name AS seller_name, w.name AS warehouse_name, o.order_number, cp.code AS courier_code, cp.name AS courier_name,
+                 (SELECT e.description FROM shipment_events e WHERE e.shipment_id = sh.id ORDER BY e.occurred_at DESC LIMIT 1) AS last_status
+               ${from} WHERE ${where.join(' AND ')} AND ${ageClause} ORDER BY sh.booked_at ASC, sh.id LIMIT ${q.pageSize} OFFSET ${(q.page - 1) * q.pageSize}`, params),
+      // The headline counts ignore the age filter, so the tabs always show the whole picture for the other filters.
+      db.query<{ total: number; missed: number; today: number; yesterday: number; older: number; filtered: number }>(
+        `SELECT count(*)::int AS total, count(*) FILTER (WHERE ${pickupMissedSql('sh.')})::int AS missed, count(*) FILTER (WHERE sh.booked_at >= ${dayStart})::int AS today,
+                count(*) FILTER (WHERE sh.booked_at >= ${dayStart} - interval '1 day' AND sh.booked_at < ${dayStart})::int AS yesterday, count(*) FILTER (WHERE sh.booked_at < ${dayStart} - interval '1 day')::int AS older, count(*)::int AS filtered
+         ${from} WHERE ${where.join(' AND ')}`, params),
+      db.query<{ id: string; name: string }>(`SELECT DISTINCT s.id, s.legal_name AS name ${from} WHERE ${pickupPendingSql('sh.')} ORDER BY 2`),
+      db.query<{ code: string; name: string }>(`SELECT DISTINCT cp.code, cp.name ${from} WHERE ${pickupPendingSql('sh.')} ORDER BY 2`),
+      db.query<{ name: string }>(`SELECT DISTINCT w.name ${from} WHERE ${pickupPendingSql('sh.')} AND w.name IS NOT NULL ORDER BY 1`),
+    ]);
+    const c = sum.rows[0];
+    return {
+      items: rows.rows, page: q.page, pageSize: q.pageSize, total: q.age === 'all' ? c.total : q.age === 'missed' ? c.missed : q.age === 'today' ? c.today : q.age === 'yesterday' ? c.yesterday : c.older,
+      summary: { total: c.total, missed: c.missed, today: c.today, yesterday: c.yesterday, older: c.older },
+      filters: { sellers: sellers.rows, couriers: couriers.rows, warehouses: warehouses.rows.map((r) => r.name) },
+    };
   });
 
   app.get('/v1/admin/orders', { preHandler: requirePlatformAdmin }, async (request) => {

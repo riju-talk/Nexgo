@@ -6,6 +6,7 @@ import { audit } from '../lib/audit.js';
 import { pushNdrToCourier } from '../lib/ndrCourier.js';
 import { chargeRtoOnce } from '../lib/shipmentEffects.js';
 import { requireSeller } from './seller.js';
+import { IST, optWindowSql, pct } from '../lib/metrics.js';
 
 const uuid = z.string().uuid();
 
@@ -63,8 +64,9 @@ export async function ndrRoutes(app: FastifyInstance) {
       if (query.courier) add('cp.code = ?', query.courier);
       if (query.attemptNumber) add('nc.attempt_number = ?', query.attemptNumber);
       applyShipmentFilters(add, query);
-      if (query.from) add('nc.opened_at >= ?::date', query.from);
-      if (query.to) add("nc.opened_at < ?::date + 1", query.to);
+      // India dates, midnight to midnight.
+      if (query.from) add(`nc.opened_at >= (?::date::timestamp ${IST})`, query.from);
+      if (query.to) add(`nc.opened_at < ((?::date + 1)::timestamp ${IST})`, query.to);
       if (query.q) add("(o.order_number ILIKE ? OR o.nexgo_order_id ILIKE ? OR s.awb ILIKE ? OR c.full_name ILIKE ? OR c.phone ILIKE ?)".replace(/\?/g, '$' + (params.length + 1)), `%${query.q}%`);
       const from = `FROM ndr_cases nc JOIN shipments s ON s.id = nc.shipment_id JOIN orders o ON o.id = s.order_id JOIN customers c ON c.id = o.customer_id
         JOIN courier_providers cp ON cp.id = s.provider_id JOIN courier_services cs ON cs.id = s.service_id WHERE ${where.join(' AND ')}`;
@@ -353,26 +355,31 @@ export async function ndrRoutes(app: FastifyInstance) {
     };
   });
 
-  // Get NDR statistics
-  // Board overview: KPI counts, share of shipments, reason mix and courier filter options.
+  // Board overview for the chosen period (India dates) and courier: cases opened in the period, the reason mix, and the NDR rate.
+  // NDR rate = of the parcels BOOKED in the period (cancelled ones left out), the share that hit at least one NDR (same as the dashboard).
   app.get('/v1/ndr/stats', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
+    const q = z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), courier: z.string().trim().max(64).optional() }).parse(request.query);
+    const args = [p.sellerId, q.from ?? null, q.to ?? null, q.courier ?? null];
+    const cases = `nc.seller_id = $1 AND ${optWindowSql('nc.opened_at', 2, 3)} AND ($4::text IS NULL OR cp.code = $4)`;
+    const join = 'FROM ndr_cases nc JOIN shipments s ON s.id = nc.shipment_id JOIN courier_providers cp ON cp.id = s.provider_id';
     return withSellerTransaction(p.sellerId, async (client) => {
-      const [counts, shipments, reasons, couriers, cod] = await Promise.all([
-        client.query<{ status: string; n: string }>(`SELECT (${STATUS_SQL}) AS status, count(*) AS n FROM ndr_cases nc WHERE nc.seller_id = $1 GROUP BY 1`, [p.sellerId]),
-        client.query<{ n: string }>('SELECT count(*) AS n FROM shipments WHERE seller_id = $1 AND state <> \'cancelled\'', [p.sellerId]),
-        client.query<{ reason: string; n: string }>('SELECT ndr_reason::text AS reason, count(*) AS n FROM ndr_cases WHERE seller_id = $1 GROUP BY 1 ORDER BY 2 DESC', [p.sellerId]),
-        client.query<{ code: string; name: string; n: string }>('SELECT cp.code, cp.name, count(*) AS n FROM ndr_cases nc JOIN shipments s ON s.id = nc.shipment_id JOIN courier_providers cp ON cp.id = s.provider_id WHERE nc.seller_id = $1 GROUP BY cp.code, cp.name ORDER BY cp.name', [p.sellerId]),
-        client.query<{ v: string }>(`SELECT COALESCE(SUM(o.cod_amount_paise), 0) AS v FROM ndr_cases nc JOIN shipments s ON s.id = nc.shipment_id JOIN orders o ON o.id = s.order_id WHERE nc.seller_id = $1 AND nc.state = 'open' AND o.payment_mode = 'cod'`, [p.sellerId]),
+      const [counts, cohort, reasons, couriers, cod] = await Promise.all([
+        client.query<{ status: string; n: string }>(`SELECT (${STATUS_SQL}) AS status, count(*) AS n ${join} WHERE ${cases} GROUP BY 1`, args),
+        client.query<{ shipped: number; hit: number }>(
+          `SELECT count(*)::int AS shipped, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM ndr_cases n WHERE n.shipment_id = s.id))::int AS hit
+           FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.seller_id = $1 AND s.state <> 'cancelled' AND ${optWindowSql('s.created_at', 2, 3)} AND ($4::text IS NULL OR cp.code = $4)`, args),
+        client.query<{ reason: string; n: string }>(`SELECT nc.ndr_reason::text AS reason, count(*) AS n ${join} WHERE ${cases} GROUP BY 1 ORDER BY 2 DESC`, args),
+        client.query<{ code: string; name: string; n: string }>(`SELECT cp.code, cp.name, count(*) AS n ${join} WHERE nc.seller_id = $1 AND ${optWindowSql('nc.opened_at', 2, 3)} GROUP BY cp.code, cp.name ORDER BY cp.name`, args.slice(0, 3)),
+        client.query<{ v: string }>(`SELECT COALESCE(SUM(o.cod_amount_paise), 0) AS v ${join} JOIN orders o ON o.id = s.order_id WHERE ${cases} AND nc.state = 'open' AND o.payment_mode = 'cod'`, args),
       ]);
       const by = Object.fromEntries(counts.rows.map((r) => [r.status, Number(r.n)])) as Record<string, number>;
       const total = Object.values(by).reduce((a, b) => a + b, 0);
-      const shipmentTotal = Number(shipments.rows[0].n);
       return {
-        total, shareOfShipmentsPct: shipmentTotal ? +((total / shipmentTotal) * 100).toFixed(1) : 0,
+        total, shipped: cohort.rows[0].shipped, shareOfShipmentsPct: pct(cohort.rows[0].hit, cohort.rows[0].shipped),
         counts: { new: by.new ?? 0, action_pending: by.action_pending ?? 0, redelivery_scheduled: by.redelivery_scheduled ?? 0, resolved: by.resolved ?? 0, rto: by.rto ?? 0 },
         codAtRiskPaise: Number(cod.rows[0].v),
-        reasons: reasons.rows.map((r) => ({ reason: r.reason, count: Number(r.n), pct: total ? +((Number(r.n) / total) * 100).toFixed(1) : 0 })),
+        reasons: reasons.rows.map((r) => ({ reason: r.reason, count: Number(r.n), pct: pct(Number(r.n), total) })),
         couriers: couriers.rows.map((r) => ({ code: r.code, name: r.name, count: Number(r.n) })),
       };
     });

@@ -8,7 +8,6 @@ import * as T from '@/lib/theme';
 import NMark from './NMark';
 import { adminApi, ApiError } from '@/lib/api';
 
-const METRICS = [['8', 'Courier partners'], ['29,000', 'Serviceable pincodes'], ['99.4%', 'Platform availability']];
 
 // The card stays white in both colour modes, so pin the light-mode tokens for everything inside it.
 const WHITE_CARD_TOKENS = { '--nx-surface': '#ffffff', '--nx-surface-soft': '#fafbfd', '--nx-border': '#d8e0e7', '--nx-divider': '#e8edf1', '--nx-input-border': '#c6d1da', '--nx-text': '#17212b', '--nx-text-label': '#334454', '--nx-text-secondary': '#647587', '--nx-text-muted': '#8391a0', '--nx-text-faint': '#a5b0ba' };
@@ -97,9 +96,6 @@ export default function AdminLogin() {
           <p style={{ margin: '13px 0 0', color: '#B8C7D9', fontSize: 13.5, lineHeight: 1.65 }}>Monitor sellers, courier partners, money movement, and every operational exception from one secure workspace.</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 26 }}>
             {['Network health', 'Seller onboarding', 'Courier SLA', 'COD control'].map(label => <span key={label} style={{ padding: '5px 11px', border: '1px solid rgba(255,255,255,.18)', borderRadius: 99, color: '#DDE8F3', fontSize: 11.5, fontWeight: 650 }}><span style={{ marginRight: 6, color: T.ACCENT }}>•</span>{label}</span>)}
-          </div>
-          <div style={{ display: 'flex', gap: 32, marginTop: 31 }}>
-            {METRICS.map(([value, label]) => <div key={label}><div style={{ fontSize: 22, fontWeight: 650, fontVariantNumeric: 'tabular-nums' }}>{value}</div><div style={{ marginTop: 4, color: '#9BB0CA', fontSize: 12 }}>{label}</div></div>)}
           </div>
         </div>
         <div style={{ color: '#849CB9', fontSize: 11.5 }}>© 2026 NEXGO Logistics Technologies Pvt. Ltd. · India</div>

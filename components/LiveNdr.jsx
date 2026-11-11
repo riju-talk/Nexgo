@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, reportsApi, ApiError } from '@/lib/api';
+import { useLiveQuery } from '@/lib/queryCache';
 import { useAppState } from '@/lib/AppStateContext';
 import { AwbLink } from './Kit';
 import { usePincode } from '@/lib/usePincode';
@@ -111,7 +112,6 @@ export default function LiveNdr({ mobile }) {
   const [reason, setReason] = useState('');
   const [tick, setTick] = useState(0);
   const [data, setData] = useState({ key: '', items: [], total: 0, pages: 1, error: '' });
-  const [stats, setStats] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [dialog, setDialog] = useState(null);
   const [help, setHelp] = useState(false);
@@ -128,7 +128,9 @@ export default function LiveNdr({ mobile }) {
       .catch((e) => { if (live) setData({ key, items: [], total: 0, pages: 1, error: e.status === 401 ? 'Sign in to view NDR cases.' : e.message || 'NDR cases could not be loaded.' }); });
     return () => { live = false; };
   }, [params, key]);
-  useEffect(() => { let live = true; apiFetch('/v1/ndr/stats').then((x) => { if (live) setStats(x); }).catch(() => {}); return () => { live = false; }; }, [tick]);
+  // Figures follow the same dates and courier as the list, and are cached so the page opens with the last numbers.
+  const statsUrl = `/v1/ndr/stats?${filterParams({ from: filters.from, to: filters.to, courier: filters.courier }).toString()}`;
+  const { data: stats } = useLiveQuery(statsUrl, { every: 30000 });
 
   const loading = data.key !== key;
   const refresh = () => { setSelected(new Set()); setTick((t) => t + 1); };
@@ -158,7 +160,7 @@ export default function LiveNdr({ mobile }) {
     } catch (e) { showToast(e.message || 'Report could not be generated', 'error'); } finally { setBusy(false); }
   };
 
-  const kpis = [['Total NDR', stats?.total ?? '—', stats ? `${stats.shareOfShipmentsPct}% of total shipments` : '', '#6D28D9'], ['New NDR', counts.new ?? '—', 'Requires attention', '#F58220'], ['Action Pending', counts.action_pending ?? '—', 'Awaiting your action', '#F5B301'], ['Redelivery Scheduled', counts.redelivery_scheduled ?? '—', 'Scheduled for redelivery', '#3877fc'], ['Resolved', counts.resolved ?? '—', 'Successfully resolved', '#14724F'], ['Auto RTO', counts.rto ?? '—', 'Marked as RTO', '#B23A2B']];
+  const kpis = [['Total NDR', stats?.total ?? '—', stats ? (stats.shareOfShipmentsPct === null ? 'no shipments in this period' : `${stats.shareOfShipmentsPct}% of shipped parcels${filters.from || filters.to ? '' : ' (all time)'}`) : '', '#6D28D9'], ['New NDR', counts.new ?? '—', 'Requires attention', '#F58220'], ['Action Pending', counts.action_pending ?? '—', 'Awaiting your action', '#F5B301'], ['Redelivery Scheduled', counts.redelivery_scheduled ?? '—', 'Scheduled for redelivery', '#3877fc'], ['Resolved', counts.resolved ?? '—', 'Successfully resolved', '#14724F'], ['Auto RTO', counts.rto ?? '—', 'Marked as RTO', '#B23A2B']];
   const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
 
   return (

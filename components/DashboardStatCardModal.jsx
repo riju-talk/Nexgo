@@ -1,14 +1,12 @@
 'use client';
 
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { spark } from '@/lib/charts';
 import { useReducedTransparency } from '@/lib/useReducedTransparency';
 import * as T from '@/lib/theme';
 
 export default function DashboardStatCardModal({ card, onClose }) {
   const reduced = useReducedMotion();
   const reducedTransparency = useReducedTransparency();
-  const bigPath = card ? spark(card.seed) : '';
 
   return (
     <AnimatePresence>
@@ -60,13 +58,12 @@ export default function DashboardStatCardModal({ card, onClose }) {
               </div>
               <div style={{ fontSize: 13, color: T.TEXT_MUTED, marginTop: 6 }}>{card.sub}</div>
 
-              <svg viewBox="0 0 72 26" preserveAspectRatio="none" style={{ width: '100%', height: 140, display: 'block', marginTop: 24, borderRadius: 10, overflow: 'hidden' }}>
-                <path d={`${bigPath} L72 26 L0 26 Z`} fill={card.sparkColor} opacity="0.12" />
-                <path d={bigPath} fill="none" stroke={card.sparkColor} strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
-              </svg>
+              <div style={{ marginTop: 22, padding: '14px 16px', borderRadius: 10, background: T.PAPER, border: `1px solid ${T.BORDER}` }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: T.TEXT_MUTED }}>How this is calculated</div>
+                <div style={{ fontSize: 13.5, color: T.TEXT_LABEL, lineHeight: 1.6, marginTop: 8 }}>{card.how}</div>
+              </div>
 
               <div style={{ display: 'flex', gap: 8, marginTop: 26 }}>
-                <div style={{ height: 38, padding: '0 18px', background: T.NAVY, color: '#fff', display: 'flex', alignItems: 'center', fontSize: 13, fontWeight: 600, cursor: 'pointer', borderRadius: 8, boxShadow: '0 6px 16px rgba(15,31,61,.28)' }}>Export</div>
                 <div onClick={onClose} style={{ height: 38, padding: '0 18px', border: `1px solid ${T.INPUT_BORDER}`, background: T.SURFACE, display: 'flex', alignItems: 'center', fontSize: 13, cursor: 'pointer', borderRadius: 8 }}>Close</div>
               </div>
             </motion.div>

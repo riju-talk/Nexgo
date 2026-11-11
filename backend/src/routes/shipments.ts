@@ -15,6 +15,8 @@ import { storage, STORAGE_NOT_CONNECTED } from '../lib/storage.js';
 import { config } from '../config.js';
 import { courierAdapter } from '../couriers/registry.js';
 import { sellerSafeMessage } from '../lib/sellerSafeError.js';
+import { invalidateMetrics } from '../lib/metrics.js';
+import { pickupPendingSql } from '../lib/metrics.js';
 
 const uuid = z.string().uuid();
 const bookingInput = z.object({ orderId: uuid, providerCode: z.string().regex(/^[a-z0-9-]{2,64}$/), serviceCode: z.string().regex(/^[a-z0-9-]{2,64}$/) });
@@ -93,7 +95,7 @@ export async function completeBooking(client: PoolClient, p: ReturnType<typeof p
       catch (cancelError) { console.error(`Booking ${providerBooking.awb} could not be cancelled after a failed wallet re-check; cancel it at the courier by hand`, cancelError); }
       throw noFunds(stillShort);
     }
-    const shipment = await client.query(`INSERT INTO shipments (seller_id,order_id,provider_id,service_id,awb,chargeable_weight_g,shipping_charge_paise,quote_snapshot,idempotency_key,destination_pincode,destination_city,promised_delivery_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,cu.pincode,cu.city,now()+interval '5 days' FROM orders o JOIN customers cu ON cu.id=o.customer_id WHERE o.id=$2 RETURNING *`, [p.sellerId, input.orderId, selection.provider_id, selection.service_id, providerBooking.awb, Math.max(selection.total_weight_g, 1), price.totalPaise, JSON.stringify({ zone, provider: selection.provider_code, providerShipmentId: providerBooking.providerShipmentId, service: selection.service_code, destinationPincode: selection.destination_pincode, paymentMode: selection.payment_mode, price }), key]);
+    const shipment = await client.query(`INSERT INTO shipments (seller_id,order_id,provider_id,service_id,awb,chargeable_weight_g,shipping_charge_paise,quote_snapshot,idempotency_key,destination_pincode,destination_city,promised_delivery_at,pickup_deadline_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,cu.pincode,cu.city,now()+interval '5 days',now()+interval '24 hours' FROM orders o JOIN customers cu ON cu.id=o.customer_id WHERE o.id=$2 RETURNING *`, [p.sellerId, input.orderId, selection.provider_id, selection.service_id, providerBooking.awb, Math.max(selection.total_weight_g, 1), price.totalPaise, JSON.stringify({ zone, provider: selection.provider_code, providerShipmentId: providerBooking.providerShipmentId, service: selection.service_code, destinationPincode: selection.destination_pincode, paymentMode: selection.payment_mode, price }), key]);
     await client.query('UPDATE shipments SET provider_shipment_id=$1, routing_code=$3 WHERE id=$2', [providerBooking.providerShipmentId, shipment.rows[0].id, providerBooking.routingCode ?? null]);
     if (providerBooking.pickupHubId) await client.query('INSERT INTO courier_pickup_hubs (warehouse_id,aggregator,seller_id,external_hub_id) SELECT o.warehouse_id,$2,$3,$4 FROM orders o WHERE o.id=$1 ON CONFLICT (warehouse_id, aggregator) DO UPDATE SET external_hub_id=EXCLUDED.external_hub_id', [input.orderId, selection.aggregator, p.sellerId, providerBooking.pickupHubId]);
     await client.query("UPDATE orders SET state='booked',updated_at=now() WHERE id=$1", [input.orderId]);
@@ -115,7 +117,9 @@ export async function bookDetached(p: ReturnType<typeof principal>, requestId: s
   if (prep.replay) return { shipment: prep.shipment, replay: true as const };
   const providerBooking = await callCourier(prep.ctx);
   try {
-    return await withSellerTransaction(p.sellerId, (client) => completeBooking(client, p, requestId, prep.ctx, providerBooking));
+    const done = await withSellerTransaction(p.sellerId, (client) => completeBooking(client, p, requestId, prep.ctx, providerBooking));
+    invalidateMetrics(p.sellerId); // the new booking shows in this seller's figures at once
+    return done;
   } catch (e) {
     if ((e as { code?: string }).code === '23505') { // a parallel request recorded this very booking first: that is the booking
       const again = await withSellerTransaction(p.sellerId, (client) => client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]));
@@ -224,8 +228,10 @@ export async function shipmentRoutes(app: FastifyInstance) {
        WHERE o.seller_id=$1 AND o.state IN ('new','ready_to_ship','cancelled') AND o.order_flow <> 'reverse' AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id=o.id)
        ORDER BY (o.state = 'cancelled'), o.created_at DESC, o.id LIMIT $2 OFFSET $3`, [p.sellerId, page.failedLimit, page.failedOffset])).rows, p, 'orders.view_customer'),
       // Exact totals, so the page can say "showing the latest N of M" instead of silently hiding the rest.
-      totals: (await client.query<{ shipments: string; unassigned: string; ready: string }>(
+      totals: (await client.query<{ shipments: string; unassigned: string; ready: string; by_state: Record<string, string> | null; pickup_pending: string }>(
         `SELECT (SELECT count(*) FROM shipments WHERE seller_id=$1) AS shipments,
+                (SELECT jsonb_object_agg(g.state, g.n) FROM (SELECT state::text AS state, count(*) AS n FROM shipments WHERE seller_id=$1 GROUP BY state) g) AS by_state,
+                (SELECT count(*) FROM shipments WHERE seller_id=$1 AND ${pickupPendingSql()}) AS pickup_pending,
                 u.unassigned, u.ready
          FROM (SELECT count(*) AS unassigned, count(*) FILTER (WHERE ${READY_SQL}) AS ready
                FROM orders o JOIN customers c ON c.id=o.customer_id
@@ -344,6 +350,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'shipment.cancelled', targetType: 'shipment', targetId: row.id, requestId, metadata: { awb: row.awb, refundedPaise: refund } });
       return { id: row.id, state: 'cancelled', refundedPaise: refund };
     });
+    invalidateMetrics(p.sellerId);
     if (!('replay' in outcome)) await cancelTracking(p.sellerId, shipmentId); // the storefront must not keep showing the order as fulfilled
     return outcome;
   };

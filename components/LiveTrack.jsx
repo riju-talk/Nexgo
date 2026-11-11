@@ -36,7 +36,7 @@ const isUnassigned = (r) => r.state === 'failed' || r.state === 'ready';
 const TABS = [
   ['all', 'All', (r) => r.state !== 'failed'],
   ['ready', 'Ready to ship', (r) => r.state === 'ready'],
-  ['pickup', 'Pickup Pending', (r) => PICKUP.includes(r.state)],
+  ['pickup', 'Pickup Pending', (r) => PICKUP.includes(r.state) && !r.courier_cancelled_at],
   ['in_transit', 'In Transit', (r) => r.state === 'in_transit'],
   ['out_for_delivery', 'OFD', (r) => r.state === 'out_for_delivery'],
   ['ndr', 'NDR', (r) => r.state === 'ndr'],
@@ -251,7 +251,14 @@ export default function LiveTrack({ mobile }) {
   const counts = useMemo(() => {
     const c = Object.fromEntries(TABS.map(([key, , test]) => [key, filtered.filter(test).length]));
     // Only the newest 1,000 unassigned orders are loaded at a time: with no filter on, show the exact totals from the server instead of the loaded part.
-    if (totals && !Object.values(f).some(Boolean)) { c.ready = Number(totals.ready); c.failed = Number(totals.unassigned) - Number(totals.ready); }
+    if (totals && !Object.values(f).some(Boolean)) {
+      c.ready = Number(totals.ready); c.failed = Number(totals.unassigned) - Number(totals.ready);
+      // Exact counts from the server for every status (the list itself only loads the newest parcels).
+      const by = totals.by_state || {}; const num = (k) => Number(by[k] || 0);
+      c.pickup = Number(totals.pickup_pending || 0); c.in_transit = num('in_transit'); c.out_for_delivery = num('out_for_delivery'); c.ndr = num('ndr'); c.delivered = num('delivered');
+      c.rto = num('rto') + num('rto_in_transit'); c.lost = num('lost');
+      c.all = Object.entries(by).reduce((a, [, v]) => a + Number(v), 0);
+    }
     return c;
   }, [filtered, totals, f]);
 

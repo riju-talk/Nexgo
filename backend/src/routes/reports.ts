@@ -79,16 +79,16 @@ async function build(client: PoolClient, sellerId: string, type: string, from: s
     const r = await client.query(
       `WITH days AS (SELECT d::date AS day FROM generate_series($2::date,$3::date,interval '1 day') d)
        SELECT to_char(days.day,'YYYY-MM-DD') AS day,
-         (SELECT count(*) FROM orders o WHERE o.seller_id=$1 AND o.created_at::date=days.day)::int AS orders,
-         (SELECT count(*) FROM shipments s WHERE s.seller_id=$1 AND s.booked_at::date=days.day)::int AS booked,
-         (SELECT count(*) FROM shipments s WHERE s.seller_id=$1 AND s.delivered_at::date=days.day)::int AS delivered,
-         (SELECT count(*) FROM ndr_cases n WHERE n.seller_id=$1 AND n.opened_at::date=days.day)::int AS ndr,
-         (SELECT count(*) FROM shipments s WHERE s.seller_id=$1 AND s.state='rto' AND s.updated_at::date=days.day)::int AS rto,
-         (SELECT COALESCE(round(sum(s.shipping_charge_paise)/100.0,2),0) FROM shipments s WHERE s.seller_id=$1 AND s.booked_at::date=days.day AND s.state<>'cancelled') AS spend
+         (SELECT count(*) FROM orders o WHERE o.seller_id=$1 AND (o.created_at AT TIME ZONE 'Asia/Kolkata')::date=days.day)::int AS orders,
+         (SELECT count(*) FROM shipments s WHERE s.seller_id=$1 AND (s.booked_at AT TIME ZONE 'Asia/Kolkata')::date=days.day)::int AS booked,
+         (SELECT count(*) FROM shipments s WHERE s.seller_id=$1 AND (s.delivered_at AT TIME ZONE 'Asia/Kolkata')::date=days.day)::int AS delivered,
+         (SELECT count(*) FROM ndr_cases n WHERE n.seller_id=$1 AND (n.opened_at AT TIME ZONE 'Asia/Kolkata')::date=days.day)::int AS ndr,
+         (SELECT count(*) FROM shipments s WHERE s.seller_id=$1 AND s.state IN ('rto','rto_in_transit') AND (s.rto_initiated_at AT TIME ZONE 'Asia/Kolkata')::date=days.day)::int AS rto,
+         (SELECT COALESCE(round(sum(s.shipping_charge_paise)/100.0,2),0) FROM shipments s WHERE s.seller_id=$1 AND (s.booked_at AT TIME ZONE 'Asia/Kolkata')::date=days.day AND s.state<>'cancelled') AS spend
        FROM days ORDER BY days.day`, [sellerId, from, to]);
     return { columns: ['Date', 'Orders', 'Shipments booked', 'Delivered', 'NDR opened', 'RTO', 'Shipping spend INR'], rows: r.rows.map((x) => [x.day, x.orders, x.booked, x.delivered, x.ndr, x.rto, x.spend]) };
   }
-  const where = [`${SELLER_ALIAS[type]}.seller_id=$1`, `${def.dateCol} >= $2::date`, `${def.dateCol} < $3::date + 1`];
+  const where = [`${SELLER_ALIAS[type]}.seller_id=$1`, `${def.dateCol} >= ($2::date::timestamp AT TIME ZONE 'Asia/Kolkata')`, `${def.dateCol} < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`];
   const args: unknown[] = [sellerId, from, to];
   if (type === 'weight') where.push('s.chargeable_weight_g>o.total_weight_g');
   if (status && def.stateCol) { args.push(status); where.push(`${def.stateCol}=$${args.length}`); }

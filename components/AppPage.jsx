@@ -16,6 +16,7 @@ const AdminDashboard = dynamic(() => import('./AdminDashboard'));
 const AdminUtilityPage = dynamic(() => import('./AdminUtilityPage'));
 const LiveSellerOperations = dynamic(() => import('./LiveSellerOperations'));
 const LiveAdminQueues = dynamic(() => import('./LiveAdminQueues'));
+const AdminPickups = dynamic(() => import('./AdminPickups'));
 const LiveCreateOrder = dynamic(() => import('./LiveCreateOrder'));
 const LiveSellerWorkspace = dynamic(() => import('./LiveSellerWorkspace'));
 const LiveAdminOperations = dynamic(() => import('./LiveAdminOperations'));
@@ -123,7 +124,8 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isRateCalc && <LiveRateCalculator mobile={mobile} />}
         {isPincode && <LivePincodeServiceability mobile={mobile} />}
         {isLiveSellerPage && <LiveSellerOperations activeId={id} mobile={mobile} />}
-        {isLiveAdminPage && <LiveAdminQueues activeId={id} mobile={mobile} />}
+        {isLiveAdminPage && id !== 'a-pickups' && <LiveAdminQueues activeId={id} mobile={mobile} />}
+        {id === 'a-pickups' && <AdminPickups mobile={mobile} />}
         {isCreateOrder && <CreateOrder tab={id === 'bulk-orders' ? 'bulk' : 'single'} mobile={mobile} />}
         {isLiveCreateOrder && <LiveCreateOrder mobile={mobile} flow={id === 'shipnow' ? 'ship_now' : id} />}
         {isBillingHub && <LiveBillingHub activeId={id} mobile={mobile} />}

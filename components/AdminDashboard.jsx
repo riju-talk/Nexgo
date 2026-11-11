@@ -3,13 +3,15 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { useAppState } from '@/lib/AppStateContext';
+import { useLiveQuery } from '@/lib/queryCache';
 import { adminApi } from '@/lib/api';
 import * as T from '@/lib/theme';
 
 const SPRING = { type: 'spring', bounce: 0, duration: 0.28 };
 const n = (v) => Number(v || 0).toLocaleString('en-IN');
 const rupees = (paise) => `₹${(Number(paise || 0) / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-const STATUS_COLORS = { delivered: '#14724F', in_transit: '#3C6094', out_for_delivery: '#3877fc', pickup_scheduled: '#8A5A00', ndr: '#B23A2B', rto: '#7A4B9C', cancelled: '#8C8778' };
+const STATUS_COLORS = { ready_to_ship: '#5A82B8', pickup_pending: '#8A5A00', in_transit: '#3C6094', out_for_delivery: '#3877fc', delivered: '#14724F', ndr: '#B23A2B', rto: '#7A4B9C', lost: '#6B5B95', cancelled: '#8C8778' };
+const pctText = (v) => (v === null || v === undefined ? '—' : `${v}%`);
 const statusName = (k) => k.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function Card({ children, style = {} }) {
@@ -72,26 +74,23 @@ export default function AdminDashboard({ mobile, phone }) {
   const [today] = useState(() => istDay());
   const [from, setFrom] = useState(() => istDay(29)); const [to, setTo] = useState(today);
   const custom = days === 0;
-  const [live, setLive] = useState(null); const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let on = true;
-    adminApi.dashboardAnalytics(custom ? 30 : days, custom ? { from, to } : null).then((x) => { if (on) { setLive(x); setFailed(false); } }).catch(() => { if (on) setFailed(true); });
-    return () => { on = false; };
-  }, [days, custom, from, to]);
+  // Cached and shared: opening the page shows the last figures at once, then refreshes them; a failed refresh keeps the last figures on screen.
+  const { data: live, error } = useLiveQuery(`/v1/admin/analytics/dashboard?${new URLSearchParams(custom ? { days: 30, from, to } : { days })}`, { every: 60000 });
+  const failed = !!error && !live;
 
   const m = live?.metrics || {};
   const stats = live ? [
     ['▦', 'Total orders', n(m.orderVolume), `${n(m.todayVolume)} today`, '#E8EEF7', '#1C5476'],
     ['₹', 'Shipping revenue', rupees(m.shippingSpendPaise), 'Freight booked in period', '#E8F8F1', '#0F9C61'],
-    ['◌', 'COD pending', rupees(live.codPendingPaise), 'Awaiting remittance', '#FFF0E4', '#D87620'],
+    ['◌', 'COD pending', rupees(live.codPendingPaise), 'Still to be paid out to sellers', '#FFF0E4', '#D87620'],
     ['◎', 'Active sellers', n(live.activeSellers), 'Platform accounts', '#E7F8F5', '#008F84'],
-    ['▣', 'In transit', n(m.inTransit), 'Shipments on the road', '#E8EEF7', '#3C6094'],
-    ['!', 'NDR rate', `${Number(m.ndrRate || 0).toFixed(1)}%`, 'Of booked shipments', '#FFF0F2', '#E3435B'],
-    ['↩', 'RTO rate', `${Number(m.rtoRate || 0).toFixed(1)}%`, 'Of booked shipments', '#FFF4E9', '#D9781E'],
+    ['▣', 'In transit', n(m.inTransit), 'Right now', '#E8EEF7', '#3C6094'],
+    ['!', 'NDR rate', pctText(m.ndrRate), 'Parcels with an NDR / shipped', '#FFF0F2', '#E3435B'],
+    ['↩', 'RTO rate', pctText(m.rtoRate), 'Of finished parcels', '#FFF4E9', '#D9781E'],
   ] : [];
   const commands = live ? [
     ['NDR action queue', `${n(live.ndrOpen)} open case${live.ndrOpen === 1 ? '' : 's'}`, 'a-ndr', '#B23A2B', '!'],
-    ['COD approvals', `${rupees(live.codPendingPaise)} awaiting release`, 'a-cod', '#315F93', '₹'],
+    ['COD payouts', `${rupees(live.codPendingPaise)} still to pay out`, 'a-cod', '#315F93', '₹'],
     ['Seller onboarding', `${n(live.kycPending)} KYC review${live.kycPending === 1 ? '' : 's'} waiting`, 'a-kyc', '#1581bd', '◎'],
     ['Weight disputes', 'Review courier claims', 'a-disputes', '#8A5A00', '◇'],
   ] : [];
@@ -162,10 +161,10 @@ export default function AdminDashboard({ mobile, phone }) {
 
         <section style={{ display: 'grid', gridTemplateColumns: cols(2), gap: 12, marginTop: 14 }}>
           <Card>
-            <CardTitle>Total pickup pending{live.pickupPending ? ` · ${n(live.pickupPending.total)}` : ''} <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: 'var(--ops-muted)' }}>seller wise</span></CardTitle>
+            <CardTitle>Total pickup pending{live.pickupPending ? ` · ${n(live.pickupPending.total)}${live.pickupPending.missed ? ` (${n(live.pickupPending.missed)} missed)` : ''}` : ''} <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: 'var(--ops-muted)' }}>seller wise</span></CardTitle>
             {!live.pickupPending?.sellers.length ? <Empty>No pickups pending.</Empty> : <div style={{ padding: '4px 18px 8px' }}>{live.pickupPending.sellers.map((s) => (
               <button key={s.id} type="button" onClick={() => nav('a-pickups')} style={ROW}>
-                <span><b style={{ fontSize: 13 }}>{s.name}</b><small style={{ display: 'block', color: 'var(--ops-muted)', marginTop: 2 }}>{s.code}{s.overdue ? ` · ${n(s.overdue)} overdue` : ''}</small></span>
+                <span><b style={{ fontSize: 13 }}>{s.name}</b><small style={{ display: 'block', color: 'var(--ops-muted)', marginTop: 2 }}>{s.code}{s.overdue ? ` · ${n(s.overdue)} missed` : ''}{s.oldestHours !== null && s.oldestHours !== undefined ? ` · oldest ${s.oldestHours < 48 ? `${s.oldestHours} h` : `${Math.floor(s.oldestHours / 24)} d`}` : ''}</small></span>
                 <b style={{ fontSize: 15, color: s.overdue ? '#B23A2B' : 'var(--ops-heading)' }}>{n(s.count)}</b>
               </button>))}</div>}
           </Card>

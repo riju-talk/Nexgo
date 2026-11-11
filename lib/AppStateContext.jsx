@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
-import { DEFAULTS } from './data';
+import { DEFAULT_KPIS as DEFAULTS } from './dashboardCards';
 import { pathFor } from './routes';
 
 const AppStateContext = createContext(null);

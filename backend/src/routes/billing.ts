@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
 import { requireSeller } from './seller.js';
+import { codPending } from '../lib/metrics.js';
 
 function principal(request: FastifyRequest) { if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 }); return request.principal; }
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -18,8 +19,8 @@ export async function billingRoutes(app: FastifyInstance) {
     return withSellerTransaction(p.sellerId, async (client) => {
       const where: string[] = []; const params: unknown[] = [p.sellerId];
       const add = (sql: string, value: unknown) => { params.push(value); where.push(sql.replaceAll('?', `$${params.length}`)); };
-      if (query.from) add('l.created_at >= ?::date', query.from);
-      if (query.to) add('l.created_at < ?::date + 1', query.to);
+      if (query.from) add(`l.created_at >= (?::date::timestamp AT TIME ZONE 'Asia/Kolkata')`, query.from);
+      if (query.to) add(`l.created_at < ((?::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`, query.to);
       if (query.type === 'shipping') where.push(`l.reference_type = 'shipment'`);
       if (query.type === 'recharge') where.push(`l.reference_type = 'wallet_recharge'`);
       if (query.type === 'dispute') where.push(`l.reference_type = 'weight_dispute'`);
@@ -53,8 +54,8 @@ export async function billingRoutes(app: FastifyInstance) {
     return withSellerTransaction(p.sellerId, async (client) => {
       const where = ['s.seller_id = $1']; const params: unknown[] = [p.sellerId];
       const add = (sql: string, value: unknown) => { params.push(value); where.push(sql.replaceAll('?', `$${params.length}`)); };
-      if (query.from) add('s.booked_at >= ?::date', query.from);
-      if (query.to) add('s.booked_at < ?::date + 1', query.to);
+      if (query.from) add(`s.booked_at >= (?::date::timestamp AT TIME ZONE 'Asia/Kolkata')`, query.from);
+      if (query.to) add(`s.booked_at < ((?::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`, query.to);
       if (query.status) add('s.state::text = ?', query.status);
       const refs = refList(query.q);
       if (refs.length) add('s.awb = ANY(?::text[])', refs);
@@ -94,7 +95,7 @@ export async function billingRoutes(app: FastifyInstance) {
       const cfg = await client.query<{ remittance_days: number }>('SELECT remittance_days FROM sellers WHERE id = $1', [p.sellerId]);
       return {
         items: rows.rows, total, page: query.page, pageSize: query.pageSize, pages: Math.max(1, Math.ceil(total / query.pageSize)),
-        summary: { remittanceDays: cfg.rows[0]?.remittance_days ?? 2, remittedTillDatePaise: Number(sum.rows[0].remitted), lastRemittancePaise: Number(last.rows[0]?.net_remitted_paise ?? 0), lastRemittanceAt: last.rows[0]?.remitted_at ?? null, nextRemittancePaise: Number(next.rows[0]?.net_remitted_paise ?? 0), totalDuePaise: Number(sum.rows[0].due) },
+        summary: { remittanceDays: cfg.rows[0]?.remittance_days ?? 2, remittedTillDatePaise: Number(sum.rows[0].remitted), lastRemittancePaise: Number(last.rows[0]?.net_remitted_paise ?? 0), lastRemittanceAt: last.rows[0]?.remitted_at ?? null, nextRemittancePaise: Number(next.rows[0]?.net_remitted_paise ?? 0), totalDuePaise: (await codPending(client, p.sellerId)).totalPaise },
       };
     });
   });

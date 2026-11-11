@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { useLiveQuery } from '@/lib/queryCache';
 import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
@@ -19,7 +20,7 @@ export default function LiveRto({ mobile }) {
   const [stage, setStage] = useState('all'); const [page, setPage] = useState(1);
   const [filters, setFilters] = useState(EMPTY_FILTERS); const [panel, setPanel] = useState(false);
   const [format, setFormat] = useState('csv'); const [busy, setBusy] = useState(false);
-  const [stats, setStats] = useState(null); const [data, setData] = useState({ key: '', items: [], total: 0, pages: 1, error: '' });
+  const [data, setData] = useState({ key: '', items: [], total: 0, pages: 1, error: '' });
 
   const params = useMemo(() => { const p = filterParams(filters, new URLSearchParams({ stage, page: String(page), pageSize: String(PAGE_SIZE) })); return p; }, [stage, page, filters]);
   const key = params.toString();
@@ -29,7 +30,10 @@ export default function LiveRto({ mobile }) {
       .catch((e) => { if (live) setData({ key, items: [], total: 0, pages: 1, error: e.status === 401 ? 'Sign in to view RTO shipments.' : e.message || 'RTO shipments could not be loaded.' }); });
     return () => { live = false; };
   }, [key]);
-  useEffect(() => { let live = true; apiFetch('/v1/rto/stats').then((x) => { if (live) setStats(x); }).catch(() => { if (live) setStats({ error: true }); }); return () => { live = false; }; }, []);
+  // The figures follow the same dates and courier as the list below, and are cached so the page opens with the last numbers.
+  const statsUrl = `/v1/rto/stats?${filterParams({ from: filters.from, to: filters.to, courier: filters.courier }).toString()}`;
+  const { data: statsData, error: statsError } = useLiveQuery(statsUrl);
+  const stats = statsError && !statsData ? { error: true } : statsData;
 
   const loading = data.key !== key;
   const ok = stats && !stats.error;
@@ -68,12 +72,12 @@ export default function LiveRto({ mobile }) {
   return (
     <div style={{ padding: pad }}>
       <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'repeat(2,1fr)' : 'repeat(6,1fr)', gap: 12, marginBottom: 14 }}>
-        <Stat label="Total RTO" value={ok ? stats.total : '—'} note="All time" color="#6D28D9" />
-        <Stat label="RTO rate" value={ok ? `${stats.rtoRatePct}%` : '—'} note="Of shipped parcels" color={T.RED} />
+        <Stat label="Total RTO" value={ok ? stats.total : '—'} note={filters.from || filters.to ? 'Returns started in this period' : 'All time'} color="#6D28D9" />
+        <Stat label="RTO rate" value={ok && stats.rtoRatePct !== null ? `${stats.rtoRatePct}%` : '—'} note={filters.from || filters.to ? 'Of finished parcels booked in this period' : 'Of all finished parcels (all time)'} color={T.RED} />
         <Stat label="In transit back" value={ok ? stats.inTransitBack : '—'} note="On the way to you" color="#F58220" />
         <Stat label="Delivered back" value={ok ? stats.deliveredBack : '—'} note="Received at warehouse" color={T.GREEN} />
         <Stat label="COD value returned" value={ok ? inr0(stats.codReturnedPaise) : '—'} note="Not collected" color="#B45309" />
-        <Stat label="Freight on RTO" value={ok ? inr0(stats.freightOnRtoPaise) : '—'} note="Forward freight paid" color={BLUE} />
+        <Stat label="Freight on RTO" value={ok ? inr0(stats.freightOnRtoPaise) : '—'} note={ok ? `Forward ${inr0(stats.forwardFreightPaise)} + return ${inr0(stats.returnFreightPaise)}` : ''} color={BLUE} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16, alignItems: 'start' }}>
@@ -112,8 +116,8 @@ export default function LiveRto({ mobile }) {
           <section style={{ ...CARD, padding: 16 }}>
             <b style={{ color: T.TEXT, fontSize: 14 }}>RTO by courier</b>
             <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
-              {ok && stats.couriers.filter((c) => c.shipments > 0).sort((a, b) => b.ratePct - a.ratePct).map((c) => (
-                <div key={c.code}><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: T.TEXT_SECONDARY }}><span>{c.name}</span><b style={{ color: T.TEXT }}>{c.rto}/{c.shipments} · {c.ratePct}%</b></div><div style={{ height: 6, borderRadius: 4, background: T.BORDER, marginTop: 4 }}><div style={{ width: `${Math.min(100, c.ratePct * 3)}%`, height: '100%', borderRadius: 4, background: c.ratePct > 10 ? T.RED : BLUE }} /></div></div>
+              {ok && stats.couriers.filter((c) => c.shipments > 0).sort((a, b) => (b.ratePct ?? -1) - (a.ratePct ?? -1)).map((c) => (
+                <div key={c.code}><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: T.TEXT_SECONDARY }}><span>{c.name}</span><b style={{ color: T.TEXT }}>{c.rto}/{c.finished} · {c.ratePct === null ? '—' : `${c.ratePct}%`}</b></div><div style={{ height: 6, borderRadius: 4, background: T.BORDER, marginTop: 4 }}><div style={{ width: `${Math.min(100, (c.ratePct || 0) * 3)}%`, height: '100%', borderRadius: 4, background: c.ratePct > 10 ? T.RED : BLUE }} /></div></div>
               ))}
               {!ok && <span style={{ fontSize: 12.5, color: T.TEXT_MUTED }}>{stats ? 'Could not load.' : 'Loading…'}</span>}
             </div>
