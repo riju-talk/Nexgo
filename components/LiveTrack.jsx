@@ -12,6 +12,7 @@ import { diagnose, failedSheet, readCorrections, toPatch } from '@/lib/failedOrd
 import { Pager, Spinner } from './Kit';
 import { cancelInBackground } from '@/lib/cancelBatches';
 import { ActiveCancelBanner, BatchProgressDialog } from './BatchProgress';
+import { setJobModal } from '@/lib/jobProgress';
 import CourierChooser, { ActiveAssignBanner } from './CourierChooser';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 12, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 10px 28px rgba(20,44,66,.055)' };
@@ -182,6 +183,8 @@ export default function LiveTrack({ mobile }) {
   const [failed, setFailed] = useState([]);
   const [totals, setTotals] = useState(null);
   const [cancelDlg, setCancelDlg] = useState(null); // the cancellation progress dialog (see runCancel)
+  // While this page's own dialog is open the progress card stays out of the way; hide the dialog and the card takes over.
+  useEffect(() => { setJobModal('cancel', !!(cancelDlg && !cancelDlg.hidden && cancelDlg.running)); }, [cancelDlg]);
   const [loadingMore, setLoadingMore] = useState(false);
   const [chooser, setChooser] = useState(null); // not-yet-shipped orders the seller is choosing a courier for
   const [error, setError] = useState(null);

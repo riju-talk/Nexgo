@@ -15,7 +15,7 @@ const days = (t) => (t.minDays === t.maxDays ? `${t.minDays} day${t.minDays === 
 // that runs longer than 60 seconds is cut off by the proxy. `courier` = { providerCode, serviceCode? } books every order with that courier
 // only; without it the seller's priority list decides.
 export async function assignCouriers(orderIds, showToast, reload, courier) {
-  const results = await assignInBatches(orderIds, { courier, onProgress: (n, total) => { if (total > 3) showToast(`Assigning couriers… ${n} of ${total}`); } });
+  const results = await assignInBatches(orderIds, { courier }); // progress is shown by the card on every page (components/JobProgressHost.jsx)
   const assigned = results.filter((r) => r.ok).length; const failed = results.length - assigned;
   const firstError = results.find((x) => !x.ok)?.error || '';
   showToast(failed ? `${assigned} assigned, ${failed} not assigned: ${firstError}` : `${assigned} order${assigned === 1 ? '' : 's'} assigned to a courier`, failed ? 'error' : 'success', failed && isFundsMessage(firstError) ? 8000 : undefined);

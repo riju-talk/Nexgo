@@ -13,6 +13,7 @@ import AdminShell from './AdminShell';
 import ImpersonationBanner from './ImpersonationBanner';
 import SessionHeartbeat from './SessionHeartbeat';
 import OnboardingGate from './OnboardingGate';
+import JobProgressHost from './JobProgressHost';
 
 export default function AppShell({ children }) {
   const pathname = usePathname();
@@ -35,6 +36,7 @@ export default function AppShell({ children }) {
         </div>
         <CommandPalette />
         <Toast />
+        <JobProgressHost />
       </div>
     </div>
   );
