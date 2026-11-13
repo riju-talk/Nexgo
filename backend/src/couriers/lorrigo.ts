@@ -161,9 +161,11 @@ export class LorrigoAdapter implements CourierAdapter {
     try { return { id: await create(hubId), hubId }; }
     catch (e) {
       if (!(e instanceof LorrigoError)) throw e;
-      if (e.upstreamStatus === 409) { // "Order Id already exists": reuse it
+      // "Order Id already exists" (an earlier attempt created the order but failed at the booking step): reuse that order. Lorrigo does not always
+      // answer 409 for it (seen in production: the same text under another status), so the message is checked as well.
+      if (e.upstreamStatus === 409 || /order id already exists|already exists/i.test(e.detail)) {
         const id = await this.findOrderIdByRef(ref);
-        if (!id) throw e; // "already exists" but we cannot find it: surface Lorrigo's message
+        if (!id) throw new LorrigoError('This order is already with the courier network but could not be matched. Please try again in a minute or contact support.', 502);
         return { id, hubId, reused: true };
       }
       // The remembered pickup address was deleted or deactivated on Lorrigo's side: make (or find) a fresh one and retry once.
