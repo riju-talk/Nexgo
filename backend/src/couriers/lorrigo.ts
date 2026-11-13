@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { sellerSafeMessage } from '../lib/sellerSafeError.js';
+import { sellerSafeMessage, BOOKING_PAUSED } from '../lib/sellerSafeError.js';
 import { volumetricWeightG } from '../lib/money.js';
 import type { BookingDetails, CourierAdapter, CourierBookingRequest, CourierBookingResult, NdrCourierAction } from './types.js';
 
@@ -235,7 +235,8 @@ export class LorrigoAdapter implements CourierAdapter {
       if (e instanceof LorrigoError && e.statusCode === 502) { const after = await this.readShipment(order.id); if (after.awb) return result(after.awb, after.id, after.routing); } // timeout / 5xx: Lorrigo may have booked anyway
       if (e instanceof LorrigoError && /insufficient balance|recharge your wallet/i.test(e.message)) {
         console.error('Lorrigo account wallet is out of balance: top it up to resume bookings.'); // the platform's problem, not the seller's
-        throw invalid('This courier is temporarily unavailable. Please choose another courier or contact support.');
+        // Every courier on this aggregator shares that balance, so trying the next courier (or retrying) cannot help: stop at once with one clear message.
+        throw new LorrigoError(BOOKING_PAUSED, 503, 402);
       }
       throw e;
     }

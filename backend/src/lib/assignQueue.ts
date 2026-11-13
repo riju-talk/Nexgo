@@ -1,7 +1,7 @@
 import { db, withTransaction } from '../db/client.js';
 import { config } from '../config.js';
 import { assignOneOrder, loadCourierRank, type CourierRank } from '../routes/shipments.js';
-import { sellerSafeMessage } from './sellerSafeError.js';
+import { BOOKING_PAUSED, sellerSafeMessage } from './sellerSafeError.js';
 import { notify, notifyFunds } from './notify.js';
 
 /**
@@ -75,6 +75,11 @@ async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void
     if (!out.ok && out.error && FUNDS.test(out.error)) {
       await db.query(`UPDATE assign_batch_items SET state = 'failed', error = $2, finished_at = now() WHERE batch_id = $1 AND state = 'queued'`, [item.batch_id, sellerSafeMessage(out.error).slice(0, 500)]);
       await notifyFunds(item.seller_id, sellerSafeMessage(out.error));
+    }
+    // The courier network cannot book for anyone (its balance is used up): every other order in this batch would fail the same way, so end them now with the same clear message.
+    if (!out.ok && out.error === BOOKING_PAUSED) {
+      console.error('Courier booking is paused: the aggregator account has no balance. Top it up to resume bookings.');
+      await db.query(`UPDATE assign_batch_items SET state = 'failed', error = $2, finished_at = now() WHERE batch_id = $1 AND state = 'queued'`, [item.batch_id, BOOKING_PAUSED]);
     }
     await finishBatchIfDone(item.batch_id);
   } catch (error) {

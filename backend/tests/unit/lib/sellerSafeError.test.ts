@@ -37,3 +37,16 @@ describe('sellerSafeMessage', () => {
     expect(/did not respond|too slowly|rate limit/i.test(sellerSafeMessage('Lorrigo is rate limiting requests right now.'))).toBe(true);
   });
 });
+
+describe('BOOKING_PAUSED', () => {
+  it('passes through the seller scrubber unchanged and never names the courier network', async () => {
+    const { BOOKING_PAUSED, sellerSafeMessage } = await import('../../../src/lib/sellerSafeError.js');
+    expect(sellerSafeMessage(BOOKING_PAUSED)).toBe(BOOKING_PAUSED);
+    expect(BOOKING_PAUSED).not.toMatch(/lorrigo|aggregator|wallet|balance/i);
+  });
+  it('is not retried by the queues (it does not look temporary)', async () => {
+    const { BOOKING_PAUSED } = await import('../../../src/lib/sellerSafeError.js');
+    const TEMPORARY = /did not respond|too slowly|rate limit|temporarily unavailable|timed out|ECONNRESET|fetch failed/i;
+    expect(TEMPORARY.test(BOOKING_PAUSED)).toBe(false);
+  });
+});

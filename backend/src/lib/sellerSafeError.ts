@@ -20,3 +20,6 @@ export function sellerSafeMessage(input: unknown): string {
 
 /** True when the text would reveal the aggregator (used by tests). */
 export const revealsAggregator = (text: string) => /lorrigo|aggregator/i.test(text);
+
+/** Shown when the courier network itself cannot take bookings (its prepaid balance is used up). Not the seller's wallet, not temporary-looking: queues must not retry it. */
+export const BOOKING_PAUSED = 'Courier booking is paused right now. Please contact support and try again later.';
