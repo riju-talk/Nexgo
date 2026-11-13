@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { pageRows } from '../lib/paging.js';
 import { z } from 'zod';
 import { db, withSellerTransaction, withTransaction } from '../db/client.js';
 import { requireAccountAdmin, requireFinanceAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
@@ -99,14 +100,14 @@ export async function invoiceRoutes(app: FastifyInstance) {
   });
 
   app.get('/v1/admin/invoices', { preHandler: requirePlatformAdmin }, async (request) => {
-    const q = z.object({ sellerId: z.string().uuid().optional(), status: z.enum(['draft', 'issued', 'void']).optional() }).parse(request.query);
+    const q = z.object({ sellerId: z.string().uuid().optional(), status: z.enum(['draft', 'issued', 'void']).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0) }).parse(request.query);
     const result = await db.query(
       `SELECT i.*, s.legal_name AS seller_name FROM invoices i JOIN sellers s ON s.id = i.seller_id
        WHERE ($1::uuid IS NULL OR i.seller_id = $1) AND ($2::invoice_status IS NULL OR i.status = $2)
-       ORDER BY i.created_at DESC LIMIT 100`,
-      [q.sellerId ?? null, q.status ?? null],
+       ORDER BY i.created_at DESC, i.id DESC LIMIT $3 OFFSET $4`,
+      [q.sellerId ?? null, q.status ?? null, q.limit + 1, q.offset],
     );
-    return { items: result.rows };
+    return pageRows(result.rows, q.limit);
   });
 
   function principal(request: FastifyRequest) {

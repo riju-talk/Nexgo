@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { pageRows } from '../lib/paging.js';
 import { z } from 'zod';
 import { db } from '../db/client.js';
 import { requireAccountAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
@@ -38,16 +39,17 @@ export async function adminVisibilityRoutes(app: FastifyInstance) {
     const q = z.object({
       state: z.enum(['queued', 'running', 'succeeded', 'failed', 'dead_letter']).optional(),
       jobType: z.string().trim().max(120).optional(),
-      limit: z.coerce.number().int().min(1).max(200).default(100),
+      limit: z.coerce.number().int().min(1).max(200).default(50),
+      offset: z.coerce.number().int().min(0).default(0),
     }).parse(request.query);
     const result = await db.query(
       `SELECT j.id, j.job_type, j.state, j.attempts, j.error_summary, j.queued_at, j.started_at, j.completed_at, s.legal_name AS seller_name
        FROM job_runs j LEFT JOIN sellers s ON s.id = j.seller_id
        WHERE ($1::job_state IS NULL OR j.state = $1) AND ($2::text IS NULL OR j.job_type = $2)
-       ORDER BY j.queued_at DESC LIMIT $3`,
-      [q.state ?? null, q.jobType ?? null, q.limit],
+       ORDER BY j.queued_at DESC, j.id DESC LIMIT $3 OFFSET $4`,
+      [q.state ?? null, q.jobType ?? null, q.limit + 1, q.offset],
     );
-    return { items: result.rows };
+    return pageRows(result.rows, q.limit);
   });
 
   // A dead-lettered or failed job is requeued, not silently discarded — it

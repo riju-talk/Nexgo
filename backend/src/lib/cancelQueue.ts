@@ -5,6 +5,7 @@ import { invalidateMetrics } from './metrics.js';
 import { sellerSafeMessage } from './sellerSafeError.js';
 import { cancelShipment } from '../routes/shipments.js';
 import { notify } from './notify.js';
+import { isTemporaryError } from './transientErrors.js';
 
 /**
  * Works through cancel_batch_items (cancellations queued by POST /v1/shipments/cancel-batch).
@@ -16,7 +17,6 @@ import { notify } from './notify.js';
  * The cancellation itself is cancelShipment(): the code behind the single Cancel button, so the refund is the exact booking debit, once.
  */
 type Claimed = { id: string; batch_id: string; seller_id: string; kind: 'shipment' | 'order'; shipment_id: string | null; order_id: string | null; attempts: number; created_by: string | null };
-const TEMPORARY = /did not respond|too slowly|rate limit|temporarily unavailable|timed out|ECONNRESET|fetch failed/i;
 const MAX_ATTEMPTS = 3;
 const STALE_MINUTES = 5;
 let inflight = 0;
@@ -77,7 +77,7 @@ async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void
     invalidateMetrics(item.seller_id);
   } catch (error) {
     const message = sellerSafeMessage((error as Error).message || 'Could not cancel');
-    if (TEMPORARY.test(message) && item.attempts < MAX_ATTEMPTS) {
+    if (isTemporaryError(message) && item.attempts < MAX_ATTEMPTS) {
       await db.query(`UPDATE cancel_batch_items SET state = 'queued', retry_at = now() + (($2::int * 5) || ' seconds')::interval, error = $3 WHERE id = $1`, [item.id, item.attempts, message.slice(0, 500)]);
       return;
     }

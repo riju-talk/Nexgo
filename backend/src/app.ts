@@ -36,6 +36,7 @@ import { sessionRoutes } from './routes/sessions.js';
 import { shippingRoutes } from './routes/shipping.js';
 import { operationsRoutes } from './routes/operations.js';
 import { shipmentRoutes } from './routes/shipments.js';
+import { shipmentListRoutes } from './routes/shipmentList.js';
 import { trackingRoutes } from './routes/tracking.js';
 import { exceptionRoutes } from './routes/exceptions.js';
 import { walletRoutes } from './routes/wallet.js';
@@ -120,6 +121,7 @@ await app.register(authRoutes);
 await app.register(sellerRoutes);
 await app.register(shippingRoutes);
 await app.register(operationsRoutes);
+await app.register(shipmentListRoutes); // before shipmentRoutes so /v1/shipments/list is never read as a shipment id
 await app.register(shipmentRoutes);
 await app.register(assignBatchRoutes);
 await app.register(cancelBatchRoutes);

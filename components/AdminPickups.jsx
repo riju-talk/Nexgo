@@ -1,12 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { usePagedList } from '@/lib/useInfiniteList';
 import { apiFetch } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
-import { useLiveQuery } from '@/lib/queryCache';
 import { saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { BLUE, Btn, CARD, FIELD, Pager, Pill, Stat, Table, dateTime } from './Kit';
+import { BLUE, Btn, CARD, FIELD, LoadMore, Pill, Stat, Table, dateTime } from './Kit';
 
 const PAGE_SIZE = 25;
 const AGE_TABS = [['all', 'All pending', 'total'], ['missed', 'Missed (over 24 h)', 'missed'], ['today', 'Booked today', 'today'], ['yesterday', 'Booked yesterday', 'yesterday'], ['older', 'Older', 'older']];
@@ -16,16 +16,19 @@ const waiting = (hours) => (hours === null || hours === undefined ? '—' : hour
 export default function AdminPickups({ mobile }) {
   const { showToast } = useAppState();
   const [age, setAge] = useState('all'); const [sellerId, setSellerId] = useState(''); const [courier, setCourier] = useState(''); const [warehouse, setWarehouse] = useState('');
-  const [q, setQ] = useState(''); const [search, setSearch] = useState(''); const [page, setPage] = useState(1); const [exporting, setExporting] = useState(false);
+  const [q, setQ] = useState(''); const [search, setSearch] = useState(''); const [exporting, setExporting] = useState(false);
 
   const qs = useMemo(() => {
-    const p = new URLSearchParams({ age, page: String(page), pageSize: String(PAGE_SIZE) });
+    const p = new URLSearchParams({ age });
     if (sellerId) p.set('sellerId', sellerId); if (courier) p.set('courier', courier); if (warehouse) p.set('warehouse', warehouse); if (search) p.set('q', search);
     return p;
-  }, [age, sellerId, courier, warehouse, search, page]);
-  const { data, error, loading, refresh } = useLiveQuery(`/v1/admin/pickups?${qs.toString()}`, { every: 30000 });
+  }, [age, sellerId, courier, warehouse, search]);
+  const list = usePagedList({ path: '/v1/admin/pickups', query: qs.toString(), pageSize: PAGE_SIZE, every: 30000 });
+  const { refresh } = list;
+  const data = list.items.length || list.extra.summary ? { ...list.extra, items: list.items, total: list.total ?? 0 } : null;
+  const error = list.error ? { message: list.message } : null; const loading = list.loading;
   const sum = data?.summary; const filters = data?.filters || { sellers: [], couriers: [], warehouses: [] };
-  const change = (setter) => (e) => { setter(e.target.value); setPage(1); };
+  const change = (setter) => (e) => { setter(e.target.value); };
 
   const exportRows = async (format) => {
     setExporting(true);
@@ -63,13 +66,13 @@ export default function AdminPickups({ mobile }) {
       <section style={{ ...CARD, overflow: 'hidden' }}>
         <div role="tablist" style={{ display: 'flex', gap: 4, padding: '8px 10px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
           {AGE_TABS.map(([id, label, key]) => (
-            <button key={id} role="tab" aria-selected={age === id} type="button" onClick={() => { setAge(id); setPage(1); }} style={{ border: 0, background: 'transparent', padding: '9px 12px', cursor: 'pointer', fontSize: 13, fontWeight: age === id ? 750 : 600, color: age === id ? BLUE : T.TEXT_SECONDARY, borderBottom: `2px solid ${age === id ? BLUE : 'transparent'}`, whiteSpace: 'nowrap' }}>
+            <button key={id} role="tab" aria-selected={age === id} type="button" onClick={() => setAge(id)} style={{ border: 0, background: 'transparent', padding: '9px 12px', cursor: 'pointer', fontSize: 13, fontWeight: age === id ? 750 : 600, color: age === id ? BLUE : T.TEXT_SECONDARY, borderBottom: `2px solid ${age === id ? BLUE : 'transparent'}`, whiteSpace: 'nowrap' }}>
               {label} <span style={{ color: T.TEXT_MUTED, fontWeight: 600 }}>{sum ? sum[key] : '—'}</span>
             </button>
           ))}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: 12, alignItems: 'center' }}>
-          <form onSubmit={(e) => { e.preventDefault(); setSearch(q.trim()); setPage(1); }} style={{ display: 'flex', gap: 6 }}>
+          <form onSubmit={(e) => { e.preventDefault(); setSearch(q.trim()); }} style={{ display: 'flex', gap: 6 }}>
             <input aria-label="Search AWB or order" value={q} onChange={(e) => setQ(e.target.value)} placeholder="AWB or order number" style={{ ...FIELD, width: 200 }} />
             <Btn small type="submit">Search</Btn>
           </form>
@@ -81,7 +84,7 @@ export default function AdminPickups({ mobile }) {
           <Btn small onClick={refresh}>Refresh</Btn>
         </div>
         <Table columns={columns} rows={data?.items || []} loading={loading} error={error && !data ? (error.message || 'Pickups could not be loaded.') : ''} empty="No pickups are pending for these filters." minWidth={980} />
-        <Pager page={page} pages={Math.max(1, Math.ceil((data?.total || 0) / PAGE_SIZE))} total={data?.total || 0} pageSize={PAGE_SIZE} onPage={setPage} loading={loading} />
+        <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && list.items.length > 0} onMore={list.loadMore} noun="pickups" />
       </section>
     </div>
   );

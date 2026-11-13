@@ -9,7 +9,8 @@ import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import { diagnose, failedSheet, readCorrections, toPatch } from '@/lib/failedOrders';
-import { Pager, Spinner } from './Kit';
+import { LoadMore, Spinner, TableSkeleton } from './Kit';
+import { useInfiniteList } from '@/lib/useInfiniteList';
 import { cancelInBackground } from '@/lib/cancelBatches';
 import { ActiveCancelBanner, BatchProgressDialog } from './BatchProgress';
 import { setJobModal } from '@/lib/jobProgress';
@@ -55,7 +56,6 @@ const channelName = (c) => (CHANNELS.find(([k]) => k === c) || [null, title(c ||
 const modeOf = (r) => (/air|express/i.test(r.service_type || '') ? 'Air' : 'Surface');
 const WHATSAPP = { not_sent: 'Not sent', sent: 'Sent', delivered: 'Delivered', read: 'Read', failed: 'Failed' };
 const waTone = (w) => (w === 'read' || w === 'delivered' ? T.GREEN : w === 'failed' ? T.RED : w === 'sent' ? T.ACCENT : T.TEXT_MUTED);
-const PAGE_SIZES = [10, 25, 50, 100, 500];
 
 const tone = (state) => (state === 'delivered' || state === 'ready' ? T.GREEN : state === 'ndr' || RTO.includes(state) ? T.AMBER : state === 'cancelled' || state === 'failed' || state === 'lost' ? T.RED : T.ACCENT);
 const label = (state) => (state === 'failed' ? 'Needs fixing' : state === 'ready' ? 'Ready to ship' : state === 'rto_in_transit' ? 'RTO in transit' : state === 'rto' ? 'RTO' : state === 'ndr' ? 'NDR' : title(state));
@@ -179,122 +179,150 @@ export default function LiveTrack({ mobile }) {
   const canExport = allowed('shipments.export');
   const canExportCustomer = allowed('shipments.export_customer');
   const { nav, showToast, trackFocus, setTrackFocus, trackHandoff, setTrackHandoff } = useAppState();
-  const [rows, setRows] = useState(null);
-  const [failed, setFailed] = useState([]);
-  const [totals, setTotals] = useState(null);
   const [cancelDlg, setCancelDlg] = useState(null); // the cancellation progress dialog (see runCancel)
   // While this page's own dialog is open the progress card stays out of the way; hide the dialog and the card takes over.
   useEffect(() => { setJobModal('cancel', !!(cancelDlg && !cancelDlg.hidden && cancelDlg.running)); }, [cancelDlg]);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [chooser, setChooser] = useState(null); // not-yet-shipped orders the seller is choosing a courier for
-  const [error, setError] = useState(null);
   const [tab, setTab] = useState('all');
-  const [f, setF] = useState({ q: '', courier: '', pay: '', mode: '', channel: '', warehouse: '', tag: '', from: '', to: '' });
+  const EMPTY = { q: '', courier: '', pay: '', mode: '', channel: '', warehouse: '', tag: '', from: '', to: '' };
+  const [f, setF] = useState(EMPTY);
+  const [qf, setQf] = useState(EMPTY); // the filters the server is asked for: typing is applied after a short pause
   const [tagInput, setTagInput] = useState('');
   const [allTags, setAllTags] = useState([]);
-  const [pageSize, setPageSize] = useState(25);
-  const [page, setPage] = useState(1);
+  const [options, setOptions] = useState({ couriers: [], warehouses: [] });
+  const [counts, setCounts] = useState({});
+  const [stale, setStale] = useState(false);
+  const [working, setWorking] = useState('');
   const [exportFormat, setExportFormat] = useState('csv');
   const [selectedId, setSelectedId] = useState(null);
   const fixInput = useRef(null);
   const [fixing, setFixing] = useState(false);
   const [fixReport, setFixReport] = useState(null);
-  // Opened from the command palette: filter to that AWB and open its detail panel.
-  useEffect(() => {
-    if (!trackFocus || !rows) return;
-    const hit = rows.find((r) => r.awb === trackFocus);
-    setF((x) => ({ ...x, q: trackFocus })); // eslint-disable-line react-hooks/set-state-in-effect -- one-shot hand-off from the palette
-    if (hit) setSelectedId(hit.id);
-    setTrackFocus('');
-  }, [trackFocus, rows, setTrackFocus]);
-  // Opened from the search box with more than an AWB: apply a tab, a tag and / or a text filter once.
-  useEffect(() => {
-    if (!trackHandoff || !rows) return;
-    const { q = '', tab: wanted, tag = '' } = trackHandoff;
-    if (wanted && TABS.some(([k]) => k === wanted)) setTab(wanted); // eslint-disable-line react-hooks/set-state-in-effect -- one-shot hand-off from the search box
-    setF((x) => ({ ...x, q, tag }));
-    setPage(1);
-    const hit = q && rows.find((r) => r.awb === q);
-    if (hit) setSelectedId(hit.id);
-    setTrackHandoff(null);
-  }, [trackHandoff, rows, setTrackHandoff]);
-  const [picked, setPicked] = useState(() => new Set());
-  const set = (k) => (e) => { setF((x) => ({ ...x, [k]: e.target.value })); setPage(1); };
+  const focusAwb = useRef('');
 
-  const load = useCallback(() => apiFetch('/v1/shipments').then((x) => { setRows(x.items || []); setTotals(x.totals || null); setFailed((x.failed || []).map((o) => ({ ...o, state: o.order_state === 'cancelled' ? 'cancelled' : o.ready ? 'ready' : 'failed', awb: '', booked_at: o.created_at, shipping_charge_paise: 0, chargeable_weight_g: o.total_weight_g, whatsapp_status: 'not_sent' }))); setError(null); }).catch(setError), []);
-  useEffect(() => { load(); }, [load]);
-  const [refreshing, setRefreshing] = useState(false);
-  const refresh = async () => { setRefreshing(true); try { await load(); showToast('Shipments refreshed'); } finally { setRefreshing(false); } };
-  // Orders created or cancelled elsewhere (another tab, a bulk upload, a webhook) appear without a manual refresh: reload when the tab is shown again and every 30 s.
   useEffect(() => {
-    const again = () => { if (document.visibilityState === 'visible') load(); };
-    const timer = setInterval(again, 30000);
-    document.addEventListener('visibilitychange', again); window.addEventListener('focus', again);
-    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', again); window.removeEventListener('focus', again); };
-  }, [load]);
+    const t = setTimeout(() => setQf(f), 300);
+    return () => clearTimeout(t);
+  }, [f]);
+
+  // The query string for the server: the status tab (when wanted) plus every active filter.
+  const qs = useCallback((base, filters = qf) => {
+    const p = new URLSearchParams();
+    Object.entries({ ...filters, ...base }).forEach(([k, v]) => { if (v !== '' && v !== undefined && v !== null) p.set(k, v); });
+    return p.toString();
+  }, [qf]);
+  // Order rows (no courier yet) are shaped like shipment rows so the table treats both the same.
+  const norm = (r) => (r.kind === 'order' ? { ...r, awb: '', booked_at: r.created_at, shipping_charge_paise: 0, chargeable_weight_g: r.total_weight_g, whatsapp_status: 'not_sent' } : r);
+  const list = useInfiniteList({
+    pageSize: 50,
+    deps: [tab, qf],
+    fetchPage: (cursor, limit) => apiFetch(`/v1/shipments/list?${qs({ tab, limit, cursor })}`).then((x) => ({ items: (x.items || []).map(norm), nextCursor: x.nextCursor, total: x.total })),
+  });
+  const listRef = useRef(list);
+  useEffect(() => { listRef.current = list; });
+  const items = list.items;
+
+  const loadSummary = useCallback(() => apiFetch(`/v1/shipments/summary?${qs({})}`).then((x) => { setCounts(x.counts || {}); return x.counts || {}; }).catch(() => null), [qs]);
+  useEffect(() => { loadSummary(); }, [loadSummary]);  
   const loadTags = useCallback(() => apiFetch('/v1/shipments/tags').then((x) => setAllTags(x.items || [])).catch(() => {}), []);
   useEffect(() => { loadTags(); }, [loadTags]);
+  useEffect(() => { apiFetch('/v1/shipments/filters').then((x) => setOptions({ couriers: x.couriers || [], warehouses: x.warehouses || [] })).catch(() => {}); }, []);
 
-  const all = useMemo(() => [...(rows || []), ...failed], [rows, failed]);
-  const options = useMemo(() => {
-    const uniq = (get) => [...new Set(all.map(get).filter(Boolean))].sort();
-    return { couriers: uniq((r) => r.courier_name), warehouses: uniq((r) => r.warehouse_name) };
-  }, [all]);
+  // Reload what is on screen after something changed: replace the first batch quietly, or start over if the user had scrolled further.
+  const load = useCallback(async () => {
+    setStale(false);
+    const did = await listRef.current.refreshFirst();
+    if (!did) listRef.current.reload();
+    await Promise.all([loadSummary(), loadTags()]);
+  }, [loadSummary, loadTags]);
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => { setRefreshing(true); try { await load(); showToast('Shipments refreshed'); } finally { setRefreshing(false); } };
+  // Orders created or cancelled elsewhere (another tab, a bulk upload, a webhook) show up without a reload: only the small count request runs
+  // every 30 s; the list is refreshed when a count moved (or at once when the tab is shown again). If the user has scrolled down, a notice offers the refresh.
+  useEffect(() => {
+    const poll = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const c = await loadSummary();
+      const l = listRef.current;
+      if (c && l.started && !l.loading && c[tab] !== undefined && l.total !== undefined && c[tab] !== l.total) { const did = await l.refreshFirst(); if (!did) setStale(true); }
+    };
+    const shown = () => { if (document.visibilityState === 'visible') { loadSummary(); listRef.current.refreshFirst(); } };
+    const timer = setInterval(poll, 30000);
+    document.addEventListener('visibilitychange', shown); window.addEventListener('focus', shown);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', shown); window.removeEventListener('focus', shown); };
+  }, [loadSummary, tab]);
 
-  // Everything except the status tab, so tab counts reflect the other active filters.
-  const filtered = useMemo(() => {
-    const q = f.q.trim().toLowerCase();
-    const from = f.from ? new Date(`${f.from}T00:00:00`) : null;
-    const to = f.to ? new Date(`${f.to}T23:59:59`) : null;
-    return all.filter((r) => (
-      (!q || [r.awb, r.order_number, r.nexgo_order_id, r.customer_name, r.customer_phone, r.customer_pincode, r.customer_city, r.courier_name, r.product_names].some((v) => String(v || '').toLowerCase().includes(q)))
-      && (!f.courier || r.courier_name === f.courier)
-      && (!f.pay || r.payment_mode === f.pay)
-      && (!f.mode || (r.service_type && modeOf(r) === f.mode))
-      && (!f.channel || r.channel === f.channel)
-      && (!f.warehouse || r.warehouse_name === f.warehouse)
-      && (!f.tag || (r.tags || []).includes(f.tag))
-      && (!from || new Date(r.booked_at) >= from)
-      && (!to || new Date(r.booked_at) <= to)
-    ));
-  }, [all, f]);
+  // Opened from the command palette: filter to that AWB and open its detail panel once it is loaded.
+  useEffect(() => {
+    if (!trackFocus) return;
+    focusAwb.current = trackFocus;
+    setTab('all'); // eslint-disable-line react-hooks/set-state-in-effect -- one-shot hand-off from the palette
+    setF((x) => ({ ...x, q: trackFocus })); setQf((x) => ({ ...x, q: trackFocus }));
+    setTrackFocus('');
+  }, [trackFocus, setTrackFocus]);
+  // Opened from the search box with more than an AWB: apply a tab, a tag and / or a text filter once.
+  useEffect(() => {
+    if (!trackHandoff) return;
+    const { q = '', tab: wanted, tag = '' } = trackHandoff;
+    if (wanted && TABS.some(([k]) => k === wanted)) setTab(wanted); // eslint-disable-line react-hooks/set-state-in-effect -- one-shot hand-off from the search box
+    setF((x) => ({ ...x, q, tag })); setQf((x) => ({ ...x, q, tag }));
+    if (q) focusAwb.current = q;
+    setTrackHandoff(null);
+  }, [trackHandoff, setTrackHandoff]);
+  useEffect(() => {
+    const awb = focusAwb.current;
+    if (!awb) return;
+    const hit = items.find((r) => r.awb === awb);
+    if (hit) { setSelectedId(hit.id); focusAwb.current = ''; }  
+  }, [items]);
 
-  const counts = useMemo(() => {
-    const c = Object.fromEntries(TABS.map(([key, , test]) => [key, filtered.filter(test).length]));
-    // Only the newest 1,000 unassigned orders are loaded at a time: with no filter on, show the exact totals from the server instead of the loaded part.
-    if (totals && !Object.values(f).some(Boolean)) {
-      c.ready = Number(totals.ready); c.failed = Number(totals.unassigned) - Number(totals.ready);
-      // Exact counts from the server for every status (the list itself only loads the newest parcels).
-      const by = totals.by_state || {}; const num = (k) => Number(by[k] || 0);
-      c.pickup = Number(totals.pickup_pending || 0); c.in_transit = num('in_transit'); c.out_for_delivery = num('out_for_delivery'); c.ndr = num('ndr'); c.delivered = num('delivered');
-      c.rto = num('rto') + num('rto_in_transit'); c.lost = num('lost');
-      c.all = Object.entries(by).reduce((a, [, v]) => a + Number(v), 0);
-    }
-    return c;
-  }, [filtered, totals, f]);
+  // Selection is kept by id across batches (a Map of id -> the row, or just { id, kind, state } when it came from "select all matching").
+  const [picked, setPicked] = useState(() => new Map());
+  const pickedList = useMemo(() => [...picked.values()], [picked]);
+  useEffect(() => { setPicked(new Map()); }, [tab, qf]); // eslint-disable-line react-hooks/set-state-in-effect -- a selection belongs to one tab and filter set
+  const set = (k) => (e) => { setF((x) => ({ ...x, [k]: e.target.value })); };
 
-  const visible = useMemo(() => {
-    const test = TABS.find(([key]) => key === tab)[2];
-    return filtered.filter(test).sort((a, b) => new Date(b.booked_at) - new Date(a.booked_at));
-  }, [filtered, tab]);
+  // Walks the list endpoint (200 per request) to gather every row matching the tab and filters, for exports, manifests and fixing orders.
+  const fetchAll = async ({ tab: wantedTab = tab, filters = qf, cap = 20000 } = {}) => {
+    const out = []; let cursor = null;
+    do {
+      setWorking(`Collecting shipments… ${out.length.toLocaleString('en-IN')}`);
+      const x = await apiFetch(`/v1/shipments/list?${qs({ tab: wantedTab, limit: 200, cursor }, filters)}`);
+      out.push(...(x.items || []).map(norm)); cursor = x.nextCursor;
+    } while (cursor && out.length < cap);
+    setWorking('');
+    if (cursor) showToast(`Only the newest ${cap.toLocaleString('en-IN')} are included. Narrow the filters to get the rest.`, 'error');
+    return out;
+  };
+  // The full rows of the selection (rows picked through "select all matching" are fetched when an action needs their details).
+  const fullPicked = async () => {
+    if (pickedList.every((r) => r.order_number !== undefined)) return pickedList;
+    const ids = new Set(pickedList.map((r) => r.id));
+    return (await fetchAll()).filter((r) => ids.has(r.id));
+  };
+  const selectAllMatching = async () => {
+    setWorking('Selecting everything that matches…');
+    try {
+      const x = await apiFetch(`/v1/shipments/ids?${qs({ tab, limit: 5000 })}`);
+      setPicked((m) => { const n = new Map(m); (x.items || []).forEach((r) => { if (!n.has(r.id)) n.set(r.id, r); }); return n; });
+      if (x.truncated) showToast('The first 5,000 matching rows were selected. Narrow the filters to select the rest.', 'error');
+    } catch (e) { showToast(e.message || 'Could not select all rows', 'error'); }
+    setWorking('');
+  };
 
-  const pages = Math.max(1, Math.ceil(visible.length / pageSize));
-  const safePage = Math.min(page, pages);
-  const pageRows = visible.slice((safePage - 1) * pageSize, safePage * pageSize);
-  const selected = all.find((r) => r.id === selectedId) || null;
+  const selected = items.find((r) => r.id === selectedId) || null;
   const pad = mobile ? '14px 12px 32px' : '22px 28px 40px';
   const activeFilters = Object.values(f).some(Boolean) || tab !== 'all';
-  const clearAll = () => { setF({ q: '', courier: '', pay: '', mode: '', channel: '', warehouse: '', tag: '', from: '', to: '' }); setTab('all'); setPage(1); };
+  const clearAll = () => { setF(EMPTY); setQf(EMPTY); setTab('all'); };
 
-  if (error) {
-    const unauth = error instanceof ApiError && error.status === 401;
-    return <div style={{ padding: pad }}><div style={{ ...CARD, minHeight: 74, padding: '18px 26px', display: 'flex', alignItems: 'center', gap: 8, color: T.TEXT_SECONDARY, fontSize: 13.5 }}>{unauth ? 'Sign in to see your shipments.' : 'Shipments could not be loaded.'}{!unauth && <Btn onClick={load}>Retry</Btn>}</div></div>;
+  if (list.error && !items.length && !list.loading) {
+    const unauth = list.error instanceof ApiError && list.error.status === 401;
+    return <div style={{ padding: pad }}><div style={{ ...CARD, minHeight: 74, padding: '18px 26px', display: 'flex', alignItems: 'center', gap: 8, color: T.TEXT_SECONDARY, fontSize: 13.5 }}>{unauth ? 'Sign in to see your shipments.' : 'Shipments could not be loaded.'}{!unauth && <Btn onClick={list.reload}>Try again</Btn>}</div></div>;
   }
-  if (!rows) return <div style={{ padding: pad }}><div style={{ ...CARD, padding: 26, color: T.TEXT_MUTED, fontSize: 13 }}>Loading shipments…</div></div>;
 
   const exportRows = async () => {
     if (!canExport) return showToast('Your account does not have permission to export shipments.', 'error');
-    const source = picked.size ? visible.filter((r) => picked.has(r.id)) : visible;
+    const source = picked.size ? await fullPicked() : await fetchAll();
     const head = ['Channel', 'Order ID', 'NEXGO order ID', 'Date', 'Payment method', 'COD amount INR', 'Order value INR', 'Customer', 'Phone', 'City', 'Pincode', 'Carrier', 'Service', 'Mode', 'AWB', 'WhatsApp status', 'Status', 'Pickup warehouse', 'Products', 'Qty', 'Dead weight kg', 'Billed weight kg', 'Freight INR', 'Last scan', 'Last scan location', 'Last scan time', 'Expected delivery', 'Delivered', 'Delayed', 'Tags'];
     const body = source.map((r) => [channelName(r.channel), r.order_number, r.nexgo_order_id, stamp(r.booked_at), r.payment_mode === 'cod' ? 'COD' : 'Prepaid', r.payment_mode === 'cod' ? r.cod_amount_paise / 100 : 0, r.subtotal_paise / 100, r.customer_name, r.customer_phone, r.customer_city, r.customer_pincode, r.courier_name || '', r.service_name || '', r.service_type ? modeOf(r) : '', r.awb || '', WHATSAPP[r.whatsapp_status] || 'Not sent', label(r.state), r.warehouse_name, r.product_names, r.quantity, r.total_weight_g / 1000, r.chargeable_weight_g / 1000, r.shipping_charge_paise / 100, r.last_description || '', r.last_location || '', r.last_event_at ? stamp(r.last_event_at) : '', day(r.promised_delivery_at), r.delivered_at ? stamp(r.delivered_at) : '', isDelayed(r) ? 'Yes' : 'No', (r.tags || []).join(', ')]);
     // Customer name and phone only leave the app for members with Export Customer Details.
@@ -320,25 +348,14 @@ export default function LiveTrack({ mobile }) {
     } catch (e) {
       setCancelDlg({ running: false, hidden: false, title: 'Could not cancel', done: 0, total, summary: { tone: 'error', lines: [], errors: [e instanceof ApiError ? e.message : 'The cancellation could not be started. Try again.'] } });
     }
-    setPicked(new Set()); await load();
+    setPicked(new Map()); await load();
   };
   // Orders that never got a courier: nothing was booked, so nothing is charged or refunded.
   const cancelOrders = async () => {
-    const chosen = visible.filter((r) => picked.has(r.id) && isUnassigned(r));
+    const chosen = pickedList.filter(isUnassigned);
     if (!chosen.length) return;
     if (!(await askConfirm({ title: 'Are you sure?', message: `Cancel ${chosen.length} order${chosen.length === 1 ? '' : 's'}? Nothing has been booked, so nothing is charged.`, confirmLabel: 'Yes, continue', danger: true }))) return;
     await runCancel({ shipmentIds: [], orderIds: chosen.map((r) => r.id) });
-  };
-
-  // The server sends the newest 1,000 orders without a courier; this fetches the next 1,000.
-  const loadMore = async () => {
-    setLoadingMore(true);
-    try {
-      const x = await apiFetch(`/v1/shipments?failedOffset=${failed.length}`);
-      const more = (x.failed || []).map((o) => ({ ...o, state: o.ready ? 'ready' : 'failed', awb: '', booked_at: o.created_at, shipping_charge_paise: 0, chargeable_weight_g: o.total_weight_g, whatsapp_status: 'not_sent' }));
-      setFailed((cur) => [...cur, ...more.filter((m) => !cur.some((c) => c.id === m.id))]);
-    } catch (e) { showToast(e.message || 'More orders could not be loaded', 'error'); }
-    setLoadingMore(false);
   };
 
   // Pickup manifest: courier by courier, with a tick column for the pickup person.
@@ -353,7 +370,7 @@ export default function LiveTrack({ mobile }) {
 
   // Failed orders: download them as Excel (with the reason), fix the cells, upload the file: orders are updated in place and couriers assigned.
   const downloadFailed = async (format = 'xlsx') => {
-    const source = visible.filter((r) => r.state === 'failed');
+    const source = (await fetchAll({ tab: 'failed' })).filter((r) => r.state === 'failed');
     if (!source.length) return showToast('There are no failed orders to download.', 'error');
     await saveRows(failedSheet(source), `failed-orders-${isoDay(new Date())}`, format, 'Failed orders');
     showToast(`${source.length} failed order${source.length === 1 ? '' : 's'} downloaded. Correct them and upload the file.`);
@@ -367,7 +384,7 @@ export default function LiveTrack({ mobile }) {
       if (!rows) throw new Error('"NEXGO order ID" column not found. Upload the file downloaded from the Exception & Error tab.');
       if (!rows.length) throw new Error('The file has no order rows.');
       if (rows.length > 500) throw new Error('Upload up to 500 orders at a time.');
-      const byId = new Map(failed.map((o) => [o.nexgo_order_id, o]));
+      const byId = new Map((await fetchAll({ tab: 'failed', filters: EMPTY })).filter((o) => o.state === 'failed').map((o) => [o.nexgo_order_id, o]));
       const report = []; const fixed = [];
       for (const row of rows) {
         const order = byId.get(row.nexgoId);
@@ -394,36 +411,50 @@ export default function LiveTrack({ mobile }) {
 
   // Tags go onto the selected shipments (never onto not-yet-shipped "failed" orders).
   const tagSelected = async (mode) => {
-    const ids = visible.filter((r) => picked.has(r.id) && !isUnassigned(r)).map((r) => r.id);
+    const ids = pickedList.filter((r) => !isUnassigned(r) && r.kind !== 'order').map((r) => r.id);
     if (!ids.length) return showToast('Select shipments that have an AWB to tag.', 'error');
     try {
       const r = await apiFetch('/v1/shipments/tags', { method: 'POST', body: { shipmentIds: ids, [mode]: [tagInput.trim()] } });
       showToast(`${mode === 'add' ? 'Tag added to' : 'Tag removed from'} ${r.updated} shipment${r.updated === 1 ? '' : 's'}`);
-      setTagInput(''); await Promise.all([load(), loadTags()]);
+      setTagInput(''); await load();
     } catch (e) { showToast(e instanceof ApiError ? e.message : 'Tags could not be saved', 'error'); }
   };
   const printSelected = (kind) => {
-    const ids = visible.filter((r) => picked.has(r.id) && !isUnassigned(r)).map((r) => r.id);
+    const ids = pickedList.filter((r) => !isUnassigned(r) && r.kind !== 'order').map((r) => r.id);
     if (!ids.length) return showToast('Select shipments that have an AWB first.', 'error');
     if (ids.length > 100) return showToast('Print up to 100 shipments at a time.', 'error');
     openDocs(kind, ids);
   };
   // Only shipments the courier has not picked up can be cancelled; the rest are left alone and counted so nothing is silently skipped.
   const cancelSelected = async () => {
-    const chosen = visible.filter((r) => picked.has(r.id) && !isUnassigned(r));
+    const chosen = pickedList.filter((r) => !isUnassigned(r));
     const ids = chosen.filter((r) => ['booked', 'pickup_pending', 'pickup_scheduled'].includes(r.state)).map((r) => r.id);
     if (!ids.length) return showToast('None of the selected shipments can be cancelled. Only shipments that are not yet picked up can.', 'error');
     const skipped = chosen.length - ids.length;
     if (!(await askConfirm({ title: 'Are you sure?', message: `Cancel ${ids.length} shipment${ids.length === 1 ? '' : 's'}? The shipping charges are credited back to your wallet.${skipped ? ` ${skipped} selected shipment${skipped === 1 ? ' is' : 's are'} already picked up and will be left as they are.` : ''}`, confirmLabel: 'Yes, continue', danger: true }))) return;
     await runCancel({ shipmentIds: ids, orderIds: [] });
   };
-  const allOnPage = pageRows.length > 0 && pageRows.every((r) => picked.has(r.id));
-  const togglePage = () => setPicked((s) => { const n = new Set(s); pageRows.forEach((r) => (allOnPage ? n.delete(r.id) : n.add(r.id))); return n; });
-  const toggleOne = (id) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allOnPage = items.length > 0 && items.every((r) => picked.has(r.id));
+  const togglePage = () => setPicked((m) => { const n = new Map(m); items.forEach((r) => (allOnPage ? n.delete(r.id) : n.set(r.id, r))); return n; });
+  const toggleOne = (r) => setPicked((m) => { const n = new Map(m); if (n.has(r.id)) n.delete(r.id); else n.set(r.id, r); return n; });
+  // Everything ready for a courier (all matching rows, not only the loaded ones).
+  const assignAllReady = async () => {
+    setWorking('Collecting the orders…');
+    try {
+      const x = await apiFetch(`/v1/shipments/ids?${qs({ tab: 'ready', limit: 5000 })}`);
+      const rows = x.items || [];
+      if (rows.length === 1) { const one = items.find((r) => r.id === rows[0].id) || (await fetchAll({ tab: 'ready' }))[0]; setChooser(one ? [one] : []); } else setChooser(rows);
+      if (x.truncated) showToast('The first 5,000 orders are included. Assign them, then repeat for the rest.', 'error');
+    } catch (e) { showToast(e.message || 'Could not collect the orders', 'error'); }
+    setWorking('');
+  };
+  const manifestAll = async (format) => downloadManifest(await fetchAll({ tab: 'pickup' }), format);
 
   return (
     <div style={{ padding: pad, position: 'relative' }}>
       <ActiveAssignBanner onFinished={load} />
+      {working && <div role="status" style={{ marginBottom: 10, fontSize: 12.5, color: T.TEXT_SECONDARY, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner />{working}</div>}
+      {stale && <div style={{ marginBottom: 10, fontSize: 12.5, color: T.AMBER, display: 'flex', gap: 10, alignItems: 'center' }}>New activity since you opened this list.<Btn small onClick={load}>Refresh</Btn></div>}
       <ActiveCancelBanner onFinished={load} />
       <BatchProgressDialog state={cancelDlg && !cancelDlg.hidden ? cancelDlg : null} onClose={() => setCancelDlg((d) => (d?.running ? { ...d, hidden: true } : null))} />
       <div style={{ ...CARD, padding: 12, marginBottom: 12, boxShadow: 'none', background: 'var(--nx-surface-soft)' }}>
@@ -446,11 +477,10 @@ export default function LiveTrack({ mobile }) {
         </div>
       </div>
 
-      {totals && (Number(totals.shipments) > (rows || []).length || Number(totals.unassigned) > failed.length) && <div style={{ marginBottom: 10, fontSize: 12.5, color: T.AMBER, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span>Showing the latest {(rows || []).length} of {totals.shipments} shipments and {failed.length} of {totals.unassigned} orders without a courier.</span>{Number(totals.unassigned) > failed.length && <Btn small disabled={loadingMore} onClick={loadMore}>{loadingMore ? 'Loading…' : 'Show more orders'}</Btn>}</div>}
       <div role="tablist" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
         {TABS.map(([key, name]) => {
           const on = tab === key;
-          return <button key={key} role="tab" aria-selected={on} onClick={() => { setTab(key); setPage(1); }} style={{ height: 32, padding: '0 12px', borderRadius: 99, border: `1px solid ${on ? T.NAVY : T.BORDER}`, background: on ? T.NAVY : T.SURFACE, color: on ? '#fff' : key === 'delayed' && counts.delayed ? T.RED : T.TEXT_LABEL, fontWeight: 720, fontSize: 12.5, cursor: 'pointer' }}>{name} <span style={{ opacity: 0.7, fontWeight: 600 }}>{counts[key] || 0}</span></button>;
+          return <button key={key} role="tab" aria-selected={on} onClick={() => setTab(key)} style={{ height: 32, padding: '0 12px', borderRadius: 99, border: `1px solid ${on ? T.NAVY : T.BORDER}`, background: on ? T.NAVY : T.SURFACE, color: on ? '#fff' : key === 'delayed' && counts.delayed ? T.RED : T.TEXT_LABEL, fontWeight: 720, fontSize: 12.5, cursor: 'pointer' }}>{name} <span style={{ opacity: 0.7, fontWeight: 600 }}>{counts[key] || 0}</span></button>;
         })}
       </div>
 
@@ -458,14 +488,14 @@ export default function LiveTrack({ mobile }) {
         <div style={{ ...CARD, padding: '12px 14px', marginBottom: 12, boxShadow: 'none' }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <div style={{ flex: '1 1 320px', fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.5 }}>These orders are complete and waiting for a courier. Assigning books the shipment, charges your wallet and moves it to Pickup Pending, where you can print labels and download the pickup manifest. Orders no courier can take stay here with the reason.</div>
-            <Btn primary disabled={!visible.length} onClick={() => setChooser(visible)}>Assign courier to all {visible.length}</Btn>
+            <Btn primary disabled={!(counts.ready || list.total)} onClick={assignAllReady}>Assign courier to all {counts.ready ?? list.total ?? ''}</Btn>
           </div>
         </div>
       )}
-      {tab === 'pickup' && visible.length > 0 && (
+      {tab === 'pickup' && (list.total > 0 || items.length > 0) && (
         <div style={{ ...CARD, padding: '12px 14px', marginBottom: 12, boxShadow: 'none', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ flex: '1 1 320px', fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.5 }}>Pickup manifest: the parcels the courier collects, listed courier by courier with a tick column for the pickup person.</div>
-          <Btn onClick={() => downloadManifest(visible, 'xlsx')}>Manifest (Excel)</Btn><Btn onClick={() => downloadManifest(visible, 'csv')}>Manifest (CSV)</Btn>
+          <Btn onClick={() => manifestAll('xlsx')}>Manifest (Excel)</Btn><Btn onClick={() => manifestAll('csv')}>Manifest (CSV)</Btn>
         </div>
       )}
       {tab === 'failed' && (
@@ -477,7 +507,7 @@ export default function LiveTrack({ mobile }) {
             <Btn primary disabled={fixing} onClick={() => fixInput.current?.click()}>{fixing ? 'Re-assigning…' : 'Upload corrected file'}</Btn>
             <input ref={fixInput} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; uploadCorrected(file); }} />
           </div>
-          {visible.some((r) => diagnose(r).length) && <div style={{ marginTop: 8, fontSize: 12, color: T.AMBER }}>{visible.filter((r) => diagnose(r).length).length} order(s) have missing or invalid details; they are flagged in the Issue column.</div>}
+          {items.some((r) => r.state === 'failed' && diagnose(r).length) && <div style={{ marginTop: 8, fontSize: 12, color: T.AMBER }}>{items.filter((r) => r.state === 'failed' && diagnose(r).length).length} of the orders shown have missing or invalid details; they are flagged in the Issue column.</div>}
           {fixReport && (
             <div style={{ marginTop: 10, fontSize: 12.5 }}>
               <b style={{ color: fixReport.problems.length ? T.TEXT : T.GREEN }}>{fixReport.assigned} of {fixReport.total} assigned to a courier.</b>
@@ -490,9 +520,9 @@ export default function LiveTrack({ mobile }) {
       {picked.size > 0 && (
         <div style={{ ...CARD, padding: '9px 12px', marginBottom: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', background: 'rgba(56,119,252,.08)', boxShadow: 'none' }}>
           <b style={{ fontSize: 13, color: T.TEXT }}>{picked.size} selected</b>
-          <Btn small onClick={() => copyText(visible.filter((r) => picked.has(r.id)).map((r) => r.awb).join('\n'), showToast, 'AWBs copied')}>Copy AWBs</Btn>
-          {visible.some((r) => picked.has(r.id) && isUnassigned(r)) && <><Btn small primary onClick={() => setChooser(visible.filter((r) => picked.has(r.id) && isUnassigned(r)))}>Choose courier</Btn><Btn small loading={!!cancelDlg?.running} onClick={cancelOrders}>Cancel orders</Btn></>}
-          {visible.some((r) => picked.has(r.id) && !isUnassigned(r)) && <><Btn small onClick={() => downloadManifest(visible.filter((r) => picked.has(r.id) && !isUnassigned(r)), 'xlsx')}>Manifest (Excel)</Btn><Btn small onClick={() => downloadManifest(visible.filter((r) => picked.has(r.id) && !isUnassigned(r)), 'csv')}>Manifest (CSV)</Btn></>}
+          <Btn small onClick={() => fullPicked().then((rows) => copyText(rows.map((r) => r.awb).filter(Boolean).join('\n'), showToast, 'AWBs copied'))}>Copy AWBs</Btn>
+          {pickedList.some(isUnassigned) && <><Btn small primary onClick={() => setChooser(pickedList.filter(isUnassigned))}>Choose courier</Btn><Btn small loading={!!cancelDlg?.running} onClick={cancelOrders}>Cancel orders</Btn></>}
+          {pickedList.some((r) => !isUnassigned(r) && r.kind !== 'order') && <><Btn small onClick={async () => downloadManifest((await fullPicked()).filter((r) => !isUnassigned(r)), 'xlsx')}>Manifest (Excel)</Btn><Btn small onClick={async () => downloadManifest((await fullPicked()).filter((r) => !isUnassigned(r)), 'csv')}>Manifest (CSV)</Btn></>}
           <Btn small onClick={() => printSelected('label')}>Print labels</Btn>
           <Btn small onClick={() => printSelected('invoice')}>Print invoices</Btn>
           <Btn small loading={!!cancelDlg?.running} onClick={cancelSelected}>Cancel shipments</Btn>
@@ -500,29 +530,30 @@ export default function LiveTrack({ mobile }) {
           <input aria-label="Tag name" value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="Tag name" maxLength={30} style={{ ...FIELD, height: 28, width: 130 }} />
           <Btn small disabled={!tagInput.trim()} onClick={() => tagSelected('add')}>Add tag</Btn>
           <Btn small disabled={!tagInput.trim()} onClick={() => tagSelected('remove')}>Remove tag</Btn>
-          <Btn small onClick={() => setPicked(new Set())}>Clear selection</Btn>
+          {list.total > picked.size && list.hasMore && <Btn small onClick={selectAllMatching}>Select all {list.total.toLocaleString('en-IN')} matching</Btn>}
+          <Btn small onClick={() => setPicked(new Map())}>Clear selection</Btn>
         </div>
       )}
 
-      {!all.length ? (
+      {counts.all === 0 && !activeFilters && !list.loading ? (
         <section style={{ ...CARD, minHeight: 220, padding: 42, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}><div style={{ width: 42, height: 42, borderRadius: 12, display: 'grid', placeItems: 'center', background: 'rgba(56,119,252,.12)', color: T.ACCENT, fontSize: 20 }}>✈</div><b style={{ marginTop: 14, color: T.TEXT, fontSize: 16 }}>No shipments yet</b><span style={{ marginTop: 5, color: T.TEXT_MUTED, fontSize: 13 }}>Book an order with a courier and its live tracking will appear here.</span></section>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: selected && !mobile ? 'minmax(0,1fr) 400px' : '1fr', gap: 14, alignItems: 'start' }}>
           <section style={{ ...CARD, overflow: 'hidden' }}>
-            {!visible.length ? <div style={{ padding: 26, color: T.TEXT_MUTED, fontSize: 13 }}>No shipments match these filters.{activeFilters && <> <button onClick={clearAll} style={{ border: 0, background: 'transparent', color: T.ACCENT, fontWeight: 700, cursor: 'pointer' }}>Clear filters</button></>}</div> : (
+            {!items.length && !list.loading ? <div style={{ padding: 26, color: T.TEXT_MUTED, fontSize: 13 }}>No shipments match these filters.{activeFilters && <> <button onClick={clearAll} style={{ border: 0, background: 'transparent', color: T.ACCENT, fontWeight: 700, cursor: 'pointer' }}>Clear filters</button></>}</div> : (
               <>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', minWidth: 1060, borderCollapse: 'collapse' }}>
                     <thead><tr>
-                      <th style={{ ...HEAD, width: 34 }}><input type="checkbox" aria-label="Select all on this page" checked={allOnPage} onChange={togglePage} /></th>
+                      <th style={{ ...HEAD, width: 34 }}><input type="checkbox" aria-label="Select all loaded rows" checked={allOnPage} onChange={togglePage} /></th>
                       {['Channel', 'Order ID', 'NEXGO order ID', 'Date', 'Payment / Method', 'Customer', 'Carrier', 'AWB', 'WhatsApp status', 'Status', ''].map((h) => <th key={h || 'act'} style={HEAD}>{h}</th>)}
                     </tr></thead>
-                    <tbody>
-                      {pageRows.map((r) => {
+                    {list.loading && !items.length ? <TableSkeleton cols={12} rows={8} /> : <tbody>
+                      {items.map((r) => {
                         const late = isDelayed(r);
                         return (
                           <tr key={r.id} onClick={() => setSelectedId(r.id === selectedId ? null : r.id)} style={{ cursor: 'pointer', background: r.id === selectedId ? 'rgba(56,119,252,.09)' : undefined }}>
-                            <td style={CELL} onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Select ${r.order_number}`} checked={picked.has(r.id)} onChange={() => toggleOne(r.id)} /></td>
+                            <td style={CELL} onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Select ${r.order_number}`} checked={picked.has(r.id)} onChange={() => toggleOne(r)} /></td>
                             <td style={{ ...CELL, whiteSpace: 'nowrap' }}>{channelName(r.channel)}</td>
                             <td style={CELL}><b>{r.order_number}</b>{(r.tags || []).length > 0 && <small style={{ ...SUB, color: T.ACCENT }}>{r.tags.map((t) => `#${t}`).join(' ')}</small>}</td>
                             <td style={CELL}><span style={{ fontFamily: T.MONO, fontSize: 12 }}>{r.nexgo_order_id}</span></td>
@@ -537,17 +568,14 @@ export default function LiveTrack({ mobile }) {
                           </tr>
                         );
                       })}
-                    </tbody>
+                    </tbody>}
                   </table>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', padding: '8px 14px 0', fontSize: 12.5, color: T.TEXT_SECONDARY }}>
-                  Rows per page <select aria-label="Rows per page" value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} style={{ ...FIELD, height: 30 }}>{PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}</select>
-                </div>
-                <Pager page={safePage} pages={pages} total={visible.length} pageSize={pageSize} onPage={setPage} />
+                <LoadMore shown={items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error} onMore={list.loadMore} noun="shipments" />
               </>
             )}
           </section>
-          {chooser && <CourierChooser orders={chooser} onClose={() => setChooser(null)} onDone={async () => { setChooser(null); setSelectedId(null); setPicked(new Set()); await load(); }} />}
+          {chooser && <CourierChooser orders={chooser} onClose={() => setChooser(null)} onDone={async () => { setChooser(null); setSelectedId(null); setPicked(new Map()); await load(); }} />}
           {selected && <Detail key={selected.id} shipment={selected} mobile={mobile} reload={load} onChoose={setChooser} onClose={() => setSelectedId(null)} />}
         </div>
       )}

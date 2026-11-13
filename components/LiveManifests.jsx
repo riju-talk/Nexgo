@@ -3,10 +3,10 @@
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
-import { useLiveQuery, clearCached } from '@/lib/queryCache';
+import { usePagedList } from '@/lib/useInfiniteList';
 import { saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { BLUE, Btn, CARD, FIELD, Pager, Pill, ProgressBar, Table, dateTime } from './Kit';
+import { BLUE, Btn, CARD, FIELD, LoadMore, Pill, ProgressBar, Table, dateTime } from './Kit';
 
 const PAGE_SIZE = 15;
 const STATUS = [['', 'All'], ['pending', 'Pending'], ['in_progress', 'In progress'], ['completed', 'Completed']];
@@ -16,20 +16,21 @@ const LABEL = { pending: 'Pending pickup', in_progress: 'In progress', completed
 // Pickup & Manifests: the list a courier signs when collecting parcels. One manifest per courier and pickup address per day.
 export default function LiveManifests({ mobile }) {
   const { showToast } = useAppState();
-  const [status, setStatus] = useState(''); const [page, setPage] = useState(1);
+  const [status, setStatus] = useState('');
   const [qInput, setQInput] = useState(''); const [q, setQ] = useState('');
   const [from, setFrom] = useState(''); const [to, setTo] = useState('');
   const [busy, setBusy] = useState(false); const [downloading, setDownloading] = useState('');
   const [format, setFormat] = useState('xlsx');
 
-  const qs = useMemo(() => {
-    const p = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+  const query = useMemo(() => {
+    const p = new URLSearchParams();
     if (status) p.set('status', status); if (q) p.set('q', q); if (from) p.set('from', from); if (to) p.set('to', to);
     return p.toString();
-  }, [status, page, q, from, to]);
-  const url = `/v1/manifests?${qs}`;
-  const { data, error, loading, refresh } = useLiveQuery(url, { every: 30000 });
-  const items = data?.items || [];
+  }, [status, q, from, to]);
+  const list = usePagedList({ path: '/v1/manifests', query, pageSize: PAGE_SIZE, every: 30000 });
+  const { loading, refresh } = list;
+  const error = list.error ? { message: list.message } : null;
+  const items = list.items;
   const dateBad = from && to && from > to;
 
   const generate = async () => {
@@ -37,7 +38,7 @@ export default function LiveManifests({ mobile }) {
     try {
       const r = await apiFetch('/v1/manifests/generate', { method: 'POST', body: {} });
       showToast(r.message, r.created ? 'success' : 'info');
-      clearCached('/v1/manifests'); refresh();
+      refresh();
     } catch (e) { showToast(e.message || 'Could not generate manifests', 'error'); } finally { setBusy(false); }
   };
 
@@ -78,18 +79,18 @@ export default function LiveManifests({ mobile }) {
 
       <section style={CARD}>
         <div role="tablist" style={{ display: 'flex', gap: 4, padding: '4px 14px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
-          {STATUS.map(([id, name]) => { const on = status === id; return <button key={id || 'all'} role="tab" aria-selected={on} type="button" onClick={() => { setStatus(id); setPage(1); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? BLUE : 'transparent'}`, background: 'transparent', color: on ? BLUE : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{name}</button>; })}
+          {STATUS.map(([id, name]) => { const on = status === id; return <button key={id || 'all'} role="tab" aria-selected={on} type="button" onClick={() => { setStatus(id); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? BLUE : 'transparent'}`, background: 'transparent', color: on ? BLUE : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{name}</button>; })}
         </div>
         <div style={{ padding: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input aria-label="Search manifests" style={{ ...FIELD, flex: '1 1 220px', minWidth: 160 }} placeholder="Search manifest ID, courier or pickup address" value={qInput} onChange={(e) => setQInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { setQ(qInput.trim()); setPage(1); } }} onBlur={() => { if (qInput.trim() !== q) { setQ(qInput.trim()); setPage(1); } }} />
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.TEXT_SECONDARY }}>From <input type="date" aria-label="From date" style={FIELD} value={from} max={to || undefined} onChange={(e) => { setFrom(e.target.value); setPage(1); }} /></label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.TEXT_SECONDARY }}>To <input type="date" aria-label="To date" style={FIELD} value={to} min={from || undefined} onChange={(e) => { setTo(e.target.value); setPage(1); }} /></label>
+          <input aria-label="Search manifests" style={{ ...FIELD, flex: '1 1 220px', minWidth: 160 }} placeholder="Search manifest ID, courier or pickup address" value={qInput} onChange={(e) => setQInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { setQ(qInput.trim()); } }} onBlur={() => { if (qInput.trim() !== q) { setQ(qInput.trim()); } }} />
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.TEXT_SECONDARY }}>From <input type="date" aria-label="From date" style={FIELD} value={from} max={to || undefined} onChange={(e) => { setFrom(e.target.value); }} /></label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.TEXT_SECONDARY }}>To <input type="date" aria-label="To date" style={FIELD} value={to} min={from || undefined} onChange={(e) => { setTo(e.target.value); }} /></label>
           <select aria-label="Download format" style={FIELD} value={format} onChange={(e) => setFormat(e.target.value)}><option value="xlsx">Excel (.xlsx)</option><option value="csv">CSV</option></select>
-          {(from || to || q) && <Btn small onClick={() => { setFrom(''); setTo(''); setQ(''); setQInput(''); setPage(1); }}>Clear</Btn>}
+          {(from || to || q) && <Btn small onClick={() => { setFrom(''); setTo(''); setQ(''); setQInput(''); }}>Clear</Btn>}
         </div>
         {dateBad && <div role="alert" style={{ padding: '0 14px 10px', color: T.RED, fontSize: 12.5 }}>The From date must be on or before the To date.</div>}
-        <Table columns={columns} rows={dateBad ? [] : items} loading={loading && !data} error={error ? (error.message || 'Manifests could not be loaded.') : ''} empty={status || q || from || to ? 'No manifests match these filters.' : 'No manifests yet. Book shipments, then generate today’s manifests.'} minWidth={900} />
-        <Pager page={page} pages={data?.pages || 1} total={data?.total || 0} pageSize={PAGE_SIZE} onPage={setPage} loading={loading} />
+        <Table columns={columns} rows={dateBad ? [] : items} loading={loading} error={error ? (error.message || 'Manifests could not be loaded.') : ''} empty={status || q || from || to ? 'No manifests match these filters.' : 'No manifests yet. Book shipments, then generate today’s manifests.'} minWidth={900} />
+        <LoadMore shown={items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && items.length > 0} onMore={list.loadMore} noun="manifests" />
       </section>
     </div>
   );

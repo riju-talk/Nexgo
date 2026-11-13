@@ -5,7 +5,8 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { BLUE, Btn, CARD, FIELD, Pager, Pill, Table, dayText, inr, isoDay, kg } from './Kit';
+import { usePagedList } from '@/lib/useInfiniteList';
+import { BLUE, Btn, CARD, FIELD, LoadMore, Pill, Table, dayText, inr, isoDay, kg } from './Kit';
 
 const STATUS = { open: ['Awaiting seller', '#C2410C'], disputed: ['Needs decision', BLUE], accepted: ['Accepted by seller', '#6B7280'], won: ['Won', T.GREEN], lost: ['Lost', T.RED], withdrawn: ['Withdrawn', '#6B7280'] };
 const TABS = [['', 'All'], ['disputed', 'Needs decision'], ['open', 'Awaiting seller'], ['won', 'Won'], ['lost', 'Lost'], ['accepted', 'Accepted'], ['withdrawn', 'Withdrawn']];
@@ -13,20 +14,15 @@ const TABS = [['', 'All'], ['disputed', 'Needs decision'], ['open', 'Awaiting se
 // Admin side of weight management: every seller's discrepancy; the admin records the courier's final decision.
 export default function LiveAdminDisputes({ mobile }) {
   const { showToast } = useAppState();
-  const [status, setStatus] = useState('disputed'); const [page, setPage] = useState(1); const [qInput, setQInput] = useState(''); const [q, setQ] = useState('');
-  const [tick, setTick] = useState(0); const [data, setData] = useState({ key: '', items: [], total: 0, pages: 1, counts: {}, error: '' });
+  const [status, setStatus] = useState('disputed'); const [qInput, setQInput] = useState(''); const [q, setQ] = useState('');
+  const [tick, setTick] = useState(0);
   const [dialog, setDialog] = useState(null); const [outcome, setOutcome] = useState('won'); const [note, setNote] = useState(''); const [busy, setBusy] = useState(false); const [format, setFormat] = useState('csv');
 
-  useEffect(() => { const t = window.setTimeout(() => { setQ(qInput.trim()); setPage(1); }, 300); return () => window.clearTimeout(t); }, [qInput]);
-  const params = useMemo(() => { const p = new URLSearchParams({ page: String(page), pageSize: '10' }); if (status) p.set('status', status); if (q) p.set('q', q); return p; }, [status, page, q]);
-  const key = `${params}#${tick}`;
-  useEffect(() => {
-    let live = true;
-    apiFetch(`/v1/admin/weight-disputes?${params}`).then((x) => { if (live) setData({ key, error: '', ...x }); })
-      .catch((e) => { if (live) setData({ key, items: [], total: 0, pages: 1, counts: {}, error: e.status === 401 || e.status === 403 ? 'Sign in as a platform administrator.' : e.message || 'Disputes could not be loaded.' }); });
-    return () => { live = false; };
-  }, [params, key]);
-  const loading = data.key !== key; const c = data.counts || {};
+  useEffect(() => { const t = window.setTimeout(() => { setQ(qInput.trim()); }, 300); return () => window.clearTimeout(t); }, [qInput]);
+  const params = useMemo(() => { const p = new URLSearchParams(); if (status) p.set('status', status); if (q) p.set('q', q); return p; }, [status, q]);
+  const list = usePagedList({ path: '/v1/admin/weight-disputes', query: params.toString(), pageSize: 25, tick });
+  const data = { items: list.items, total: list.total ?? 0, counts: list.extra.counts || {}, error: list.error ? (list.error.status === 401 || list.error.status === 403 ? 'Sign in as a platform administrator.' : list.message) : '' };
+  const loading = list.loading; const c = data.counts;
   const openDialog = (row) => { setDialog(row); setOutcome('won'); setNote(''); };
 
   const submit = async () => {
@@ -52,7 +48,7 @@ export default function LiveAdminDisputes({ mobile }) {
       </div>
       <section style={{ ...CARD, background: 'var(--ops-surface)' }}>
         <div role="tablist" style={{ display: 'flex', gap: 4, padding: '4px 14px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
-          {TABS.map(([id, label]) => <button key={id || 'all'} role="tab" aria-selected={status === id} type="button" onClick={() => { setStatus(id); setPage(1); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${status === id ? BLUE : 'transparent'}`, background: 'transparent', color: status === id ? BLUE : T.TEXT_SECONDARY, fontWeight: status === id ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}</button>)}
+          {TABS.map(([id, label]) => <button key={id || 'all'} role="tab" aria-selected={status === id} type="button" onClick={() => setStatus(id)} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${status === id ? BLUE : 'transparent'}`, background: 'transparent', color: status === id ? BLUE : T.TEXT_SECONDARY, fontWeight: status === id ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}</button>)}
         </div>
         <div style={{ padding: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <input aria-label="Search" style={{ ...FIELD, flex: '1 1 240px' }} placeholder="Search seller, AWB or order…" value={qInput} onChange={(e) => setQInput(e.target.value)} />
@@ -66,7 +62,7 @@ export default function LiveAdminDisputes({ mobile }) {
             { h: 'Status', cell: (r) => { const [l, col] = STATUS[r.status] || [r.status, T.TEXT]; return <Pill color={col}>{l}</Pill>; } },
             { h: 'Action', cell: (r) => (r.status === 'disputed' ? <Btn small primary onClick={() => openDialog(r)}>Record decision</Btn> : <span style={{ color: T.TEXT_MUTED }}>—</span>) },
           ]} />
-        <Pager page={page} pages={data.pages} total={data.total} pageSize={10} onPage={setPage} loading={loading} />
+        <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && list.items.length > 0} onMore={list.loadMore} />
       </section>
 
       {dialog && (

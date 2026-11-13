@@ -6,6 +6,8 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
+import { LoadMore } from './Kit';
+import { usePagedList } from '@/lib/useInfiniteList';
 
 const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`, borderRadius: 12 };
 const FIELD = { height: 38, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
@@ -64,31 +66,24 @@ function ActionDialog({ row, onClose, onDone }) {
 
 export default function LiveWeightDisputes({ mobile }) {
   const { showToast } = useAppState();
-  const [status, setStatus] = useState(''); const [page, setPage] = useState(1);
+  const [status, setStatus] = useState('');
   const [qInput, setQInput] = useState(''); const [q, setQ] = useState('');
   const [courier, setCourier] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState('');
   const [tick, setTick] = useState(0);
-  const [data, setData] = useState({ key: '', items: [], total: 0, pages: 1, error: '' });
   const [stats, setStats] = useState(null); const [couriers, setCouriers] = useState([]);
   const [selected, setSelected] = useState(() => new Set()); const [dialog, setDialog] = useState(null);
   const [busy, setBusy] = useState(false); const [format, setFormat] = useState('csv');
 
-  useEffect(() => { const t = window.setTimeout(() => { setQ(qInput.trim()); setPage(1); }, 300); return () => window.clearTimeout(t); }, [qInput]);
-  const params = useMemo(() => { const p = new URLSearchParams({ page: String(page), pageSize: '8' }); if (status) p.set('group', status); if (q) p.set('q', q); if (courier) p.set('courier', courier); if (from) p.set('from', from); if (to) p.set('to', to); return p.toString(); }, [status, page, q, courier, from, to]);
-  const key = `${params}#${tick}`;
-  useEffect(() => {
-    let live = true;
-    apiFetch(`/v1/weight-disputes?${params}`)
-      .then((x) => { if (live) setData({ key, items: x.items, total: x.total, pages: x.pages, error: '' }); })
-      .catch((e) => { if (live) setData({ key, items: [], total: 0, pages: 1, error: e.status === 401 ? 'Sign in to view weight discrepancies.' : e.message || 'Could not load weight discrepancies.' }); });
-    return () => { live = false; };
-  }, [params, key]);
+  useEffect(() => { const t = window.setTimeout(() => { setQ(qInput.trim()); }, 300); return () => window.clearTimeout(t); }, [qInput]);
+  const params = useMemo(() => { const p = new URLSearchParams(); if (status) p.set('group', status); if (q) p.set('q', q); if (courier) p.set('courier', courier); if (from) p.set('from', from); if (to) p.set('to', to); return p.toString(); }, [status, q, courier, from, to]);
+  const list = usePagedList({ path: '/v1/weight-disputes', query: params, pageSize: 25, tick });
+  const data = { items: list.items, total: list.total ?? 0, error: list.message };
   useEffect(() => { let live = true; apiFetch('/v1/weight-disputes/stats').then((x) => { if (live) setStats(x); }).catch(() => {}); return () => { live = false; }; }, [tick]);
   useEffect(() => { apiFetch('/v1/shipping/courier-options').then((x) => setCouriers([...new Map((x.items || []).map((c) => [c.code, c.name])).entries()])).catch(() => {}); }, []);
 
-  const loading = data.key !== key;
+  const loading = list.loading;
   const refresh = () => { setSelected(new Set()); setTick((t) => t + 1); };
-  const filter = (setter) => (e) => { setter(e.target.value); setPage(1); };
+  const filter = (setter) => (e) => { setter(e.target.value); };
   const s = stats?.stats || stats || {}; const n = (v) => Number(v || 0);
   const anyFilter = q || courier || from || to;
   const openSelected = data.items.filter((r) => selected.has(r.id) && r.status === 'open');
@@ -125,13 +120,13 @@ export default function LiveWeightDisputes({ mobile }) {
       </div>
       <section style={CARD}>
         <div role="tablist" style={{ display: 'flex', gap: 4, padding: '4px 14px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
-          {TABS.map(([id, label]) => { const on = status === id; const count = id ? n(TAB_COUNT[id](s)) : null; return <button key={id || 'all'} role="tab" aria-selected={on} type="button" onClick={() => { setStatus(id); setPage(1); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#3877fc' : 'transparent'}`, background: 'transparent', color: on ? '#3877fc' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{count > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'open' ? T.RED : '#3877fc', color: '#fff', fontSize: 11 }}>{count}</span>}</button>; })}
+          {TABS.map(([id, label]) => { const on = status === id; const count = id ? n(TAB_COUNT[id](s)) : null; return <button key={id || 'all'} role="tab" aria-selected={on} type="button" onClick={() => { setStatus(id); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#3877fc' : 'transparent'}`, background: 'transparent', color: on ? '#3877fc' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{count > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'open' ? T.RED : '#3877fc', color: '#fff', fontSize: 11 }}>{count}</span>}</button>; })}
         </div>
         <div style={{ padding: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <input aria-label="Search" style={{ ...FIELD, flex: '1 1 200px', minWidth: 160 }} placeholder="Search by AWB or Order ID…" value={qInput} onChange={(e) => setQInput(e.target.value)} />
           <select aria-label="Courier" style={FIELD} value={courier} onChange={filter(setCourier)}><option value="">All Couriers</option>{couriers.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select>
           <input aria-label="From date" type="date" style={FIELD} value={from} max={to || undefined} onChange={filter(setFrom)} /><span style={{ color: T.TEXT_MUTED }}>–</span><input aria-label="To date" type="date" style={FIELD} value={to} min={from || undefined} onChange={filter(setTo)} />
-          {anyFilter && <Btn small onClick={() => { setQInput(''); setQ(''); setCourier(''); setFrom(''); setTo(''); setPage(1); }}>Clear filters</Btn>}
+          {anyFilter && <Btn small onClick={() => { setQInput(''); setQ(''); setCourier(''); setFrom(''); setTo(''); }}>Clear filters</Btn>}
         </div>
         {openSelected.length > 0 && <div style={{ margin: '0 14px 10px', padding: '8px 12px', borderRadius: 8, background: '#3877fc0d', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}><b style={{ color: T.TEXT }}>{openSelected.length} selected</b><Btn small disabled={busy} onClick={() => bulk('dispute')}>Dispute all</Btn><Btn small danger disabled={busy} onClick={() => bulk('accept')}>Accept all charges</Btn><Btn small onClick={() => setSelected(new Set())}>Clear</Btn></div>}
         {data.error ? <div style={{ padding: 24, color: T.RED, fontSize: 13 }}>{data.error}</div> : (
@@ -161,10 +156,7 @@ export default function LiveWeightDisputes({ mobile }) {
             </table>
           </div>
         )}
-        <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13, color: T.TEXT_SECONDARY }}>
-          <span>{data.total ? `Showing ${(page - 1) * 8 + 1} to ${Math.min(page * 8, data.total)} of ${data.total}` : 'Showing 0 results'}</span>
-          <div style={{ display: 'flex', gap: 6 }}><Btn small disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>‹ Prev</Btn><Btn small disabled={page >= data.pages || loading} onClick={() => setPage((p) => p + 1)}>Next ›</Btn></div>
-        </div>
+        <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && list.items.length > 0} onMore={list.loadMore} />
       </section>
       {dialog && <ActionDialog row={dialog} onClose={() => setDialog(null)} onDone={() => { setDialog(null); refresh(); }} />}
     </div>

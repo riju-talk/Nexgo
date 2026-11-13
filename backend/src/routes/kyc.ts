@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { pageRows } from '../lib/paging.js';
 import { z } from 'zod';
 import { db, withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
@@ -101,15 +102,16 @@ export async function kycRoutes(app: FastifyInstance) {
 
   app.get('/v1/admin/kyc', { preHandler: requirePlatformAdmin }, async (request) => {
     const status = z.enum(['unsubmitted', 'pending_review', 'verified', 'rejected']).optional().parse((request.query as { status?: string }).status);
+    const pg = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0) }).parse(request.query);
     const result = await db.query(
       `SELECT k.seller_id, k.gstin, k.gst_applicable, k.pan, k.pan_holder_name, k.aadhaar_last4, k.id_proof_type, k.id_proof_last4, k.entity_type, k.registered_address, k.bank_account_holder, k.bank_ifsc,
               k.status, k.rejection_reason, k.submitted_at, k.reviewed_at, s.legal_name AS seller_name
        FROM seller_kyc k JOIN sellers s ON s.id = k.seller_id
        WHERE $1::kyc_status IS NULL OR k.status = $1
-       ORDER BY k.submitted_at DESC NULLS LAST LIMIT 100`,
-      [status ?? null],
+       ORDER BY k.submitted_at DESC NULLS LAST, k.seller_id LIMIT $2 OFFSET $3`,
+      [status ?? null, pg.limit + 1, pg.offset],
     );
-    return { items: result.rows };
+    return pageRows(result.rows, pg.limit);
   });
 
   app.post('/v1/admin/kyc/:sellerId/decision', { preHandler: [requirePlatformAdmin, requireAccountAdmin] }, async (request, reply) => {

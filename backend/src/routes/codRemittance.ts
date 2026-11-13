@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { pageRows } from '../lib/paging.js';
 import { z } from 'zod';
 import { db, withSellerTransaction, withTransaction } from '../db/client.js';
 import { requireAccountAdmin, requireFinanceAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
@@ -116,14 +117,14 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
   });
 
   app.get('/v1/admin/cod-remittances', { preHandler: requirePlatformAdmin }, async (request) => {
-    const q = z.object({ sellerId: z.string().uuid().optional(), status: z.enum(['pending', 'approved', 'remitted']).optional() }).parse(request.query);
+    const q = z.object({ sellerId: z.string().uuid().optional(), status: z.enum(['pending', 'approved', 'remitted']).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0) }).parse(request.query);
     const result = await db.query(
       `SELECT c.*, s.legal_name AS seller_name FROM cod_remittance_cycles c JOIN sellers s ON s.id = c.seller_id
        WHERE ($1::uuid IS NULL OR c.seller_id = $1) AND ($2::cod_remittance_status IS NULL OR c.status = $2)
-       ORDER BY c.created_at DESC LIMIT 100`,
-      [q.sellerId ?? null, q.status ?? null],
+       ORDER BY c.created_at DESC, c.id DESC LIMIT $3 OFFSET $4`,
+      [q.sellerId ?? null, q.status ?? null, q.limit + 1, q.offset],
     );
-    return { items: result.rows };
+    return pageRows(result.rows, q.limit);
   });
 
   app.get('/v1/seller/cod-remittances', { preHandler: requireSeller }, async (request) => {

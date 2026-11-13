@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
+import { useAutoLoad, useInfiniteList } from '@/lib/useInfiniteList';
 
 export const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`, borderRadius: 12 };
 export const FIELD = { height: 38, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
@@ -36,6 +37,32 @@ export function ProgressBar({ value = 0, total = 0, color = BLUE }) {
   return (
     <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined} style={{ height: 8, borderRadius: 4, background: T.BORDER, overflow: 'hidden' }}>
       <div style={{ height: '100%', width: pct === null ? '40%' : `${pct}%`, borderRadius: 4, background: color, transition: 'width .3s ease', animation: pct === null ? 'nx-indeterminate 1.1s ease-in-out infinite' : 'none' }} />
+    </div>
+  );
+}
+
+// Placeholder rows shown while a list loads its first batch or the next one (keeps the table from jumping).
+export function TableSkeleton({ cols = 6, rows = 5 }) {
+  return (
+    <tbody aria-hidden>
+      {Array.from({ length: rows }, (_, r) => (
+        <tr key={r}>{Array.from({ length: cols }, (_, c) => <td key={c} style={{ padding: 12, borderTop: `1px solid ${T.DIVIDER}` }}><div style={{ height: 12, width: `${55 + ((r * 7 + c * 13) % 40)}%`, borderRadius: 6, background: 'var(--nx-divider)', opacity: 0.7 }} /></td>)}</tr>
+      ))}
+    </tbody>
+  );
+}
+
+// Footer of a list that loads more as you scroll: "Showing 50 of 213", the next batch is requested when this comes into view,
+// and the button is always there (keyboard, no IntersectionObserver, or a failed batch to retry).
+export function LoadMore({ shown, total, hasMore, loading, loadingMore, error, onMore, noun = 'results' }) {
+  const ref = useRef(null);
+  useAutoLoad(ref, onMore, { enabled: hasMore && !loading && !loadingMore && !error });
+  const count = total !== null && total !== undefined ? `Showing ${shown.toLocaleString('en-IN')} of ${Number(total).toLocaleString('en-IN')} ${noun}` : `Showing ${shown.toLocaleString('en-IN')} ${noun}`;
+  return (
+    <div ref={ref} style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13, color: T.TEXT_SECONDARY }}>
+      <span aria-live="polite">{loading ? 'Loading…' : count}{!hasMore && !loading && shown > 0 ? ' · that is everything' : ''}</span>
+      {error && <span role="alert" style={{ color: T.RED }}>Could not load more.</span>}
+      {(hasMore || error) && !loading && <Btn small loading={loadingMore} onClick={onMore}>{error ? 'Try again' : 'Load more'}</Btn>}
     </div>
   );
 }
@@ -85,38 +112,35 @@ export function ListTab({ path, filters = [], columns, exportColumns, exportName
   const blank = useMemo(() => ({ from: '', to: '', type: 'all', q: '', status: '' }), []);
   const [draft, setDraft] = useState(blank);
   const [applied, setApplied] = useState(blank);
-  const [page, setPage] = useState(1);
   const [format, setFormat] = useState('csv');
   const [busy, setBusy] = useState(false);
-  const [data, setData] = useState({ key: '', error: '' });
+  const [extra, setExtra] = useState({}); // whatever else the first answer carries (balance, totals) for the cards above the table
 
-  const query = useMemo(() => {
-    const p = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  const buildQuery = useCallback((page, size) => {
+    const p = new URLSearchParams({ page: String(page), pageSize: String(size) });
     if (applied.from) p.set('from', applied.from); if (applied.to) p.set('to', applied.to);
     if (filters.includes('type') && applied.type !== 'all') p.set('type', applied.type);
     if (filters.includes('q') && applied.q.trim()) p.set('q', applied.q.trim());
     if (filters.includes('status') && applied.status) p.set('status', applied.status);
     return p;
-  }, [applied, page, pageSize, filters]);
-  const key = query.toString();
-  useEffect(() => {
-    let live = true;
-    apiFetch(`${path}?${key}`)
-      .then((x) => { if (live) setData({ key, error: '', ...x }); })
-      .catch((e) => { if (live) setData({ key, error: e.status === 401 ? 'Sign in to view this data.' : e.message || 'Could not load this data.', items: [], total: 0, pages: 1 }); });
-    return () => { live = false; };
-  }, [path, key]);
-
-  const loading = data.key !== key;
-  const rows = data.items || [];
-  const apply = () => { if (draft.from && draft.to && draft.to < draft.from) return showToast('The end date must be on or after the start date.', 'error'); setApplied(draft); setPage(1); };
-  const clear = () => { setDraft(blank); setApplied(blank); setPage(1); };
+  }, [applied, filters]);
+  // Rows load a screenful at a time and more as the user scrolls (the filters start the list again from the top).
+  const list = useInfiniteList({
+    pageSize,
+    deps: [path, applied, filters.join(',')],
+    fetchPage: (cursor, size) => apiFetch(`${path}?${buildQuery(cursor || 1, size)}`).then((x) => { if (!cursor) { const { items: _items, ...rest } = x; setExtra(rest); } return x; }),
+  });
+  const rows = list.items;
+  const error = list.error ? (list.error.status === 401 ? 'Sign in to view this data.' : list.error.message || 'Could not load this data.') : '';
+  const data = { ...extra, items: rows, total: list.total ?? 0, error };
+  const apply = () => { if (draft.from && draft.to && draft.to < draft.from) return showToast('The end date must be on or after the start date.', 'error'); setApplied(draft); };
+  const clear = () => { setDraft(blank); setApplied(blank); };
 
   const exportAll = async () => {
     setBusy(true);
     try {
-      const all = []; const p = new URLSearchParams(query); p.set('pageSize', '100');
-      for (let pg = 1; pg <= 50; pg++) { p.set('page', String(pg)); const x = await apiFetch(`${path}?${p}`); all.push(...(x.items || [])); if (pg >= (x.pages || 1)) break; }
+      const all = [];
+      for (let pg = 1; pg <= 50; pg++) { const x = await apiFetch(`${path}?${buildQuery(pg, 100)}`); all.push(...(x.items || [])); if (pg >= (x.pages || 1)) break; }
       if (!all.length) { showToast('Nothing to export for these filters.', 'error'); return; }
       await saveRows([exportColumns.map((c) => c.h), ...all.map((r, i) => exportColumns.map((c) => c.value(r, i)))], `${exportName}-${isoDay()}`, format, exportName.slice(0, 30));
       showToast(`Exported ${all.length} rows (${format === 'xlsx' ? 'Excel' : 'CSV'})`);
@@ -141,8 +165,8 @@ export function ListTab({ path, filters = [], columns, exportColumns, exportName
       </div>
       {children && children(data)}
       <section style={{ ...CARD, overflow: 'hidden' }}>
-        <Table columns={columns} rows={rows} loading={loading} error={data.error} empty={empty} minWidth={minWidth} />
-        <Pager page={page} pages={data.pages || 1} total={data.total || 0} pageSize={pageSize} onPage={setPage} loading={loading} />
+        <Table columns={columns} rows={rows} loading={list.loading} error={error} empty={empty} minWidth={minWidth} />
+        {(rows.length > 0 || list.hasMore) && <LoadMore shown={rows.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && rows.length > 0} onMore={list.loadMore} />}
       </section>
     </div>
   );

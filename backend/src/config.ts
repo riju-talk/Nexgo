@@ -29,7 +29,7 @@ const schema = z.object({
   CANCEL_WORKERS: z.coerce.number().int().min(1).max(128).default(16),
   CANCEL_PER_SELLER: z.coerce.number().int().min(1).max(64).default(16),
   // Calls to the courier aggregator in flight at once from this process; it backs off by itself when the aggregator answers 429 (couriers/aggregatorLimiter.ts).
-  AGGREGATOR_MAX_CONCURRENCY: z.coerce.number().int().min(4).max(200).default(40),
+  AGGREGATOR_MAX_CONCURRENCY: z.coerce.number().int().min(4).max(200).default(32),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().max(30).default(14), // absolute lifetime of one sign-in
   SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(720), // signed out after this long without user activity
   // Cookies are Secure whenever NODE_ENV=production. Only set false to test a production image over plain http://localhost.

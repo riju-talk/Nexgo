@@ -29,7 +29,7 @@ export default function LiveAdminNotes({ mobile }) {
     return () => { live = false; };
   }, [tick]);
   useEffect(() => { let live = true; adminApi.sellers({ limit: '100' }).then((x) => { if (live) setSellers(x.items || []); }).catch(() => {}); return () => { live = false; }; }, []);
-  useEffect(() => { if (!cn.sellerId) return; let live = true; adminApi.invoices({ sellerId: cn.sellerId }).then((x) => { if (live) setInvoices(x.items || []); }).catch(() => { if (live) setInvoices([]); }); return () => { live = false; }; }, [cn.sellerId]);
+  useEffect(() => { if (!cn.sellerId) return; let live = true; adminApi.invoices({ sellerId: cn.sellerId, limit: 200 }).then((x) => { if (live) setInvoices(x.items || []); }).catch(() => { if (live) setInvoices([]); }); return () => { live = false; }; }, [cn.sellerId]);
 
   const subtotal = rupeesToPaise(cn.amount); const gst = Math.floor((subtotal * GST_BPS) / 10_000);
   const taxable = rupeesToPaise(td.taxable); const tdsAmount = Math.floor((taxable * Math.round(Number(td.rate) * 100)) / 10_000);

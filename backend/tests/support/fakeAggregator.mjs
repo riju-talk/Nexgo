@@ -2,13 +2,15 @@
 //   mode.nobalance   POST /shipments answers "Insufficient balance"
 //   mode.maxInflight more calls than this at once answer HTTP 429 (Retry-After: 1)
 //   mode.listCap     the order list returns at most this many orders per page (the real list pages, and its hasMore cannot be trusted)
+//   mode.fail502Once  the FIRST booking call and the FIRST rates call of every order answer HTTP 502 (a struggling aggregator), then work
 //   mode.postAwb     POST /shipments carries the AWB and shipment id in its answer (false: they must be read back with GET /orders/:id)
 // Every call is counted in `stats`, so a test can prove how many calls a booking really made.
 import http from 'node:http';
 
 const RUN = Date.now().toString(36).toUpperCase();
 export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds = [] } = {}) {
-  const mode = { nobalance: false, maxInflight: 0, postAwb: true, listCap: 0, latencyMs };
+  const mode = { nobalance: false, maxInflight: 0, postAwb: true, listCap: 0, fail502Once: false, latencyMs };
+  const failedOnce = new Set(); // keys already answered with a 502
   const stats = { calls: {}, peak: 0, tooMany: 0, ordersCreated: 0, shipmentsBooked: 0, cancels: 0, duplicateOrderRefusals: 0 };
   const orders = new Map(); // id -> { id, ref, shipment: null | { id, awb }, cancelled }
   const byRef = new Map();
@@ -48,7 +50,9 @@ export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds =
       const one = path.match(/^\/orders\/([^/]+)$/);
       if (method === 'GET' && one) { count('GET /orders/:id'); const o = orders.get(one[1]); return o ? send(res, 200, { id: o.id, orderNumber: o.ref, shipment: o.shipment }) : send(res, 404, { message: 'Not found' }); }
       const rates = path.match(/^\/shipments\/([^/]+)\/rates$/);
+      if (method === 'GET' && rates && mode.fail502Once && !failedOnce.has('rates:' + rates[1])) { failedOnce.add('rates:' + rates[1]); count('502 rates'); return send(res, 502, { message: 'Bad gateway' }); }
       if (method === 'GET' && rates) { count('GET /shipments/:id/rates'); return send(res, 200, { rates: courierIds.map((id) => ({ id, total_price: 50 })) }); }
+      if (method === 'POST' && path === '/shipments' && mode.fail502Once && !failedOnce.has('ship:' + body.order_id)) { failedOnce.add('ship:' + body.order_id); count('502 shipments'); return send(res, 502, { message: 'Bad gateway' }); }
       if (method === 'POST' && path === '/shipments') {
         count('POST /shipments');
         if (mode.nobalance) return send(res, 400, { message: 'Insufficient balance. Please recharge your wallet to continue.' });

@@ -134,7 +134,7 @@ async function bookDetachedInner(p: ReturnType<typeof principal>, requestId: str
 }
 
 // ready = nothing is wrong with the order itself, so a courier can be assigned (same checks as diagnose() in lib/failedOrders.js).
-const READY_SQL = `(char_length(btrim(c.full_name)) >= 2 AND right(regexp_replace(c.phone, '\\D', '', 'g'), 10) ~ '^[6-9][0-9]{9}$' AND char_length(btrim(COALESCE(c.address_line_1, ''))) >= 3
+export const READY_SQL = `(char_length(btrim(c.full_name)) >= 2 AND right(regexp_replace(c.phone, '\\D', '', 'g'), 10) ~ '^[6-9][0-9]{9}$' AND char_length(btrim(COALESCE(c.address_line_1, ''))) >= 3
                 AND c.pincode ~ '^[0-9]{6}$' AND COALESCE(c.city, '') <> '' AND COALESCE(c.state, '') <> '' AND o.total_weight_g > 0
                 AND o.package_length_mm IS NOT NULL AND o.package_width_mm IS NOT NULL AND o.package_height_mm IS NOT NULL
                 AND (o.payment_mode <> 'cod' OR o.cod_amount_paise > 0))`;

@@ -93,6 +93,11 @@ export class LorrigoAdapter implements CourierAdapter {
     // One line per aggregator call (method, path with ids masked, status, milliseconds): shows which step makes bookings slow.
     console.log(JSON.stringify({ evt: 'aggregator.call', aggregator: 'lorrigo', method, path: path.split('?')[0].replace(/[A-Za-z0-9_-]{16,}/g, ':id'), status: res.status, ms: Date.now() - t0 }));
     if (res.ok) { aggregatorLimiter.ok(); return json; }
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      // The aggregator's own servers are struggling (seen under a 70-order batch): everybody eases off, and a read (safe to repeat) is tried again after a short pause.
+      aggregatorLimiter.tooMany();
+      if (method === 'GET' && attempt < 2) { await sleep(400 + Math.floor(Math.random() * 600)); return this.call(method, path, body, attempt + 1); }
+    }
     if (res.status === 429) {
       aggregatorLimiter.tooMany(); // slow everybody down at once, then retry this call after the pause the aggregator asked for (with a little jitter)
       if (attempt < 3) { await sleep(Math.min(5000, (Number(res.headers.get('retry-after')) || 1) * 1000) + Math.floor(Math.random() * 400)); return this.call(method, path, body, attempt + 1); }

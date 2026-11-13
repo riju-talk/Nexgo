@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { assignOneOrder, loadCourierRank, type CourierRank } from '../routes/shipments.js';
 import { BOOKING_PAUSED, sellerSafeMessage } from './sellerSafeError.js';
 import { notify, notifyFunds } from './notify.js';
+import { isTemporaryError } from './transientErrors.js';
 
 /**
  * Works through assign_batch_items (courier assignment queued by POST /v1/shipments/assign-batch).
@@ -15,8 +16,7 @@ import { notify, notifyFunds } from './notify.js';
  */
 type Claimed = { id: string; batch_id: string; seller_id: string; order_id: string; attempts: number; created_by: string | null; provider_code: string | null; service_code: string | null };
 const FUNDS = /^(debit limit reached|insufficient wallet balance)/i;
-const TEMPORARY = /did not respond|too slowly|rate limit|temporarily unavailable|timed out|ECONNRESET|fetch failed/i;
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 4;
 const STALE_MINUTES = 5;
 
 let inflight = 0;
@@ -66,7 +66,7 @@ async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void
     // The batch creator is the actor in the audit trail (the seller user who clicked "Assign").
     const p = { userId: item.created_by ?? item.seller_id, sellerId: item.seller_id, role: 'owner', permissions: null };
     const out = await assignOneOrder(p, `batch-${item.batch_id.slice(0, 8)}`, item.order_id, { providerCode: item.provider_code ?? undefined, serviceCode: item.service_code ?? undefined, rank });
-    if (!out.ok && out.error && TEMPORARY.test(out.error) && item.attempts < MAX_ATTEMPTS) {
+    if (!out.ok && out.error && isTemporaryError(out.error) && item.attempts < MAX_ATTEMPTS) {
       await db.query(`UPDATE assign_batch_items SET state = 'queued', retry_at = now() + (($2::int * 5) || ' seconds')::interval, error = $3 WHERE id = $1`, [item.id, item.attempts, sellerSafeMessage(out.error).slice(0, 500)]);
       return;
     }

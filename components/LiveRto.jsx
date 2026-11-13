@@ -6,42 +6,37 @@ import { useLiveQuery } from '@/lib/queryCache';
 import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { AwbLink, BLUE, Btn, CARD, FIELD, Pager, Pill, Stat, Table, dateTime, inr, inr0, isoDay, titleCase } from './Kit';
+import { AwbLink, BLUE, Btn, CARD, FIELD, LoadMore, Pill, Stat, Table, dateTime, inr, inr0, isoDay, titleCase } from './Kit';
 import ShipmentFilters, { EMPTY_FILTERS, filterParams } from './ShipmentFilters';
+import { usePagedList } from '@/lib/useInfiniteList';
 
 const REASONS = { customer_unavailable: 'Customer not available', address_incomplete: 'Incomplete address', address_incorrect: 'Wrong address', refused_delivery: 'Customer refused', payment_not_ready: 'Payment not ready', customer_requested_reschedule: 'Rescheduled by customer', other: 'Other' };
 const STAGES = [['all', 'All RTO'], ['rto_in_transit', 'RTO in transit'], ['rto_out_for_delivery', 'RTO OFD'], ['rto_delivered', 'RTO delivered'], ['rto_lost', 'RTO lost'], ['rto_damaged', 'RTO damaged'], ['rto_undelivered', 'RTO undelivered']];
 const STAGE_PILL = { rto_in_transit: ['In transit', '#C2410C'], rto_out_for_delivery: ['Out for delivery', '#B45309'], rto_delivered: ['Delivered', T.GREEN], rto_lost: ['Lost', T.RED], rto_damaged: ['Damaged', T.RED], rto_undelivered: ['Undelivered', '#9A3412'] };
 const CHANNEL = { single: 'Single created', bulk_upload: 'Bulk upload' };
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 25;
 
 export default function LiveRto({ mobile }) {
   const { showToast, nav } = useAppState();
-  const [stage, setStage] = useState('all'); const [page, setPage] = useState(1);
+  const [stage, setStage] = useState('all');
   const [filters, setFilters] = useState(EMPTY_FILTERS); const [panel, setPanel] = useState(false);
   const [format, setFormat] = useState('csv'); const [busy, setBusy] = useState(false);
-  const [data, setData] = useState({ key: '', items: [], total: 0, pages: 1, error: '' });
 
-  const params = useMemo(() => { const p = filterParams(filters, new URLSearchParams({ stage, page: String(page), pageSize: String(PAGE_SIZE) })); return p; }, [stage, page, filters]);
-  const key = params.toString();
-  useEffect(() => {
-    let live = true;
-    apiFetch(`/v1/rto/shipments?${key}`).then((x) => { if (live) setData({ key, items: x.items, total: x.total, pages: x.pages, error: '' }); })
-      .catch((e) => { if (live) setData({ key, items: [], total: 0, pages: 1, error: e.status === 401 ? 'Sign in to view RTO shipments.' : e.message || 'RTO shipments could not be loaded.' }); });
-    return () => { live = false; };
-  }, [key]);
+  const query = useMemo(() => filterParams(filters, new URLSearchParams({ stage })).toString(), [stage, filters]);
+  const list = usePagedList({ path: '/v1/rto/shipments', query, pageSize: PAGE_SIZE });
+  const data = { items: list.items, total: list.total ?? 0, error: list.message };
   // The figures follow the same dates and courier as the list below, and are cached so the page opens with the last numbers.
   const statsUrl = `/v1/rto/stats?${filterParams({ from: filters.from, to: filters.to, courier: filters.courier }).toString()}`;
   const { data: statsData, error: statsError } = useLiveQuery(statsUrl);
   const stats = statsError && !statsData ? { error: true } : statsData;
 
-  const loading = data.key !== key;
+  const loading = list.loading;
   const ok = stats && !stats.error;
   const anyFilter = Object.values(filters).some(Boolean);
-  const apply = (next) => { setFilters(next); setPage(1); };
+  const apply = (next) => { setFilters(next); };
 
   const fetchAll = async () => {
-    const p = new URLSearchParams(params); p.set('pageSize', '500'); const all = [];
+    const p = new URLSearchParams(query); p.set('pageSize', '500'); const all = [];
     for (let pg = 1; pg <= 20; pg++) { p.set('page', String(pg)); const x = await apiFetch(`/v1/rto/shipments?${p}`); all.push(...x.items); if (pg >= x.pages) break; }
     return all;
   };
@@ -95,7 +90,7 @@ export default function LiveRto({ mobile }) {
           <div role="tablist" style={{ display: 'flex', gap: 4, padding: '4px 14px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
             {STAGES.map(([id, label]) => {
               const on = stage === id; const n = count(id);
-              return <button key={id} role="tab" aria-selected={on} type="button" onClick={() => { setStage(id); setPage(1); }} style={{ padding: '10px 12px', border: 0, borderBottom: `2px solid ${on ? BLUE : 'transparent'}`, background: 'transparent', color: on ? BLUE : T.TEXT_SECONDARY, fontWeight: on ? 750 : 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{n !== null && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: on ? `${BLUE}1c` : T.SURFACE_SOFT, fontSize: 11 }}>{n}</span>}</button>;
+              return <button key={id} role="tab" aria-selected={on} type="button" onClick={() => setStage(id)} style={{ padding: '10px 12px', border: 0, borderBottom: `2px solid ${on ? BLUE : 'transparent'}`, background: 'transparent', color: on ? BLUE : T.TEXT_SECONDARY, fontWeight: on ? 750 : 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{n !== null && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: on ? `${BLUE}1c` : T.SURFACE_SOFT, fontSize: 11 }}>{n}</span>}</button>;
             })}
           </div>
           <Table loading={loading} error={data.error} rows={data.items} minWidth={980} empty={anyFilter || stage !== 'all' ? 'No RTO shipments match these filters.' : 'No RTO shipments — every parcel is on its way to the customer.'}
@@ -109,7 +104,7 @@ export default function LiveRto({ mobile }) {
               { h: 'Status', cell: (r) => { const [name, color] = STAGE_PILL[r.stage] || [titleCase(r.stage), T.TEXT_MUTED]; return <Pill color={color}>{name}</Pill>; } },
               { h: 'Action', cell: () => <Btn small onClick={() => nav('shipments')}>Track</Btn> },
             ]} />
-          <Pager page={page} pages={data.pages} total={data.total} pageSize={PAGE_SIZE} onPage={setPage} loading={loading} />
+          <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && list.items.length > 0} onMore={list.loadMore} noun="RTO shipments" />
         </section>
 
         <aside style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(2,minmax(0,1fr))', gap: 14 }}>

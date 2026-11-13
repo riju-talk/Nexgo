@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { adminApi, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
+import { LoadMore } from './Kit';
 
 const CARD = { background: 'var(--ops-surface)', border: '1px solid var(--ops-border)', borderRadius: 10, boxShadow: 'var(--ops-shadow)' };
 const FIELD = { height: 33, padding: '0 10px', border: '1px solid var(--ops-border)', borderRadius: 8, background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 12.5 };
@@ -113,7 +114,7 @@ const FILTERED = ['orders', 'shipments', 'rto', 'ndr', 'pickups'];
 export default function LiveAdminQueues({ activeId, mobile }) {
   const { nav, showToast, trackFocus, setTrackFocus } = useAppState();
   const router = useRouter();
-  const [items, setItems] = useState(null); const [error, setError] = useState(null); const [busy, setBusy] = useState('');
+  const [items, setItems] = useState(null); const [more, setMore] = useState(false); const [moreBusy, setMoreBusy] = useState(false); const [error, setError] = useState(null); const [busy, setBusy] = useState('');
   const kind = activeId.replace('a-', '');
   const filtered = FILTERED.includes(kind);
   const [sellers, setSellers] = useState([]); const [couriers, setCouriers] = useState([]);
@@ -137,21 +138,30 @@ export default function LiveAdminQueues({ activeId, mobile }) {
   }, [trackFocus, kind, setTrackFocus]);
   useEffect(() => { const t = window.setTimeout(() => setQLive(q.trim()), 300); return () => window.clearTimeout(t); }, [q]);
 
+  // One batch of the current screen starting at `offset` (the first batch loads at once, the rest as the admin scrolls).
+  const fetchBatch = useCallback(async (offset) => {
+    const common = { limit: 50, offset, ...(sellerId ? { sellerId } : {}) };
+    if (kind === 'sellers') return adminApi.sellers({ limit: 50, offset });
+    if (kind === 'orders') return adminApi.orders({ ...common, ...(qLive ? { q: qLive } : {}) });
+    if (kind === 'shipments') return adminApi.shipments({ ...common, ...(providerId ? { providerId } : {}), ...(qLive ? { q: qLive } : {}) });
+    if (kind === 'rto') return adminApi.shipments({ ...common, state: 'rto', ...(providerId ? { providerId } : {}), ...(qLive ? { q: qLive } : {}) });
+    if (kind === 'ndr') return adminApi.ndr({ ...(sellerId ? { sellerId } : {}), limit: 50, offset });
+    if (kind === 'pickups') return adminApi.pickups();
+    if (kind === 'couriers') return adminApi.couriers();
+    return { items: [] };
+  }, [kind, sellerId, providerId, qLive]);
   const load = useCallback(async () => {
     setError(null);
-    const common = { limit: 200, ...(sellerId ? { sellerId } : {}) };
+    try { const data = await fetchBatch(0); setItems(data?.items || []); setMore(!!data?.hasMore); } catch (e) { setError(e); }
+  }, [fetchBatch]);
+  const loadMore = async () => {
+    if (!items || moreBusy) return;
+    setMoreBusy(true);
     try {
-      let data;
-      if (kind === 'sellers') data = await adminApi.sellers();
-      else if (kind === 'orders') data = await adminApi.orders({ ...common, ...(qLive ? { q: qLive } : {}) });
-      else if (kind === 'shipments') data = await adminApi.shipments({ ...common, ...(providerId ? { providerId } : {}), ...(qLive ? { q: qLive } : {}) });
-      else if (kind === 'rto') data = await adminApi.shipments({ ...common, state: 'rto', ...(providerId ? { providerId } : {}), ...(qLive ? { q: qLive } : {}) });
-      else if (kind === 'ndr') data = await adminApi.ndr({ ...(sellerId ? { sellerId } : {}), limit: 200 });
-      else if (kind === 'pickups') data = await adminApi.pickups();
-      else if (kind === 'couriers') data = await adminApi.couriers();
-      setItems(data?.items || []);
-    } catch (e) { setError(e); }
-  }, [kind, sellerId, providerId, qLive]);
+      const data = await fetchBatch(items.length); const seen = new Set(items.map((r) => r.id));
+      setItems([...items, ...(data?.items || []).filter((r) => !seen.has(r.id))]); setMore(!!data?.hasMore && (data?.items || []).length > 0);
+    } catch (e) { showToast(e.message || 'Could not load more', 'error'); } finally { setMoreBusy(false); }
+  };
   useEffect(() => { load(); }, [load]); // eslint-disable-line react-hooks/set-state-in-effect -- async fetch on mount; state is set after the await
 
   const sellerName = useMemo(() => sellers.find((s) => s.id === sellerId)?.legal_name, [sellers, sellerId]);
@@ -183,10 +193,10 @@ export default function LiveAdminQueues({ activeId, mobile }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         {['orders', 'shipments', 'rto'].includes(kind) && <input aria-label="Search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={kind === 'orders' ? 'Search order, customer or phone' : 'Search AWB or order number'} style={{ ...FIELD, width: mobile ? '100%' : 260 }} />}
         {filtered && <select aria-label="Seller" value={sellerId} onChange={(e) => setSellerId(e.target.value)} style={{ ...FIELD, maxWidth: 220 }}><option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.legal_name}</option>)}</select>}
-        <span style={{ color: 'var(--ops-muted)', fontSize: 13 }}>{rows ? `${rows.length} live records` : 'Connecting to platform operations'}</span>
+        <span style={{ color: 'var(--ops-muted)', fontSize: 13 }}>{rows ? `${rows.length}${more ? '+' : ''} live records` : 'Connecting to platform operations'}</span>
       </div>
       <Button onClick={load}>Refresh</Button>
     </div>
-    {!rows && !error ? <div style={{ ...CARD, minHeight: 220, display: 'grid', placeItems: 'center', color: 'var(--ops-muted)' }}>Loading live queue</div> : error || !rows?.length ? empty : <div style={{ ...CARD, overflow: 'hidden' }}><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse' }}><thead><tr>{columns.map((x) => <th key={x} style={{ padding: '11px 15px', background: 'var(--ops-surface-soft)', textAlign: 'left', color: 'var(--ops-muted)', fontSize: 10.5, letterSpacing: '.075em', textTransform: 'uppercase' }}>{x}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}>{cells(row).map((cell, index) => <td key={index} style={{ padding: '13px 15px', borderTop: '1px solid var(--ops-divider)', color: 'var(--ops-text)', fontSize: 13, fontWeight: typeof cell === 'string' || typeof cell === 'number' ? 560 : 400 }}>{cell}</td>)}</tr>)}</tbody></table></div></div>}
+    {!rows && !error ? <div style={{ ...CARD, minHeight: 220, display: 'grid', placeItems: 'center', color: 'var(--ops-muted)' }}>Loading live queue</div> : error || !rows?.length ? empty : <div style={{ ...CARD, overflow: 'hidden' }}><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse' }}><thead><tr>{columns.map((x) => <th key={x} style={{ padding: '11px 15px', background: 'var(--ops-surface-soft)', textAlign: 'left', color: 'var(--ops-muted)', fontSize: 10.5, letterSpacing: '.075em', textTransform: 'uppercase' }}>{x}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}>{cells(row).map((cell, index) => <td key={index} style={{ padding: '13px 15px', borderTop: '1px solid var(--ops-divider)', color: 'var(--ops-text)', fontSize: 13, fontWeight: typeof cell === 'string' || typeof cell === 'number' ? 560 : 400 }}>{cell}</td>)}</tr>)}</tbody></table></div>{kind !== 'pickups' && kind !== 'couriers' && <LoadMore shown={rows.length} total={null} hasMore={more} loading={false} loadingMore={moreBusy} error={false} onMore={loadMore} noun="records" />}</div>}
   </div>;
 }

@@ -121,6 +121,15 @@ fake.mode.nobalance = false; const listBefore = fake.stats.calls['GET /orders'] 
 r = await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/shipments/assign-batch');
 T('A second retry books all 10 straight from the remembered ids: no search of the order list and no new order created', r.batch && r.batch.assigned === 10 && (fake.stats.calls['GET /orders'] || 0) === listBefore && fake.stats.ordersCreated === createdMid, JSON.stringify([r.batch && r.batch.assigned, (fake.stats.calls['GET /orders'] || 0) - listBefore, fake.stats.ordersCreated - createdMid]));
 
+// ---------------- 8. the aggregator answers HTTP 502 once for the rates check and once for the booking call of every order: nothing may be lost
+fake.mode.fail502Once = true; fake.mode.listCap = 0;
+orders = await makeOrders(14);
+const shipBefore = fake.stats.shipmentsBooked;
+r = await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/shipments/assign-batch');
+T('A 502 on the rates check and on the booking call of every order: all 14 are still booked (the read is retried at once, the booking by the queue)', r.batch && r.batch.assigned === 14 && r.batch.failed === 0, JSON.stringify(r.batch && { assigned: r.batch.assigned, failed: r.batch.failed, err: r.batch.results?.find((x) => !x.ok)?.error }) + ` in ${r.ms} ms`);
+T('...each booked exactly once at the aggregator and in our database', fake.stats.shipmentsBooked - shipBefore === 14 && (await db.query(`SELECT count(*)::int AS n FROM (SELECT order_id FROM shipments WHERE seller_id = $1 GROUP BY order_id HAVING count(*) > 1) x`, [sellerId])).rows[0].n === 0, String(fake.stats.shipmentsBooked - shipBefore));
+fake.mode.fail502Once = false;
+
 console.log(out.join('\n'));
 console.log(`\n${out.filter((x) => x.startsWith('PASS')).length}/${out.length} passed`);
 fake.close(); await db.end();

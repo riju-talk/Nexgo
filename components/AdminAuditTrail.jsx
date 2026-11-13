@@ -5,7 +5,7 @@ import { adminApi, apiFetch } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { BLUE, Btn, CARD, FIELD, Pill, Table, dateTime, isoDay, titleCase } from './Kit';
+import { BLUE, Btn, CARD, FIELD, LoadMore, Pill, Table, dateTime, isoDay, titleCase } from './Kit';
 
 // Admin > Audit trail: who did what, when, from where. Rows come from audit_events (domain rows written by each route, plus one
 // "admin.write" row for every successful admin change and an entry for each admin sign-in).
@@ -85,7 +85,7 @@ export default function AdminAuditTrail({ mobile }) {
           { h: 'Workspace', cell: (r) => r.seller_name || 'Platform' },
           { h: 'Request', cell: (r) => <code title={r.request_id} style={{ fontSize: 11.5, color: T.TEXT_MUTED }}>{String(r.request_id || '').slice(0, 10)}</code> },
         ]} />
-        {more && <div style={{ padding: 12, textAlign: 'center' }}><Btn disabled={busy} onClick={loadMore}>{busy ? 'Loading…' : 'Load older rows'}</Btn></div>}
+        {rows && rows.length > 0 && <LoadMore shown={rows.length} total={null} hasMore={more} loading={false} loadingMore={busy} error={false} onMore={loadMore} noun="events" />}
       </section>
     </div>
   );

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, reportsApi, ApiError } from '@/lib/api';
 import { useLiveQuery } from '@/lib/queryCache';
 import { useAppState } from '@/lib/AppStateContext';
-import { AwbLink } from './Kit';
+import { AwbLink, LoadMore } from './Kit';
+import { usePagedList } from '@/lib/useInfiniteList';
 import { usePincode } from '@/lib/usePincode';
 import * as T from '@/lib/theme';
 import { FORMATS } from '@/lib/exportFile';
@@ -108,11 +109,10 @@ function CaseDialog({ row, initialAction, onClose, onDone }) {
 
 export default function LiveNdr({ mobile }) {
   const { showToast } = useAppState();
-  const [tab, setTab] = useState('all'); const [page, setPage] = useState(1);
+  const [tab, setTab] = useState('all');
   const [filters, setFilters] = useState(EMPTY_FILTERS); const [panel, setPanel] = useState(false);
   const [reason, setReason] = useState('');
   const [tick, setTick] = useState(0);
-  const [data, setData] = useState({ key: '', items: [], total: 0, pages: 1, error: '' });
   const [selected, setSelected] = useState(() => new Set());
   const [dialog, setDialog] = useState(null);
   const [help, setHelp] = useState(false);
@@ -120,23 +120,17 @@ export default function LiveNdr({ mobile }) {
   const [format, setFormat] = useState('csv');
 
 
-  const params = useMemo(() => { const p = filterParams(filters, new URLSearchParams({ tab, page: String(page), pageSize: '8' })); if (reason) p.set('reason', reason); return p.toString(); }, [tab, page, filters, reason]);
-  const key = `${params}#${tick}`;
-  useEffect(() => {
-    let live = true;
-    apiFetch(`/v1/ndr/cases?${params}`)
-      .then((x) => { if (live) setData({ key, items: x.items, total: x.total, pages: x.pages, error: '' }); })
-      .catch((e) => { if (live) setData({ key, items: [], total: 0, pages: 1, error: e.status === 401 ? 'Sign in to view NDR cases.' : e.message || 'NDR cases could not be loaded.' }); });
-    return () => { live = false; };
-  }, [params, key]);
+  const query = useMemo(() => { const p = filterParams(filters, new URLSearchParams({ tab })); if (reason) p.set('reason', reason); return p.toString(); }, [tab, filters, reason]);
+  const list = usePagedList({ path: '/v1/ndr/cases', query, pageSize: 25, tick });
+  const data = { items: list.items, total: list.total ?? 0, error: list.message };
   // Figures follow the same dates and courier as the list, and are cached so the page opens with the last numbers.
   const statsUrl = `/v1/ndr/stats?${filterParams({ from: filters.from, to: filters.to, courier: filters.courier }).toString()}`;
   const { data: stats } = useLiveQuery(statsUrl, { every: 30000 });
 
-  const loading = data.key !== key;
+  const loading = list.loading;
   const refresh = () => { setSelected(new Set()); setTick((t) => t + 1); };
-  const filter = (setter) => (e) => { setter(e.target.value); setPage(1); };
-  const applyFilters = (next) => { setFilters(next); setPage(1); };
+  const filter = (setter) => (e) => { setter(e.target.value); };
+  const applyFilters = (next) => { setFilters(next); };
   const anyFilter = reason || Object.values(filters).some(Boolean);
   const counts = stats?.counts || {};
   const toggle = (id) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -179,11 +173,11 @@ export default function LiveNdr({ mobile }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16, alignItems: 'start' }}>
         <section style={{ ...CARD, minWidth: 0 }}>
           <div role="tablist" style={{ display: 'flex', gap: 4, padding: '4px 14px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
-            {TABS.map(([id, label]) => { const n = id === 'all' ? stats?.total : counts[id]; const on = tab === id; return <button key={id} role="tab" aria-selected={on} type="button" onClick={() => { setTab(id); setPage(1); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#3877fc' : 'transparent'}`, background: 'transparent', color: on ? '#3877fc' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{id !== 'all' && n > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'new' || id === 'action_pending' ? T.RED : '#3877fc', color: '#fff', fontSize: 11 }}>{n}</span>}</button>; })}
+            {TABS.map(([id, label]) => { const n = id === 'all' ? stats?.total : counts[id]; const on = tab === id; return <button key={id} role="tab" aria-selected={on} type="button" onClick={() => { setTab(id); setSelected(new Set()); }} style={{ padding: '12px 14px', border: 0, borderBottom: `3px solid ${on ? '#3877fc' : 'transparent'}`, background: 'transparent', color: on ? '#3877fc' : T.TEXT_SECONDARY, fontWeight: on ? 800 : 600, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>{label}{id !== 'all' && n > 0 && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: id === 'new' || id === 'action_pending' ? T.RED : '#3877fc', color: '#fff', fontSize: 11 }}>{n}</span>}</button>; })}
           </div>
           <div style={{ padding: '12px 14px 4px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <Btn small onClick={() => setPanel((o) => !o)}>{panel ? 'Hide filters' : `Filters${anyFilter ? ' •' : ''}`}</Btn>
-            <select aria-label="Reason" style={{ ...FIELD, height: 32 }} value={reason} onChange={(e) => { setReason(e.target.value); setPage(1); }}><option value="">All reasons</option>{Object.entries(REASONS).filter(([id]) => id !== 'incorrect_product').map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
+            <select aria-label="Reason" style={{ ...FIELD, height: 32 }} value={reason} onChange={(e) => setReason(e.target.value)}><option value="">All reasons</option>{Object.entries(REASONS).filter(([id]) => id !== 'incorrect_product').map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
           </div>
           {panel && <ShipmentFilters key={JSON.stringify(filters)} value={filters} onApply={applyFilters} couriers={stats?.couriers || []} mobile={mobile} />}
 
@@ -218,14 +212,7 @@ export default function LiveNdr({ mobile }) {
               </table>
             </div>
           )}
-          <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13, color: T.TEXT_SECONDARY }}>
-            <span>{data.total ? `Showing ${(page - 1) * 8 + 1} to ${Math.min(page * 8, data.total)} of ${data.total} NDRs` : 'Showing 0 NDRs'}</span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <Btn small disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>‹ Prev</Btn>
-              {Array.from({ length: Math.min(data.pages, 5) }, (_, i) => i + 1).map((n) => <button key={n} type="button" onClick={() => setPage(n)} aria-current={n === page} style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${n === page ? '#3877fc' : T.BORDER}`, background: n === page ? '#3877fc' : T.SURFACE, color: n === page ? '#fff' : T.TEXT, fontWeight: 700, cursor: 'pointer' }}>{n}</button>)}
-              <Btn small disabled={page >= data.pages || loading} onClick={() => setPage((p) => p + 1)}>Next ›</Btn>
-            </div>
-          </div>
+          <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && list.items.length > 0} onMore={list.loadMore} noun="NDRs" />
         </section>
 
       </div>

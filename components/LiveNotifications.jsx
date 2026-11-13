@@ -6,28 +6,31 @@ import { useAppState } from '@/lib/AppStateContext';
 import { clearCached, useLiveQuery } from '@/lib/queryCache';
 import { GROUPS, KINDS, NOTIFICATIONS_CHANGED, notificationsChanged, timeAgo } from '@/lib/notificationKinds';
 import * as T from '@/lib/theme';
-import { BLUE, Btn, CARD, Pager } from './Kit';
+import { BLUE, Btn, CARD, LoadMore } from './Kit';
+import { usePagedList } from '@/lib/useInfiniteList';
 
 const PAGE_SIZE = 20;
 
 // Notifications: what happened to your parcels, wallet and account, in one place. Unread ones are marked; opening one takes you to the screen it is about.
 export default function LiveNotifications({ mobile }) {
   const { nav, showToast } = useAppState();
-  const [group, setGroup] = useState('all'); const [page, setPage] = useState(1); const [busy, setBusy] = useState(false);
-  const qs = useMemo(() => {
-    const p = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+  const [group, setGroup] = useState('all'); const [busy, setBusy] = useState(false);
+  const query = useMemo(() => {
+    const p = new URLSearchParams();
     if (group === 'unread') p.set('unread', '1');
     else if (group !== 'all') p.set('group', group);
-    return p;
-  }, [group, page]);
-  const url = `/v1/notifications?${qs.toString()}`;
-  const { data, error, loading, refresh } = useLiveQuery(url, { every: 30000 });
-  const items = data?.items || [];
+    return p.toString();
+  }, [group]);
+  const list = usePagedList({ path: '/v1/notifications', query, pageSize: PAGE_SIZE, every: 30000 });
+  const { loading, refresh } = list;
+  const error = list.error ? { message: list.message } : null;
+  const items = list.items;
+  const data = { ...list.extra, total: list.total ?? 0 };
   useEffect(() => { window.addEventListener(NOTIFICATIONS_CHANGED, refresh); return () => window.removeEventListener(NOTIFICATIONS_CHANGED, refresh); }, [refresh]);
 
   const markRead = async (body) => {
     await apiFetch('/v1/notifications/read', { method: 'POST', body });
-    clearCached('/v1/notifications'); refresh(); notificationsChanged();
+    refresh(); notificationsChanged();
   };
   const open = async (n) => {
     if (!n.read_at) { try { await markRead({ ids: [n.id] }); } catch { /* opening still works */ } }
@@ -51,7 +54,7 @@ export default function LiveNotifications({ mobile }) {
       <section style={{ ...CARD, overflow: 'hidden' }}>
         <div role="tablist" style={{ display: 'flex', gap: 4, padding: '8px 10px 0', borderBottom: `1px solid ${T.DIVIDER}`, overflowX: 'auto' }}>
           {GROUPS.map(([id, label]) => (
-            <button key={id} role="tab" aria-selected={group === id} type="button" onClick={() => { setGroup(id); setPage(1); }} style={{ border: 0, background: 'transparent', padding: '9px 12px', cursor: 'pointer', fontSize: 13, fontWeight: group === id ? 750 : 600, color: group === id ? BLUE : T.TEXT_SECONDARY, borderBottom: `2px solid ${group === id ? BLUE : 'transparent'}`, whiteSpace: 'nowrap' }}>{label}</button>
+            <button key={id} role="tab" aria-selected={group === id} type="button" onClick={() => setGroup(id)} style={{ border: 0, background: 'transparent', padding: '9px 12px', cursor: 'pointer', fontSize: 13, fontWeight: group === id ? 750 : 600, color: group === id ? BLUE : T.TEXT_SECONDARY, borderBottom: `2px solid ${group === id ? BLUE : 'transparent'}`, whiteSpace: 'nowrap' }}>{label}</button>
           ))}
         </div>
 
@@ -79,7 +82,7 @@ export default function LiveNotifications({ mobile }) {
             </button>
           );
         })}
-        {data && data.total > PAGE_SIZE && <Pager page={page} pages={data.pages} total={data.total} pageSize={PAGE_SIZE} onPage={setPage} loading={loading} />}
+        {(items.length > 0 || list.hasMore) && <LoadMore shown={items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && items.length > 0} onMore={list.loadMore} noun="notifications" />}
       </section>
     </div>
   );
