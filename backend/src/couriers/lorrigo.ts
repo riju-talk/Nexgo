@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { sellerSafeMessage, BOOKING_PAUSED } from '../lib/sellerSafeError.js';
 import { volumetricWeightG } from '../lib/money.js';
 import { aggregatorLimiter } from './aggregatorLimiterShared.js';
+import { db } from '../db/client.js';
 import type { BookingDetails, CourierAdapter, CourierBookingRequest, CourierBookingResult, NdrCourierAction } from './types.js';
 
 // Lorrigo (app.lorrigo.com/api/v2), Bearer API key. Booking, verified against the live API:
@@ -40,6 +41,15 @@ const cm = (mm: number | null) => String(mm ? Math.max(1, Math.round(mm / 10)) :
 const tenDigits = (phone: string) => phone.replace(/\D/g, '').slice(-10);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Is there another page after this one? `hasMore` alone is not trusted (it answered false on page 1 of 3); the page counters decide, then a full page. */
+export function hasNextPage(res: unknown, page: number, count: number, limit: number): boolean {
+  if (!isObj(res) || count === 0) return false;
+  if (typeof res.totalPages === 'number') return page < res.totalPages;
+  if (typeof res.total === 'number') return page * limit < res.total;
+  if (res.hasMore === true) return true;
+  return count >= limit;
+}
 
 export class LorrigoError extends Error {
   // 4xx from Lorrigo (unserviceable pincode, bad data...) is a 422 so auto-assign moves on to the next courier; anything else is a 502.
@@ -154,9 +164,23 @@ export class LorrigoAdapter implements CourierAdapter {
     return `${d.nexgoOrderId}-${createHash('sha1').update(fingerprint).digest('hex').slice(0, 6)}`;
   }
 
+  /** The aggregator's id for an order we already sent, from our own database (no search on the aggregator needed). */
+  private async knownOrder(ref: string): Promise<string | null> {
+    try { return (await db.query<{ external_order_id: string }>(`SELECT external_order_id FROM aggregator_orders WHERE aggregator = 'lorrigo' AND ref = $1`, [ref])).rows[0]?.external_order_id ?? null; }
+    catch { return null; } // the lookup is an optimisation: without it the aggregator is searched as before
+  }
+  private async rememberOrder(ref: string, externalId: string, nexgoOrderId: string): Promise<void> {
+    try {
+      await db.query(`INSERT INTO aggregator_orders (aggregator, ref, external_order_id, order_id, seller_id) SELECT 'lorrigo', $1, $2, o.id, o.seller_id FROM orders o WHERE o.nexgo_order_id = $3
+        ON CONFLICT (aggregator, ref) DO UPDATE SET external_order_id = EXCLUDED.external_order_id`, [ref, externalId, nexgoOrderId]);
+    } catch (e) { console.error('Could not remember the aggregator order id', (e as Error).message); }
+  }
+
   /** Creates the Lorrigo order; if this exact order was already sent (an earlier courier attempt failed), the existing one is reused. */
   private async createOrReuseOrder(d: BookingDetails, request: CourierBookingRequest, hubId: string): Promise<{ id: string; hubId: string; reused?: boolean }> {
     const cod = request.paymentMode === 'cod'; const ref = this.orderRef(d, request);
+    const remembered = await this.knownOrder(ref); // an earlier attempt already created it: reuse it, no create call, no search
+    if (remembered) return { id: remembered, hubId, reused: true };
     const body = (hub: string) => ({
       pickupAddressId: hub, orderId: ref, orderChannel: 'CUSTOM', orderType: 'domestic',
       sellerDetails: { name: d.sellerName },
@@ -172,7 +196,7 @@ export class LorrigoAdapter implements CourierAdapter {
       if (!id) throw new LorrigoError('Lorrigo created the order but did not return its id.', 502);
       return id;
     };
-    try { return { id: await create(hubId), hubId }; }
+    try { const id = await create(hubId); await this.rememberOrder(ref, id, d.nexgoOrderId); return { id, hubId }; }
     catch (e) {
       if (!(e instanceof LorrigoError)) throw e;
       // "Order Id already exists" (an earlier attempt created the order but failed at the booking step): reuse that order. Lorrigo does not always
@@ -180,6 +204,7 @@ export class LorrigoAdapter implements CourierAdapter {
       if (e.upstreamStatus === 409 || /order id already exists|already exists/i.test(e.detail)) {
         const id = await this.findOrderIdByRef(ref);
         if (!id) throw new LorrigoError('This order is already with the courier network but could not be matched. Please try again in a minute or contact support.', 502);
+        await this.rememberOrder(ref, id, d.nexgoOrderId); // found once, never searched for again
         return { id, hubId, reused: true };
       }
       // The remembered pickup address was deleted or deactivated on Lorrigo's side: make (or find) a fresh one and retry once.
@@ -200,7 +225,7 @@ export class LorrigoAdapter implements CourierAdapter {
       const orders = isObj(res) && Array.isArray(res.orders) ? res.orders : [];
       const match = orders.find((o) => isObj(o) && (o.orderNumber === ref || o.order_number === ref));
       if (match) return firstString(match, ['id']);
-      if (!isObj(res) || res.hasMore !== true || !orders.length) return null;
+      if (!hasNextPage(res, page, orders.length, 100)) return null;
     }
     return null;
   }
@@ -212,7 +237,7 @@ export class LorrigoAdapter implements CourierAdapter {
       const res = await this.call('GET', `/orders?page=${page}&limit=100`);
       const orders = isObj(res) && Array.isArray(res.orders) ? res.orders.filter(isObj) : [];
       out.push(...orders);
-      if (!isObj(res) || res.hasMore !== true || !orders.length) break;
+      if (!hasNextPage(res, page, orders.length, 100)) break;
     }
     return out;
   }

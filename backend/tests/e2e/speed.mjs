@@ -93,8 +93,11 @@ T('Empty aggregator balance: the batch of 20 ends within 6 s, none booked, all s
 T('...and it stopped after the first refusals (no retry storm: at most one refusal per order)', refused <= 20, `${refused} booking attempts for 20 orders`);
 T('The seller was charged nothing', (await wallet()) === START - Number((await db.query(`SELECT COALESCE(sum(shipping_charge_paise),0)::bigint AS c FROM shipments WHERE seller_id = $1 AND state <> 'cancelled'`, [sellerId])).rows[0].c));
 
-// ---------------- 5. "Order Id already exists": the earlier failed attempt left the order on the aggregator; the retry must reuse it
-fake.mode.nobalance = false; const createdBefore = fake.stats.ordersCreated;
+// ---------------- 5. "Order Id already exists": the earlier failed attempt left the order on the aggregator; the retry must reuse it.
+// Worst case: our database does not know those orders (as for the ones created before it remembered ids) and the aggregator's list pages by 25 with an
+// unreliable hasMore, so the 20 orders sit on several pages.
+await db.query('DELETE FROM aggregator_orders WHERE seller_id = $1', [sellerId]);
+fake.mode.listCap = 25; fake.mode.nobalance = false; const createdBefore = fake.stats.ordersCreated;
 r = await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/shipments/assign-batch');
 T('After the balance is back, the same 20 orders are booked by re-pushing them', r.batch && r.batch.assigned === 20 && r.batch.failed === 0, JSON.stringify(r.batch && { assigned: r.batch.assigned, failed: r.batch.failed, first: r.batch.results?.find((x) => !x.ok) }));
 T('...reusing the orders already on the aggregator (no duplicate created, the "already exists" answer was handled)', fake.stats.ordersCreated === createdBefore && fake.stats.duplicateOrderRefusals >= 1, JSON.stringify([fake.stats.ordersCreated - createdBefore, fake.stats.duplicateOrderRefusals]));
@@ -105,8 +108,18 @@ orders = await makeOrders(24);
 r = await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/shipments/assign-batch');
 T('With the aggregator answering 429 under load, all 24 are still booked', r.batch && r.batch.assigned === 24 && r.batch.failed === 0, JSON.stringify(r.batch && { assigned: r.batch.assigned, failed: r.batch.failed, err: r.batch.results?.find((x) => !x.ok)?.error }) + ` in ${r.ms} ms`);
 T('...the limiter saw and slowed down for the 429s', fake.stats.tooMany > 0, `${fake.stats.tooMany} calls answered 429`);
+const remembered = (await db.query('SELECT count(*)::int AS n FROM aggregator_orders WHERE seller_id = $1', [sellerId])).rows[0].n;
+T('The aggregator order ids found by searching were written to our database (one row per order now known)', remembered >= 20, `${remembered} rows`);
 const dup = (await db.query(`SELECT count(*)::int AS n FROM (SELECT order_id FROM shipments WHERE seller_id = $1 GROUP BY order_id HAVING count(*) > 1) x`, [sellerId])).rows[0].n;
 T('No order has two shipments after all of it', dup === 0);
+
+// ---------------- 7. a second failed-then-retried batch: the ids are now in our database, so no search is needed any more
+fake.mode.listCap = 0; fake.mode.nobalance = true;
+orders = await makeOrders(10);
+await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/shipments/assign-batch');
+fake.mode.nobalance = false; const listBefore = fake.stats.calls['GET /orders'] || 0; const createdMid = fake.stats.ordersCreated;
+r = await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/shipments/assign-batch');
+T('A second retry books all 10 straight from the remembered ids: no search of the order list and no new order created', r.batch && r.batch.assigned === 10 && (fake.stats.calls['GET /orders'] || 0) === listBefore && fake.stats.ordersCreated === createdMid, JSON.stringify([r.batch && r.batch.assigned, (fake.stats.calls['GET /orders'] || 0) - listBefore, fake.stats.ordersCreated - createdMid]));
 
 console.log(out.join('\n'));
 console.log(`\n${out.filter((x) => x.startsWith('PASS')).length}/${out.length} passed`);

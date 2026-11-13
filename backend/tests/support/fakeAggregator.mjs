@@ -1,13 +1,14 @@
 // A fake courier aggregator for end-to-end tests: speaks the few endpoints the Lorrigo adapter uses, with a fixed delay per call and switchable behaviour.
 //   mode.nobalance   POST /shipments answers "Insufficient balance"
 //   mode.maxInflight more calls than this at once answer HTTP 429 (Retry-After: 1)
+//   mode.listCap     the order list returns at most this many orders per page (the real list pages, and its hasMore cannot be trusted)
 //   mode.postAwb     POST /shipments carries the AWB and shipment id in its answer (false: they must be read back with GET /orders/:id)
 // Every call is counted in `stats`, so a test can prove how many calls a booking really made.
 import http from 'node:http';
 
 const RUN = Date.now().toString(36).toUpperCase();
 export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds = [] } = {}) {
-  const mode = { nobalance: false, maxInflight: 0, postAwb: true, latencyMs };
+  const mode = { nobalance: false, maxInflight: 0, postAwb: true, listCap: 0, latencyMs };
   const stats = { calls: {}, peak: 0, tooMany: 0, ordersCreated: 0, shipmentsBooked: 0, cancels: 0, duplicateOrderRefusals: 0 };
   const orders = new Map(); // id -> { id, ref, shipment: null | { id, awb }, cancelled }
   const byRef = new Map();
@@ -37,7 +38,13 @@ export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds =
         const id = `ord_${++seq}`; const o = { id, ref: body.orderId, shipment: null, cancelled: false }; orders.set(id, o); byRef.set(o.ref, o); stats.ordersCreated += 1;
         return send(res, 200, { id });
       }
-      if (method === 'GET' && path === '/orders') { count('GET /orders'); return send(res, 200, { orders: [...orders.values()].map((o) => ({ id: o.id, orderNumber: o.ref, shipment: o.shipment })), hasMore: false }); }
+      if (method === 'GET' && path === '/orders') {
+        count('GET /orders');
+        // Like the real list: newest first, a page size that may be capped, and hasMore that is NOT reliable (always false); totalPages / total are.
+        const size = Math.min(Number(url.searchParams.get('limit')) || 10, mode.listCap || 100); const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
+        const all = [...orders.values()].reverse().map((o) => ({ id: o.id, orderNumber: o.ref, shipment: o.shipment }));
+        return send(res, 200, { orders: all.slice((page - 1) * size, page * size), total: all.length, page, limit: size, totalPages: Math.max(1, Math.ceil(all.length / size)), hasMore: false, nextCursor: null });
+      }
       const one = path.match(/^\/orders\/([^/]+)$/);
       if (method === 'GET' && one) { count('GET /orders/:id'); const o = orders.get(one[1]); return o ? send(res, 200, { id: o.id, orderNumber: o.ref, shipment: o.shipment }) : send(res, 404, { message: 'Not found' }); }
       const rates = path.match(/^\/shipments\/([^/]+)\/rates$/);
