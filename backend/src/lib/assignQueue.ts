@@ -55,7 +55,9 @@ async function finishBatchIfDone(batchId: string) {
        AND NOT EXISTS (SELECT 1 FROM assign_batch_items WHERE batch_id = $1 AND state IN ('queued', 'running')) RETURNING seller_id`, [batchId]);
   if (!done.rows[0]) return;
   const c = (await db.query<{ ok: number; failed: number }>(`SELECT count(*) FILTER (WHERE state = 'ok')::int AS ok, count(*) FILTER (WHERE state = 'failed')::int AS failed FROM assign_batch_items WHERE batch_id = $1`, [batchId])).rows[0];
-  await notify(done.rows[0].seller_id, { kind: 'batch', title: c.failed ? `Courier assignment finished: ${c.ok} booked, ${c.failed} not` : `Courier assignment finished: ${c.ok} booked`, body: c.failed ? 'Open Track > Ready to ship to see what needs fixing.' : undefined, screen: 'shipments', entityId: batchId, dedupeKey: `assign-batch:${batchId}` });
+  // Say WHY, not just how many: the most common reason among the orders that were not booked.
+  const why = c.failed ? (await db.query<{ error: string; n: number }>(`SELECT error, count(*)::int AS n FROM assign_batch_items WHERE batch_id = $1 AND state = 'failed' AND error IS NOT NULL GROUP BY error ORDER BY n DESC LIMIT 1`, [batchId])).rows[0] : undefined;
+  await notify(done.rows[0].seller_id, { kind: 'batch', title: c.failed ? `Courier assignment finished: ${c.ok} booked, ${c.failed} not` : `Courier assignment finished: ${c.ok} booked`, body: c.failed ? `${why ? `Main reason (${why.n} order${why.n === 1 ? '' : 's'}): ${why.error} ` : ''}Open Track > Ready to ship to see what needs fixing.` : undefined, screen: 'shipments', entityId: batchId, dedupeKey: `assign-batch:${batchId}` });
 }
 
 async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void }) {
