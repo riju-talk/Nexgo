@@ -144,16 +144,11 @@ export default function AuthScreen({ mode: requestedMode }) {
             <h1 style={{ margin: 0, fontSize: 32, lineHeight: 1.25, fontWeight: 600, letterSpacing: "-.015em" }}>Smarter, faster, easier shipping for your business.</h1>
             <div style={{ fontSize: 13.5, color: '#8298B8', marginTop: 12, lineHeight: 1.6 }}>Compare live rates, book with any courier, and track every shipment in one console.</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 26 }}>
-              {['Delhivery', 'Blue Dart', 'Ekart', 'XpressBees', 'Shadowfax'].map((c) => (
+              {['Amazon', 'Delhivery', 'Ekart', 'Xpressbees', 'Shadowfax'].map((c) => (
                 <div key={c} style={{ fontSize: 11.5, fontWeight: 600, color: '#C7D2E2', border: '1px solid rgba(255,255,255,.16)', borderRadius: 20, padding: '5px 11px', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ width: 5, height: 5, borderRadius: 3, background: '#3877fc' }} />{c}
                 </div>
               ))}
-            </div>
-            <div style={{ display: 'flex', gap: 32, marginTop: 30 }}>
-              <div><div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>8</div><div style={{ fontSize: 12, color: '#8298B8', marginTop: 4 }}>Courier partners</div></div>
-              <div><div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>29,000</div><div style={{ fontSize: 12, color: '#8298B8', marginTop: 4 }}>Serviceable pincodes</div></div>
-              <div><div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>94.6%</div><div style={{ fontSize: 12, color: '#8298B8', marginTop: 4 }}>Delivery rate</div></div>
             </div>
           </div>
           <div style={{ fontSize: 11.5, color: '#5F779C' }}>© 2026 NEXGO Logistics Technologies Pvt. Ltd. · India</div>
