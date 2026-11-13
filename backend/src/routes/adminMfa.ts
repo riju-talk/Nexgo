@@ -54,7 +54,7 @@ export async function adminMfaRoutes(app: FastifyInstance) {
   app.post('/v1/admin/auth/resend-otp', { config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (request, reply) => {
     const { otpToken } = z.object({ otpToken: z.string().min(20) }).parse(request.body);
     const row = (await db.query<{ user_id: string; email: string }>(
-      'SELECT o.user_id, u.email FROM admin_email_otps o JOIN users u ON u.id = o.user_id WHERE o.token_hash = $1', [hashToken(otpToken)])).rows[0];
+      'SELECT o.user_id, COALESCE(pa.otp_email, u.email) AS email FROM admin_email_otps o JOIN users u ON u.id = o.user_id LEFT JOIN platform_admins pa ON pa.user_id = o.user_id WHERE o.token_hash = $1', [hashToken(otpToken)])).rows[0];
     if (!row) return reply.code(401).send({ error: 'CODE_EXPIRED', message: 'This sign-in has expired. Go back and sign in again.' });
     const result = await sendAdminOtp(row.user_id, row.email, 'sign-in');
     return { sent: result.sent, ...(config.NODE_ENV === 'development' ? { devCode: result.code } : {}) };

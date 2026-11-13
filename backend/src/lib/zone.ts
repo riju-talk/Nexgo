@@ -1,3 +1,4 @@
+import { normalizeState } from './indiaStates.js';
 // Shipping zone for a pickup → delivery lane, derived from the pincode directory (city/state).
 // Same rules and order as the SwiftCourier rate calculator, so rate-card rows keyed by zone line up.
 
@@ -19,7 +20,7 @@ type Place = { city: string; state: string };
 
 export function laneZone(pickup: Place | null | undefined, dest: Place | null | undefined): LaneZone {
   if (!pickup || !dest) return 'rest_of_india';
-  const [pc, dc, ps, ds] = [norm(pickup.city), norm(dest.city), norm(pickup.state), norm(dest.state)];
+  const [pc, dc, ps, ds] = [norm(pickup.city), norm(dest.city), norm(normalizeState(pickup.state)), norm(normalizeState(dest.state))];
   if (pc === dc) return 'within_city';
   if (isMetro(pc) && isMetro(dc)) return 'metro_to_metro';
   if (NE_JK.has(ps) || NE_JK.has(ds)) return 'ne_jk';

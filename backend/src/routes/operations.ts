@@ -1,4 +1,5 @@
 import { queueCodConfirmation } from '../lib/codConfirmation.js';
+import { normalizeState, sameState } from '../lib/indiaStates.js';
 import { maskCustomerRows } from '../lib/permissions.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
@@ -14,12 +15,12 @@ const pincode = z.string().regex(/^\d{6}$/);
 const phone = z.string().trim().regex(/^[0-9+() -]{7,24}$/, 'Enter a valid phone number (digits only, 7 to 24 characters)');
 // A customer's number must be a real Indian mobile: the last 10 digits start with 6, 7, 8 or 9 (+91 / 0 in front is fine).
 const mobile = phone.refine((v) => /^[6-9][0-9]{9}$/.test(v.replace(/\D/g, '').slice(-10)), 'Enter a valid 10-digit Indian mobile number (it starts with 6, 7, 8 or 9)');
-const address = z.object({ fullName: z.string().trim().min(2).max(120), email: z.string().email().max(254).optional(), phone, addressLine1: z.string().trim().min(3).max(200), addressLine2: z.string().trim().max(200).optional(), city: z.string().trim().min(2).max(100), state: z.string().trim().min(2).max(100), pincode });
+const address = z.object({ fullName: z.string().trim().min(2).max(120), email: z.string().email().max(254).optional(), phone, addressLine1: z.string().trim().min(3).max(200), addressLine2: z.string().trim().max(200).optional(), city: z.string().trim().min(2).max(100), state: z.string().trim().min(2).max(100).transform(normalizeState), pincode });
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const warehouseBase = z.object({
   name: z.string().trim().min(2).max(120), warehouseType: z.enum(['primary', 'secondary', 'fulfilment', 'returns']).default('primary'),
   contactName: z.string().trim().min(2).max(100), phone, email: z.string().trim().email().max(254).optional().or(z.literal('').transform(() => undefined)),
-  addressLine1: z.string().trim().min(3).max(200), addressLine2: z.string().trim().max(200).optional(), city: z.string().trim().min(2).max(100), state: z.string().trim().min(2).max(100), pincode,
+  addressLine1: z.string().trim().min(3).max(200), addressLine2: z.string().trim().max(200).optional(), city: z.string().trim().min(2).max(100), state: z.string().trim().min(2).max(100).transform(normalizeState), pincode,
   latitude: z.number().min(-90).max(90).optional(), longitude: z.number().min(-180).max(180).optional(),
   capacitySqft: z.number().int().positive().max(100_000_000).optional(), opensAt: hhmm.optional(), closesAt: hhmm.optional(),
   managerName: z.string().trim().max(100).optional(), notes: z.string().trim().max(1000).optional(),
@@ -76,7 +77,7 @@ export async function operationsRoutes(app: FastifyInstance) {
   // A known pincode must match the city/state typed, so a mistyped pincode cannot silently misroute pickups.
   const checkLocation = async (client: PoolClient, pin: string, state?: string) => {
     const known = (await client.query<{ city: string; state: string }>('SELECT city, state FROM pincodes WHERE pincode=$1', [pin])).rows[0];
-    if (known && state && known.state.toLowerCase() !== state.toLowerCase()) throw Object.assign(new Error(`Pincode ${pin} belongs to ${known.state}, not ${state}`), { statusCode: 400 });
+    if (known && state && !sameState(known.state, state)) throw Object.assign(new Error(`Pincode ${pin} belongs to ${known.state}, not ${state}`), { statusCode: 400 });
   };
   const WAREHOUSE_COLUMNS: Record<string, string> = { name: 'name', warehouseType: 'warehouse_type', contactName: 'contact_name', phone: 'phone', email: 'email', addressLine1: 'address_line_1', addressLine2: 'address_line_2', city: 'city', state: 'state', pincode: 'pincode', latitude: 'latitude', longitude: 'longitude', capacitySqft: 'capacity_sqft', opensAt: 'opens_at', closesAt: 'closes_at', managerName: 'manager_name', notes: 'notes', isReturnAddress: 'is_return_address', cutoffTime: 'cutoff_time' };
 
@@ -194,7 +195,7 @@ export async function operationsRoutes(app: FastifyInstance) {
     // A pincode that belongs to another state than the one typed is rejected per order: replay one by one so only that order fails.
     const knownPins = await client.query<{ pincode: string; state: string }>('SELECT pincode, state FROM pincodes WHERE pincode = ANY($1::text[])', [[...new Set(fresh.map((i) => i.customer.pincode))]]);
     const stateOf = new Map(knownPins.rows.map((r) => [r.pincode, r.state.toLowerCase()]));
-    if (fresh.some((i) => { const known = stateOf.get(i.customer.pincode); return !!known && known !== i.customer.state.toLowerCase(); })) throw FALLBACK;
+    if (fresh.some((i) => { const known = stateOf.get(i.customer.pincode); return !!known && !sameState(known, i.customer.state); })) throw FALLBACK;
     const out = new Map<string, { id: string; existing: boolean }>();
     for (const [n, id] of existingByNumber) out.set(n, { id, existing: true });
     if (fresh.length) {

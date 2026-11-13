@@ -73,8 +73,8 @@ const adminLoginInput = z.object({
 export async function adminRoutes(app: FastifyInstance) {
   app.post('/v1/admin/auth/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
     const input = adminLoginInput.parse(request.body);
-    const account = await db.query<{ user_id: string; password_hash: string; role: string; full_name: string; mfa_required: boolean; totp_enrolled_at: string | null; email_otp_required: boolean }>(
-      `SELECT pa.user_id, u.password_hash, pa.role, u.full_name, pa.mfa_required, pa.totp_enrolled_at, pa.email_otp_required
+    const account = await db.query<{ user_id: string; password_hash: string; role: string; full_name: string; mfa_required: boolean; totp_enrolled_at: string | null; email_otp_required: boolean; otp_email: string | null }>(
+      `SELECT pa.user_id, u.password_hash, pa.role, u.full_name, pa.mfa_required, pa.totp_enrolled_at, pa.email_otp_required, pa.otp_email
        FROM platform_admins pa JOIN users u ON u.id = pa.user_id
        WHERE u.email = $1`, [input.email.toLowerCase()],
     );
@@ -95,15 +95,17 @@ export async function adminRoutes(app: FastifyInstance) {
     }
     // EVERY admin sign-in needs the 6-digit code e-mailed to the admin: a correct password never opens a session by itself.
     // The session is opened only by POST /v1/admin/auth/verify-otp (and, for admins with an authenticator app, after that by /v1/admin/auth/mfa).
-    const challenge = await startAdminOtpChallenge(admin.user_id, input.email.toLowerCase());
+    // The code goes to this admin's own verification inbox when one is set (so a shared sign-in such as the platform mailbox can still send it to the person), otherwise to the sign-in email.
+    const codeEmail = (admin.otp_email || input.email).toLowerCase();
+    const challenge = await startAdminOtpChallenge(admin.user_id, codeEmail);
     const hint = config.NODE_ENV === 'development' && challenge.code ? { devCode: challenge.code } : {}; // local development only, never in production
-    return reply.code(202).send({ requiresEmailOtp: true, otpToken: challenge.otpToken, sentTo: maskEmail(input.email.toLowerCase()), emailed: challenge.emailed, ...hint });
+    return reply.code(202).send({ requiresEmailOtp: true, otpToken: challenge.otpToken, sentTo: maskEmail(codeEmail), emailed: challenge.emailed, ...hint });
   });
 
   // Registered platform admins only. Always answers 202 so the form never reveals who is an admin.
   app.post('/v1/admin/auth/forgot-password', { config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (request, reply) => {
     const { email } = z.object({ email: z.string().email().max(254) }).parse(request.body);
-    const admin = (await db.query<{ user_id: string }>('SELECT pa.user_id FROM platform_admins pa JOIN users u ON u.id = pa.user_id WHERE u.email = $1', [email.toLowerCase()])).rows[0];
+    const admin = (await db.query<{ user_id: string; otp_email: string | null }>('SELECT pa.user_id, pa.otp_email FROM platform_admins pa JOIN users u ON u.id = pa.user_id WHERE u.email = $1', [email.toLowerCase()])).rows[0];
     if (admin) {
       const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
       const temporary = Array.from({ length: 16 }, () => alphabet[randomInt(alphabet.length)]).join('');
@@ -111,7 +113,7 @@ export async function adminRoutes(app: FastifyInstance) {
         `INSERT INTO admin_temp_passwords (user_id, password_hash, expires_at) VALUES ($1,$2, now() + interval '30 minutes')
          ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash, expires_at = EXCLUDED.expires_at, created_at = now()`,
         [admin.user_id, await argon2.hash(temporary, { type: argon2.argon2id })]);
-      await sendMail(email, 'Your NEXGO admin temporary password',
+      await sendMail(admin.otp_email || email, 'Your NEXGO admin temporary password',
         `Your temporary password: ${temporary}
 
 Sign in at ${config.FRONTEND_ORIGIN}/admin/login with this email and the temporary password. You will be taken straight to a page to set your own password. It expires in 30 minutes and works once. Your current password keeps working until you set a new one.

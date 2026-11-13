@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { normalizeState } from '../lib/indiaStates.js';
 import { z } from 'zod';
 import { db } from '../db/client.js';
 
@@ -18,7 +19,7 @@ async function lookupIndiaPost(pincode: string): Promise<Found | null> {
     const office = offices.find((o) => o.DeliveryStatus === 'Delivery' && o.District && o.State) ?? offices.find((o) => o.District && o.State);
     if (!office?.District || !office.State) return null;
     const city = office.District.trim().slice(0, 80); const state = office.State.trim().slice(0, 80);
-    const zone = NE_JK.has(state.toLowerCase()) ? 'remote' : 'tier2';
+    const zone = NE_JK.has(normalizeState(state).toLowerCase()) ? 'remote' : 'tier2';
     await db.query('INSERT INTO pincodes (pincode, city, state, district, zone) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (pincode) DO NOTHING', [pincode, city, state, city, zone]);
     return { pincode, city, state, district: city, zone, latitude: null, longitude: null, cod_available: true, is_oda: false };
   } catch { return null; }
