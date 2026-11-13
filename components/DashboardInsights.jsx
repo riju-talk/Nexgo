@@ -75,7 +75,7 @@ export default function DashboardInsights({ live, rangeLabel, phone }) {
         <div style={cols(3)}>
           <Tile label="Delivered" value={(dq?.delivered ?? 0).toLocaleString('en-IN')} note="parcels" />
           <Tile label="First attempt delivery" value={show(dq?.firstAttemptPct)} note="delivered with no NDR" color={T.GREEN} />
-          <Tile label="Delivered by promised date" value={show(dq?.withinPromisedDatePct)} note="booking date plus 5 days" color={T.ACCENT} />
+          <Tile label="Delivered by promised date" value={show(dq?.withinPromisedDatePct)} note="by the delivery date shown when you booked" color={T.ACCENT} />
         </div>
         <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: T.TEXT_MUTED }}>On time by zone</div>
         <div style={{ ...cols(5), marginTop: 8 }}>

@@ -68,13 +68,13 @@ T('A finished cancellation batch creates a notification with the refund', L.item
 const F = await ship('F'); await db.query("UPDATE shipments SET booked_at = now() - interval '30 hours', pickup_deadline_at = now() - interval '6 hours' WHERE id = $1", [F.id]);
 // the scheduled check (the worker runs it every 10 minutes): run it once now, and twice to see it is stored once a day
 import { execSync } from 'node:child_process';
-const scan = () => execSync(`npx tsx -e "import('./src/lib/notify.ts').then((m) => m.scanPickupMissed()).then((n) => { console.log('SCAN ' + n); process.exit(0); })"`, { cwd: new URL('../..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), encoding: 'utf8' });
+const scan = () => execSync(`npx tsx -e "import('./src/lib/notify.ts').then((m) => m.scanPickupMissed()).then((n) => { console.log('SCAN ' + n); process.exit(0); })"`, { cwd: new URL('../..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), encoding: 'utf8', env: { ...process.env, DATABASE_URL: 'postgresql://nx@127.0.0.1:5544/nxd' } });
 scan(); scan();
 L = await list();
 const missed = L.items.filter((n) => n.kind === 'pickup_missed');
 T('A missed pickup creates ONE notification per day, however often the check runs', missed.length === 1 && /1 pickup missed/.test(missed[0].title), JSON.stringify(missed.map((n) => n.title)));
 // funds
-execSync(`npx tsx -e "import('./src/lib/notify.ts').then(async (m) => { await m.notifyFunds('${sellerId}', 'Debit limit reached: you cannot push more orders until you recharge your wallet.'); await m.notifyFunds('${sellerId}', 'Debit limit reached: you cannot push more orders until you recharge your wallet.'); process.exit(0); })"`, { cwd: new URL('../..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), encoding: 'utf8' });
+execSync(`npx tsx -e "import('./src/lib/notify.ts').then(async (m) => { await m.notifyFunds('${sellerId}', 'Debit limit reached: you cannot push more orders until you recharge your wallet.'); await m.notifyFunds('${sellerId}', 'Debit limit reached: you cannot push more orders until you recharge your wallet.'); process.exit(0); })"`, { cwd: new URL('../..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), encoding: 'utf8', env: { ...process.env, DATABASE_URL: 'postgresql://nx@127.0.0.1:5544/nxd' } });
 L = await list();
 T('"Debit limit reached" is told once an hour, not once per refused order', L.items.filter((n) => n.kind === 'wallet' && n.title === 'Debit limit reached').length === 1);
 

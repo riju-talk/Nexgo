@@ -1,4 +1,5 @@
 import { maskCustomerRows } from '../lib/permissions.js';
+import { deliveryWindow, type PincodeInfo } from '../lib/serviceability.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
@@ -55,7 +56,7 @@ async function fundsShort(client: PoolClient, sellerId: string, amountPaise: num
  *   3. completeBooking (quick, all the writes)  wallet lock, funds re-checked, shipment + debit + events in one transaction
  * bookDetached() runs the three; bookInTx() runs them on one caller-owned connection (kept for callers that already have one).
  */
-export type BookingContext = { input: z.infer<typeof bookingInput>; key: string; zone: string; selection: Rate; price: ReturnType<typeof calculateRate>; details: Awaited<ReturnType<typeof loadBookingDetails>> };
+export type BookingContext = { input: z.infer<typeof bookingInput>; key: string; zone: string; selection: Rate; price: ReturnType<typeof calculateRate>; details: Awaited<ReturnType<typeof loadBookingDetails>>; promisedDays: number };
 
 export async function prepareBooking(client: PoolClient, p: ReturnType<typeof principal>, input: z.infer<typeof bookingInput>, key: string): Promise<{ replay: true; shipment: Record<string, unknown> } | { replay: false; ctx: BookingContext }> {
     const previous = await client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]); if (previous.rows[0]) return { replay: true as const, shipment: previous.rows[0] };
@@ -63,7 +64,8 @@ export async function prepareBooking(client: PoolClient, p: ReturnType<typeof pr
     const zone = lane.rows[0] ? laneZone({ city: lane.rows[0].wc, state: lane.rows[0].ws }, { city: lane.rows[0].cc, state: lane.rows[0].cs }) : 'rest_of_india';
     const rate = await client.query<Rate>(`SELECT cp.id AS provider_id,cp.code AS provider_code,cp.aggregator,cp.name AS provider_name,cs.id AS service_id,cs.code AS service_code,cs.display_name AS service_name,rcr.base_weight_g,rcr.base_price_paise,rcr.additional_weight_g,rcr.additional_price_paise,rcr.cod_fee_paise,rcr.fuel_surcharge_bps,rcr.cod_percent_bps,rcr.rto_base_price_paise,rcr.rto_additional_price_paise,o.payment_mode,o.cod_amount_paise,GREATEST(o.total_weight_g,o.volumetric_weight_g) AS total_weight_g,c.pincode AS destination_pincode FROM orders o JOIN customers c ON c.id=o.customer_id JOIN seller_courier_access sca ON sca.seller_id=o.seller_id AND sca.state='enabled' JOIN courier_services cs ON cs.id=sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id=cs.provider_id AND cp.integration_state='live' JOIN LATERAL (SELECT id FROM rate_cards WHERE seller_id=o.seller_id AND state='active' AND effective_from<=now() AND (effective_to IS NULL OR effective_to>now()) ORDER BY effective_from DESC LIMIT 1) card ON true JOIN rate_card_rates rcr ON rcr.rate_card_id=card.id AND rcr.service_id=cs.id AND rcr.zone_code IN ($5,'national') AND rcr.min_weight_g<=GREATEST(o.total_weight_g,o.volumetric_weight_g) WHERE o.id=$1 AND o.seller_id=$2 AND o.state='ready_to_ship' AND cp.code=$3 AND cs.code=$4 AND (o.payment_mode='prepaid' OR sca.cod_enabled=true) AND NOT EXISTS (SELECT 1 FROM seller_pincode_blocks sb WHERE sb.seller_id=o.seller_id AND (sb.service_id IS NULL OR sb.service_id=cs.id) AND sb.pincode=c.pincode) AND NOT EXISTS (SELECT 1 FROM platform_pincode_blocks pb WHERE pb.pincode=c.pincode) AND NOT EXISTS (SELECT 1 FROM courier_pincode_rules blocked WHERE blocked.service_id=cs.id AND blocked.rule_type='blocked' AND c.pincode LIKE blocked.destination_prefix || '%') AND (NOT EXISTS (SELECT 1 FROM courier_pincode_rules allowed WHERE allowed.service_id=cs.id AND allowed.rule_type='allowed') OR EXISTS (SELECT 1 FROM courier_pincode_rules allowed WHERE allowed.service_id=cs.id AND allowed.rule_type='allowed' AND c.pincode LIKE allowed.destination_prefix || '%')) ORDER BY (rcr.zone_code=$5) DESC, rcr.min_weight_g DESC LIMIT 1`, [input.orderId, p.sellerId, input.providerCode, input.serviceCode, zone]);
     const selection = rate.rows[0]; if (!selection) throw Object.assign(new Error('The selected courier service is not available for this ready-to-ship order'), { statusCode: 422 });
-    const pinLane = (await client.query<{ is_oda: boolean; cod_available: boolean; serves_oda: boolean }>(`SELECT p.is_oda, p.cod_available, cs.serves_oda FROM courier_services cs LEFT JOIN pincodes p ON p.pincode=$1 WHERE cs.id=$2`, [selection.destination_pincode, selection.service_id])).rows[0];
+    const pinLane = (await client.query<{ is_oda: boolean; cod_available: boolean; serves_oda: boolean; zone: string | null; city: string | null; state: string | null; is_active: boolean | null; typical_delivery_days: number | null; max_delivery_days: number | null }>(`SELECT p.is_oda, p.cod_available, cs.serves_oda, p.zone, p.city, p.state, p.is_active, cs.typical_delivery_days, cs.max_delivery_days FROM courier_services cs LEFT JOIN pincodes p ON p.pincode=$1 WHERE cs.id=$2`, [selection.destination_pincode, selection.service_id])).rows[0];
+    const promisedDays = 1 + deliveryWindow({ typical: pinLane?.typical_delivery_days ?? null, max: pinLane?.max_delivery_days ?? null }, pinLane?.zone ? { pincode: selection.destination_pincode, city: pinLane.city ?? '', state: pinLane.state ?? '', zone: pinLane.zone as PincodeInfo['zone'], cod_available: pinLane.cod_available, is_oda: pinLane.is_oda, is_active: pinLane.is_active ?? true } : null, null).maxDays;
     if (pinLane?.is_oda && !pinLane.serves_oda) throw Object.assign(new Error('This courier does not deliver to this pincode (out of delivery area). Choose another courier.'), { statusCode: 422 });
     if (selection.payment_mode === 'cod' && pinLane && pinLane.cod_available === false) throw Object.assign(new Error('Cash on delivery is not available at this pincode. Switch the order to prepaid or choose another courier.'), { statusCode: 422 });
     const price = calculateRate(selection, selection.total_weight_g || 1, selection.payment_mode === 'cod', selection.cod_amount_paise || 0);
@@ -71,7 +73,7 @@ export async function prepareBooking(client: PoolClient, p: ReturnType<typeof pr
     const short = await fundsShort(client, p.sellerId, price.totalPaise);
     if (short) throw noFunds(short);
     const details = await loadBookingDetails(client, p.sellerId, input.orderId, selection.service_id);
-    return { replay: false, ctx: { input, key, zone, selection, price, details } };
+    return { replay: false, ctx: { input, key, zone, selection, price, details, promisedDays } };
 }
 
 export async function callCourier(ctx: BookingContext) {
@@ -86,7 +88,7 @@ export async function callCourier(ctx: BookingContext) {
 }
 
 export async function completeBooking(client: PoolClient, p: ReturnType<typeof principal>, requestId: string, ctx: BookingContext, providerBooking: Awaited<ReturnType<typeof callCourier>>) {
-  const { input, key, zone, selection, price } = ctx;
+  const { input, key, zone, selection, price, promisedDays } = ctx;
     // The courier has answered: only now take the wallet lock, so two concurrent bookings cannot both spend the same balance.
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
     const stillShort = await fundsShort(client, p.sellerId, price.totalPaise);
@@ -96,7 +98,7 @@ export async function completeBooking(client: PoolClient, p: ReturnType<typeof p
       catch (cancelError) { console.error(`Booking ${providerBooking.awb} could not be cancelled after a failed wallet re-check; cancel it at the courier by hand`, cancelError); }
       throw noFunds(stillShort);
     }
-    const shipment = await client.query(`INSERT INTO shipments (seller_id,order_id,provider_id,service_id,awb,chargeable_weight_g,shipping_charge_paise,quote_snapshot,idempotency_key,destination_pincode,destination_city,promised_delivery_at,pickup_deadline_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,cu.pincode,cu.city,now()+interval '5 days',now()+interval '24 hours' FROM orders o JOIN customers cu ON cu.id=o.customer_id WHERE o.id=$2 RETURNING *`, [p.sellerId, input.orderId, selection.provider_id, selection.service_id, providerBooking.awb, Math.max(selection.total_weight_g, 1), price.totalPaise, JSON.stringify({ zone, provider: selection.provider_code, providerShipmentId: providerBooking.providerShipmentId, service: selection.service_code, destinationPincode: selection.destination_pincode, paymentMode: selection.payment_mode, price }), key]);
+    const shipment = await client.query(`INSERT INTO shipments (seller_id,order_id,provider_id,service_id,awb,chargeable_weight_g,shipping_charge_paise,quote_snapshot,idempotency_key,destination_pincode,destination_city,promised_delivery_at,pickup_deadline_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,cu.pincode,cu.city,now()+make_interval(days => $10::int),now()+interval '24 hours' FROM orders o JOIN customers cu ON cu.id=o.customer_id WHERE o.id=$2 RETURNING *`, [p.sellerId, input.orderId, selection.provider_id, selection.service_id, providerBooking.awb, Math.max(selection.total_weight_g, 1), price.totalPaise, JSON.stringify({ zone, provider: selection.provider_code, providerShipmentId: providerBooking.providerShipmentId, service: selection.service_code, destinationPincode: selection.destination_pincode, paymentMode: selection.payment_mode, price }), key, promisedDays]);
     await client.query('UPDATE shipments SET provider_shipment_id=$1, routing_code=$3 WHERE id=$2', [providerBooking.providerShipmentId, shipment.rows[0].id, providerBooking.routingCode ?? null]);
     if (providerBooking.pickupHubId) await client.query('INSERT INTO courier_pickup_hubs (warehouse_id,aggregator,seller_id,external_hub_id) SELECT o.warehouse_id,$2,$3,$4 FROM orders o WHERE o.id=$1 ON CONFLICT (warehouse_id, aggregator) DO UPDATE SET external_hub_id=EXCLUDED.external_hub_id', [input.orderId, selection.aggregator, p.sellerId, providerBooking.pickupHubId]);
     await client.query("UPDATE orders SET state='booked',updated_at=now() WHERE id=$1", [input.orderId]);

@@ -158,7 +158,7 @@ const summarize = async (client: Pool | PoolClient, q: Range, sellerId?: string)
 
 // "Decisions waiting on you": live NDR, weight-dispute, missed-pickup and COD figures for the seller (open items, not date-filtered).
 async function sellerQueue(client: PoolClient, sellerId: string) {
-  const [ndr, ndrReasons, wd, wdCouriers, pickup, pickupCouriers, codToday, cod] = await Promise.all([
+  const [ndr, ndrReasons, wd, wdCouriers, pickup, pickupCouriers, codToday, cod, ndrAnswered] = await Promise.all([
     client.query<{ n: number }>(`SELECT count(*)::int AS n FROM ndr_cases WHERE seller_id = $1 AND state = 'open'`, [sellerId]),
     client.query<{ reason: string; n: number }>(`SELECT ndr_reason::text AS reason, count(*)::int AS n FROM ndr_cases WHERE seller_id = $1 AND state = 'open' GROUP BY 1 ORDER BY 2 DESC LIMIT 4`, [sellerId]),
     client.query<{ n: number; held: string }>(`SELECT count(*)::int AS n, COALESCE(sum(held_amount_paise),0)::bigint AS held FROM weight_disputes WHERE seller_id = $1 AND status = 'open'`, [sellerId]),
@@ -170,9 +170,11 @@ async function sellerQueue(client: PoolClient, sellerId: string) {
     client.query<{ name: string; n: number }>(`SELECT cp.name, count(*)::int AS n FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.seller_id = $1 AND ${pickupMissedSql('s.')} GROUP BY cp.name ORDER BY n DESC LIMIT 4`, [sellerId]),
     client.query<{ v: string }>(`SELECT COALESCE(sum(o.cod_amount_paise),0)::bigint AS v FROM shipments s JOIN orders o ON o.id = s.order_id WHERE s.seller_id = $1 AND s.state = 'delivered' AND o.payment_mode = 'cod' AND s.delivered_at >= ((now() ${IST})::date::timestamp ${IST})`, [sellerId]),
     codPending(client, sellerId),
+    // Parcels still in NDR whose case the seller already answered: they wait for the courier, not for the seller.
+    client.query<{ n: number }>(`SELECT count(*)::int AS n FROM ndr_cases c JOIN shipments s ON s.id = c.shipment_id WHERE c.seller_id = $1 AND c.state IN ('reattempt_requested','rto_requested') AND s.state = 'ndr'`, [sellerId]),
   ]);
   return {
-    ndr: { open: ndr.rows[0].n, reasons: ndrReasons.rows },
+    ndr: { open: ndr.rows[0].n, answered: ndrAnswered.rows[0].n, reasons: ndrReasons.rows },
     weight: { open: wd.rows[0].n, heldPaise: Number(wd.rows[0].held), couriers: wdCouriers.rows.map((r) => ({ name: r.name, count: r.n, amountPaise: Number(r.amount) })) },
     pickup: { pending: pickup.rows[0].pending, missed: pickup.rows[0].missed, oldestHours: pickup.rows[0].oldest_hours, couriers: pickupCouriers.rows },
     // COD: delivered today, the next payout, and everything still owed to the seller (cycles not paid + delivered COD not yet in a cycle, both after freight).

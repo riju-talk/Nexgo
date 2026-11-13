@@ -49,7 +49,7 @@ const S2 = await ship('A2', 'booked', 2, null, null, null, 'within_state');
 await ship('A3', 'in_transit', 30, 10, null, null, 'within_city');
 await ship('A4', 'in_transit', 60, 30, null, null, 'within_city');
 await ship('A5', 'delivered', 100, 60, 90, 120, 'within_city');
-await ship('A6', 'delivered', 100, 5, 110, 96, 'within_city', true);
+await ship('A6', 'delivered', 100, 5, 110, 60, 'within_city', true);
 await ship('P1', 'delivered', 960, 5, 20, 120, 'within_city', false, 40); // booked 40 days ago: belongs to the previous 30-day period
 
 // ---- dashboard figures

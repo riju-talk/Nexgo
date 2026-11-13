@@ -95,7 +95,9 @@ export default function AdminDashboard({ mobile, phone }) {
     ['Weight disputes', 'Review courier claims', 'a-disputes', '#8A5A00', '◇'],
   ] : [];
   const statusRows = live ? Object.entries(live.pipeline || {}).filter(([k, v]) => STATUS_COLORS[k] && v > 0) : [];
-  const statusTotal = statusRows.reduce((a, [, v]) => a + v, 0);
+  // Live stages describe right now; delivered, RTO, lost and cancelled describe the selected period. They are never added together.
+  const LIVE_KEYS = ['ready_to_ship', 'pickup_pending', 'in_transit', 'out_for_delivery', 'ndr'];
+  const statusGroups = [['Right now', statusRows.filter(([k]) => LIVE_KEYS.includes(k))], ['In the selected period', statusRows.filter(([k]) => !LIVE_KEYS.includes(k))]].filter(([, rows]) => rows.length);
   const couriers = live?.courierMix || [];
   const pad = phone ? 13 : mobile ? 18 : 28;
   const cols = (count) => (mobile ? '1fr' : `repeat(${count},minmax(0,1fr))`);
@@ -137,9 +139,17 @@ export default function AdminDashboard({ mobile, phone }) {
           <Card><CardTitle>Shipment overview · packets</CardTitle><DailyBars rows={live.daily || []} series={[{ key: 'prepaid', label: 'Prepaid', color: T.NAVY }, { key: 'cod', label: 'COD', color: T.ACCENT }]} /></Card>
           <Card>
             <CardTitle>Shipments by status</CardTitle>
-            {!statusRows.length ? <Empty /> : <div style={{ padding: '14px 18px', display: 'grid', gap: 9 }}>
-              <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden' }}>{statusRows.map(([k, v]) => <div key={k} title={`${statusName(k)}: ${n(v)}`} style={{ width: `${(v / statusTotal) * 100}%`, background: STATUS_COLORS[k] }} />)}</div>
-              {statusRows.map(([k, v]) => <div key={k} style={{ display: 'grid', gridTemplateColumns: '10px 1fr auto', gap: 8, alignItems: 'center', fontSize: 12 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: STATUS_COLORS[k] }} /><span style={{ color: 'var(--ops-muted)' }}>{statusName(k)}</span><b style={{ color: 'var(--ops-text)' }}>{n(v)} <em style={{ color: 'var(--ops-subtle)', fontStyle: 'normal', fontWeight: 500 }}>({((v / statusTotal) * 100).toFixed(1)}%)</em></b></div>)}
+            {!statusRows.length ? <Empty /> : <div style={{ padding: '14px 18px', display: 'grid', gap: 14 }}>
+              {statusGroups.map(([group, rows]) => {
+                const total = rows.reduce((acc, [, v]) => acc + v, 0);
+                return (
+                  <div key={group} style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 750, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ops-subtle)' }}>{group}</div>
+                    <div style={{ display: 'flex', height: 10, borderRadius: 5, overflow: 'hidden' }}>{rows.map(([k, v]) => <div key={k} title={`${statusName(k)}: ${n(v)}`} style={{ width: `${(v / total) * 100}%`, background: STATUS_COLORS[k] }} />)}</div>
+                    {rows.map(([k, v]) => <div key={k} style={{ display: 'grid', gridTemplateColumns: '10px 1fr auto', gap: 8, alignItems: 'center', fontSize: 12 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: STATUS_COLORS[k] }} /><span style={{ color: 'var(--ops-muted)' }}>{statusName(k)}</span><b style={{ color: 'var(--ops-text)' }}>{n(v)} <em style={{ color: 'var(--ops-subtle)', fontStyle: 'normal', fontWeight: 500 }}>({((v / total) * 100).toFixed(1)}% of {group.toLowerCase()})</em></b></div>)}
+                  </div>
+                );
+              })}
             </div>}
           </Card>
           <Card>
