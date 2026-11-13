@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { sellerSafeMessage, BOOKING_PAUSED } from '../lib/sellerSafeError.js';
 import { volumetricWeightG } from '../lib/money.js';
+import { aggregatorLimiter } from './aggregatorLimiterShared.js';
 import type { BookingDetails, CourierAdapter, CourierBookingRequest, CourierBookingResult, NdrCourierAction } from './types.js';
 
 // Lorrigo (app.lorrigo.com/api/v2), Bearer API key. Booking, verified against the live API:
@@ -73,16 +74,18 @@ export class LorrigoAdapter implements CourierAdapter {
   private async call(method: 'GET' | 'POST', path: string, body?: unknown, attempt = 0): Promise<unknown> {
     if (this.deadline && Date.now() > this.deadline) throw new LorrigoError('Lorrigo is responding too slowly. Nothing was charged; try again in a moment.', 502);
     const t0 = Date.now();
-    let res: Response;
+    let res: Response; let text: string;
     try {
-      res = await fetch(`${this.baseUrl}${path}`, { method, headers: { authorization: `Bearer ${this.apiKey}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(9_000) });
+      // Many bookings run at once: the shared limiter keeps the number of calls in flight within what the aggregator tolerates.
+      ({ res, text } = await aggregatorLimiter.run(async () => { const r = await fetch(`${this.baseUrl}${path}`, { method, headers: { authorization: `Bearer ${this.apiKey}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(9_000) }); return { res: r, text: await r.text() }; }));
     } catch { throw new LorrigoError('Lorrigo did not respond in time. Try again.', 502); }
-    const text = await res.text(); let json: unknown = null; try { json = text ? JSON.parse(text) : null; } catch { /* an HTML error page from a gateway */ }
+    let json: unknown = null; try { json = text ? JSON.parse(text) : null; } catch { /* an HTML error page from a gateway */ }
     // One line per aggregator call (method, path with ids masked, status, milliseconds): shows which step makes bookings slow.
     console.log(JSON.stringify({ evt: 'aggregator.call', aggregator: 'lorrigo', method, path: path.split('?')[0].replace(/[A-Za-z0-9_-]{16,}/g, ':id'), status: res.status, ms: Date.now() - t0 }));
-    if (res.ok) return json;
+    if (res.ok) { aggregatorLimiter.ok(); return json; }
     if (res.status === 429) {
-      if (attempt < 1) { await sleep(Math.min(2000, (Number(res.headers.get('retry-after')) || 1) * 1000)); return this.call(method, path, body, attempt + 1); }
+      aggregatorLimiter.tooMany(); // slow everybody down at once, then retry this call after the pause the aggregator asked for (with a little jitter)
+      if (attempt < 3) { await sleep(Math.min(5000, (Number(res.headers.get('retry-after')) || 1) * 1000) + Math.floor(Math.random() * 400)); return this.call(method, path, body, attempt + 1); }
       throw new LorrigoError('Lorrigo is rate limiting requests right now. Try again in a minute.', 502, 429);
     }
     const message = (isObj(json) && (typeof json.message === 'string' ? json.message : typeof json.error === 'string' ? json.error : null)) || `Lorrigo error ${res.status}`;
@@ -112,7 +115,18 @@ export class LorrigoAdapter implements CourierAdapter {
     }
     return null;
   }
-  private async ensureHub(w: BookingDetails['warehouse']): Promise<string> {
+  // A new warehouse's first bookings all start together (a batch of orders): only ONE of them looks up / creates the pickup address, the rest wait for
+  // that answer. Without this, every booking listed the addresses and tried to create the same one (dozens of wasted calls and a slow first wave).
+  private static hubFlights = new Map<string, Promise<string>>();
+  private ensureHub(w: BookingDetails['warehouse']): Promise<string> {
+    const key = `${this.baseUrl}|${w.id}`;
+    const running = LorrigoAdapter.hubFlights.get(key);
+    if (running) return running;
+    const flight = this.ensureHubOnce(w).finally(() => { LorrigoAdapter.hubFlights.delete(key); });
+    LorrigoAdapter.hubFlights.set(key, flight);
+    return flight;
+  }
+  private async ensureHubOnce(w: BookingDetails['warehouse']): Promise<string> {
     validateWarehouse(w);
     const facilityName = `${w.name} - NX${w.id.slice(0, 6)}`.slice(0, 60);
     const existing = await this.findHub(facilityName); if (existing) return existing;
@@ -242,7 +256,12 @@ export class LorrigoAdapter implements CourierAdapter {
       }
       throw e;
     }
-    const after = await this.readShipment(order.id); // authoritative: it also holds the shipment id that /shipments/:id/cancel takes
+    // The booking answer may already carry the AWB and the shipment id (the id is what /shipments/:id/cancel takes): then there is nothing to look up.
+    const answeredAwb = firstString(shipment, ['shipment.awb', 'data.shipment.awb', 'awb', 'data.awb', 'awb_number', 'data.awb_number']);
+    const answeredId = firstString(shipment, ['shipment.id', 'data.shipment.id', 'shipment_id', 'shipmentId', 'data.shipment_id']);
+    const after = answeredAwb && answeredId
+      ? { id: answeredId, awb: answeredAwb, routing: findByKey(isObj(shipment) ? (shipment.shipment ?? shipment.data ?? shipment) : shipment, /^(routing(_?code)?|sort_?code|destination_?code|dest_?code)$/i) }
+      : await this.readShipment(order.id); // authoritative otherwise: it also holds the shipment id
     const awb = after.awb ?? firstString(shipment, ['awb', 'awb_number', 'awbNumber', 'shipment.awb', 'data.awb', 'data.shipment.awb']) ?? findByKey(shipment, /^(awb|awb_?number|waybill|tracking_?(number|id))$/i);
     if (!awb) throw new LorrigoError('Lorrigo did not return an AWB for this shipment. Check the shipment in the Lorrigo dashboard before booking again.', 502);
     return result(awb, after.id ?? firstString(shipment, ['shipment.id', 'shipment_id', 'shipmentId', 'data.shipment.id']), after.routing);

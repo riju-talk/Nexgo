@@ -112,6 +112,7 @@ export function startAssignProcessor(log: { error: (o: unknown, m?: string) => v
         const room = config.ASSIGN_WORKERS - inflight;
         if (room > 0) {
           const items = await claim(room);
+          if (items.length) console.log(JSON.stringify({ evt: 'assign.claim', claimed: items.length, inflight: inflight + items.length }));
           for (const item of items) { inflight++; void run(item, log).finally(() => { inflight--; void pump(); }); }
           if (items.length) again = true; // there may be more waiting
         }

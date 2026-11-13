@@ -190,7 +190,8 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
       try {
         const booked = await bookDetached(p, requestId, { orderId, providerCode: c.pcode, serviceCode: c.scode }, `auto-assign:${orderId}:${c.pcode}:${c.scode}`);
         const awb = booked.shipment.awb as string;
-        await pushTrackingForShipment(p.sellerId, orderId, awb);
+        void pushTrackingForShipment(p.sellerId, orderId, awb).catch((e) => console.error('Storefront tracking push failed', (e as Error).message)); // best effort: never holds the booking
+        console.log(JSON.stringify({ evt: 'assign.done', ms: Date.now() - started, courier: c.pcode }));
         return { ok: true, awb, courier: c.pname, ms: Date.now() - started };
       } catch (e) {
         const status = (e as { statusCode?: number }).statusCode;
@@ -210,8 +211,10 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
 
 // Cancel before pickup: the courier booking is cancelled and the exact wallet debit taken at booking is credited back (once).
 export const cancelShipment = async (p: ReturnType<typeof principal>, shipmentId: string, requestId: string) => {
+  const t0 = Date.now();
   const outcome = await withSellerTransaction(p.sellerId, async (client) => {
-    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
+    // Only THIS shipment is locked (FOR UPDATE below): cancels of one seller run side by side. The refund is a credit keyed by an idempotency key, so it
+    // needs no wallet-wide lock (a credit can never overspend; bookings still take that lock for their debits).
     const found = await client.query<{ id: string; awb: string; state: string; order_id: string; code: string; provider_shipment_id: string | null; aggregator: string | null }>(`SELECT s.id, s.awb, s.provider_shipment_id, s.state::text, s.order_id, cp.code, cp.aggregator FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.id = $1 AND s.seller_id = $2 FOR UPDATE OF s`, [shipmentId, p.sellerId]);
     const row = found.rows[0];
     if (!row) throw Object.assign(new Error('Shipment not found'), { statusCode: 404 });
@@ -228,7 +231,9 @@ export const cancelShipment = async (p: ReturnType<typeof principal>, shipmentId
     return { id: row.id, state: 'cancelled', refundedPaise: refund };
   });
   invalidateMetrics(p.sellerId);
-  if (!('replay' in outcome)) await cancelTracking(p.sellerId, shipmentId); // the storefront must not keep showing the order as fulfilled
+  // The storefront must not keep showing the order as fulfilled, but the cancellation does not wait for it (best effort, logged on failure).
+  if (!('replay' in outcome)) void cancelTracking(p.sellerId, shipmentId).catch((e) => console.error('Storefront fulfilment cancel failed', (e as Error).message));
+  console.log(JSON.stringify({ evt: 'cancel.done', ms: Date.now() - t0, replay: 'replay' in outcome }));
   return outcome;
 };
 

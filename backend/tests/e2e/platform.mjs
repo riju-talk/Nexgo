@@ -22,6 +22,7 @@ const client = () => {
   };
 };
 async function adminLogin(email, password) {
+  await db.query('DELETE FROM admin_email_otps'); // a still-valid code from an earlier run would be reused and not returned to this test (local database only)
   const c = client();
   const a = await c('POST', '/v1/admin/auth/login', { email, password });
   if (a.s === 202 && a.j?.otpToken) {
@@ -49,7 +50,7 @@ const sellerRow = (await db.query('SELECT id FROM sellers ORDER BY created_at LI
 if (sellerRow) {
   await db.query('UPDATE sellers SET wallet_debit_limit_paise = 500000 WHERE id = $1', [sellerRow.id]);
   const cl2 = await sup.c('GET', '/v1/admin/credit-limits');
-  const mine = cl2.j.items.find((x) => x.id === sellerRow.id);
+  const mine = (cl2.j.items || []).find((x) => x.id === sellerRow.id);
   T('A seller with a debit limit is listed with its limit', !!mine && mine.limit_paise === 500000 && mine.available_paise >= 500000 + Math.min(0, mine.balance_paise), JSON.stringify(mine));
   await db.query('UPDATE sellers SET wallet_debit_limit_paise = 0 WHERE id = $1', [sellerRow.id]);
 }

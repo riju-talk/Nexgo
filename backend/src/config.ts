@@ -14,7 +14,7 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(4010),
   // No default: a database credential must never live in source control.
   DATABASE_URL: z.string().url(),
-  DB_POOL_MAX: z.coerce.number().int().min(1).max(50).default(process.env.VERCEL ? 3 : 12),
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(process.env.VERCEL ? 3 : 24),
   // Origin the browser loads the app from (CORS allow-list, e-mail links, cookie scope). Must be set explicitly in production.
   FRONTEND_ORIGIN: (production ? z.string().url() : z.string().url().default('http://localhost:3021')).transform((v) => new URL(v).origin), // origin only: a stray path ("/login") would break every redirect and e-mail link
   // Set to true behind a load balancer / reverse proxy (ALB, CloudFront, nginx) so request.ip and the https scheme are the client's, not the proxy's.
@@ -24,10 +24,12 @@ const schema = z.object({
   // How often the worker asks aggregators for tracking itself (a safety net next to their webhooks). 0 turns it off.
   TRACKING_POLL_MINUTES: z.coerce.number().int().min(0).max(240).default(10),
   // Background courier assignment (lib/assignQueue.ts): bookings in flight per process, and per seller.
-  ASSIGN_WORKERS: z.coerce.number().int().min(1).max(64).default(20),
-  ASSIGN_PER_SELLER: z.coerce.number().int().min(1).max(16).default(8),
-  CANCEL_WORKERS: z.coerce.number().int().min(1).max(32).default(6),
-  CANCEL_PER_SELLER: z.coerce.number().int().min(1).max(8).default(2),
+  ASSIGN_WORKERS: z.coerce.number().int().min(1).max(128).default(64),
+  ASSIGN_PER_SELLER: z.coerce.number().int().min(1).max(64).default(32),
+  CANCEL_WORKERS: z.coerce.number().int().min(1).max(128).default(16),
+  CANCEL_PER_SELLER: z.coerce.number().int().min(1).max(64).default(16),
+  // Calls to the courier aggregator in flight at once from this process; it backs off by itself when the aggregator answers 429 (couriers/aggregatorLimiter.ts).
+  AGGREGATOR_MAX_CONCURRENCY: z.coerce.number().int().min(4).max(200).default(40),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().max(30).default(14), // absolute lifetime of one sign-in
   SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(720), // signed out after this long without user activity
   // Cookies are Secure whenever NODE_ENV=production. Only set false to test a production image over plain http://localhost.
