@@ -23,7 +23,8 @@ export function isProgressionAllowed(from: CanonicalShipmentState, to: Canonical
   const allowed: Record<CanonicalShipmentState, CanonicalShipmentState[]> = {
     booked: ['in_transit', 'cancelled'], in_transit: ['out_for_delivery', 'ndr', 'rto', 'delivered', 'lost'],
     out_for_delivery: ['delivered', 'ndr', 'rto', 'lost'], ndr: ['in_transit', 'out_for_delivery', 'rto', 'delivered', 'lost'],
-    rto: ['in_transit', 'delivered', 'lost'], delivered: [], cancelled: [],
+    // A returning parcel never goes back to "in transit": the courier labels RTO-leg scans "In Transit" too.
+    rto: ['delivered', 'lost'], delivered: [], cancelled: [],
     lost: ['in_transit', 'out_for_delivery', 'delivered'], // a parcel reported lost can still turn up
   };
   const origin: CanonicalShipmentState = from in allowed ? from : 'booked'; // pickup_pending / pickup_scheduled are still "not picked up yet"

@@ -48,8 +48,6 @@ const TABS = [
   ['rto', 'RTO', (r) => RTO.includes(r.state)],
   ['lost', 'Lost', (r) => r.state === 'lost' || r.rto_status === 'lost'],
   ['cancelled', 'Cancelled', (r) => r.state === 'cancelled'],
-  // Orders that could not be booked (fix and re-assign) and parcels the courier cancelled on its side (re-book).
-  ['failed', 'Exception & Error', (r) => r.state === 'failed' || (!!r.courier_cancelled_at && r.state !== 'cancelled')],
 ];
 const CHANNELS = [['single', 'Single created'], ['bulk_upload', 'Bulk upload'], ['shopify', 'Shopify'], ['amazon', 'Amazon'], ['woocommerce', 'WooCommerce'], ['opencart', 'OpenCart'], ['magento', 'Magento']];
 const channelName = (c) => (CHANNELS.find(([k]) => k === c) || [null, title(c || 'single')])[1];

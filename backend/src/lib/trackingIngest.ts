@@ -78,7 +78,8 @@ export async function ingestUpdate(aggregator: string, update: NormalizedUpdate,
     const startState = shipment.state;
     for (const e of update.events) await applyEvent(tx, shipment, e.mapped, e.at, e.location, e.description, e.eventId, e);
     const c = update.current;
-    if (c && c.mapped.state !== shipment.state) await applyEvent(tx, shipment, c.mapped, c.at, c.location, c.description, c.eventId, { status: c.description });
+    // The courier's overall status is recorded in the history too (once per status), even when the state does not change, so e.g. "RTO in transit" shows up.
+    if (c && (c.mapped.state !== shipment.state || c.mapped.rto)) await applyEvent(tx, shipment, c.mapped, c.at, c.location, c.description, c.eventId, { status: c.description });
     // What the seller should hear about (stored once per event; sent after commit).
     if (startState !== shipment.state) {
       if (shipment.state === 'delivered') notes.push({ kind: 'delivered', title: 'Shipment delivered', body: `AWB ${update.awb} was delivered to the customer.`, screen: 'shipments', entityId: shipment.id, dedupeKey: `delivered:${shipment.id}` });

@@ -261,6 +261,12 @@ export class LorrigoAdapter implements CourierAdapter {
     return { id: firstString(order, ['shipment.id']), awb: firstString(order, ['shipment.awb']), routing: findByKey(shipment, /^(routing(_?code)?|sort_?code|destination_?code|dest_?code)$/i) };
   }
 
+  /** GET /shipments/:id carries the courier's own routing code (the value Lorrigo prints on its label). Never invented: null when Lorrigo has none. */
+  async routingCode(providerShipmentId: string): Promise<string | null> {
+    const s = await this.call('GET', `/shipments/${encodeURIComponent(providerShipmentId)}`).catch(() => null);
+    return firstString(s, ['routing_code', 'routingCode', 'data.routing_code', 'shipment.routing_code']) ?? findByKey(s, /^(routing(_?code)?|sort_?code)$/i);
+  }
+
   async book(request: CourierBookingRequest): Promise<CourierBookingResult> {
     const d = request.details; if (!d) throw new LorrigoError('Booking details are missing.', 502);
     this.deadline = Date.now() + 22_000;
@@ -294,7 +300,10 @@ export class LorrigoAdapter implements CourierAdapter {
       : await this.readShipment(order.id); // authoritative otherwise: it also holds the shipment id
     const awb = after.awb ?? firstString(shipment, ['awb', 'awb_number', 'awbNumber', 'shipment.awb', 'data.awb', 'data.shipment.awb']) ?? findByKey(shipment, /^(awb|awb_?number|waybill|tracking_?(number|id))$/i);
     if (!awb) throw new LorrigoError('Lorrigo did not return an AWB for this shipment. Check the shipment in the Lorrigo dashboard before booking again.', 502);
-    return result(awb, after.id ?? firstString(shipment, ['shipment.id', 'shipment_id', 'shipmentId', 'data.shipment.id']), after.routing);
+    const shipmentId = after.id ?? firstString(shipment, ['shipment.id', 'shipment_id', 'shipmentId', 'data.shipment.id']);
+    // The order record rarely has the routing code; the shipment record does. One extra call, best effort (the label can fetch it later).
+    const routing = after.routing ?? (shipmentId ? await this.routingCode(shipmentId).catch(() => null) : null);
+    return result(awb, shipmentId, routing);
   }
 
   // POST /ndr/action, verified live by validation errors: body { ndrId, actionType, comment }; ndrId is the AWB (a wrong one answers "Shipment not found for AWB"),

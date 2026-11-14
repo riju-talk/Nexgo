@@ -237,6 +237,22 @@ export const cancelShipment = async (p: ReturnType<typeof principal>, shipmentId
   return outcome;
 };
 
+/** Shipments booked before routing codes were stored (or whose booking answer had none): ask the aggregator once and remember the answer. Best effort, bounded to 6 s. */
+async function fillRoutingCodes(sellerId: string, shipmentIds: string[]): Promise<void> {
+  try {
+    const missing = await withSellerTransaction(sellerId, async (client) => (await client.query<{ id: string; psid: string; aggregator: string; code: string }>(
+      `SELECT s.id, s.provider_shipment_id AS psid, cp.aggregator, cp.code FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id
+       WHERE s.seller_id = $1 AND s.id = ANY($2::uuid[]) AND s.routing_code IS NULL AND s.provider_shipment_id IS NOT NULL AND cp.aggregator IS NOT NULL AND s.state <> 'cancelled' LIMIT 50`, [sellerId, shipmentIds])).rows);
+    if (!missing.length) return;
+    const found = await Promise.race([
+      Promise.all(missing.map(async (m) => ({ id: m.id, code: await courierAdapter(m.aggregator, m.code).routingCode?.(m.psid).catch(() => null) ?? null }))),
+      new Promise<{ id: string; code: string | null }[]>((resolve) => setTimeout(() => resolve([]), 6000)),
+    ]);
+    const hits = found.filter((f) => f.code);
+    if (hits.length) await withSellerTransaction(sellerId, async (client) => { for (const h of hits) await client.query('UPDATE shipments SET routing_code = $2 WHERE id = $1 AND seller_id = $3 AND routing_code IS NULL', [h.id, h.code, sellerId]); });
+  } catch (e) { console.error('routing code lookup failed', e); }
+}
+
 export async function shipmentRoutes(app: FastifyInstance) {
   // Seller shipment register: everything the Track page filters, groups and exports on, in one round trip.
   app.get('/v1/shipments', { preHandler: requireSeller }, async (request) => {
@@ -309,6 +325,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
     const p = principal(request);
     const { ids } = z.object({ ids: z.string().max(4000) }).parse(request.query);
     const shipmentIds = z.array(uuid).min(1).max(100).parse([...new Set(ids.split(',').map((v) => v.trim()).filter(Boolean))]);
+    await fillRoutingCodes(p.sellerId, shipmentIds); // before the transaction: courier calls must not hold the invoice lock
     return withSellerTransaction(p.sellerId, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`invoice:${p.sellerId}`]);
       await client.query(`UPDATE orders o SET invoice_seq = n.seq FROM (

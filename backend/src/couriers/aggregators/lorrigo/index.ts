@@ -18,6 +18,12 @@ const IGNORED = new Set(['NEW', 'PICKUP_SCHEDULED', 'OUT_FOR_PICKUP']);
 const normalize = (s: unknown) => String(s ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
 const safeEqual = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 
+// Any other RTO-prefixed status the aggregator may send (RTO_REACHED, RTO_UNDELIVERED ...) still means the parcel is returning.
+function rtoFallback(status: string): Mapped | undefined {
+  if (!/^RTO(_|$)/.test(status)) return undefined;
+  return /DELIVERED/.test(status) && !/UNDELIVERED/.test(status) ? { state: 'rto', rto: 'delivered' } : /OFD|OUT_FOR/.test(status) ? { state: 'rto', rto: 'out_for_delivery' } : { state: 'rto', rto: 'in_transit' };
+}
+
 type TrackingEvent = { status?: string; location?: string | null; description?: string | null; timestamp?: string };
 type Item = { awb?: string | number; status?: string; location?: string; description?: string; tracking_events?: TrackingEvent[] };
 
@@ -33,9 +39,10 @@ export function toUpdate(item: Item): NormalizedUpdate | null {
   if (!awb || awb.length > 64) return null;
   const events: NormalizedEvent[] = (Array.isArray(item.tracking_events) ? item.tracking_events : [])
     .map((e) => ({ e, status: normalize(e?.status), t: Date.parse(String(e?.timestamp ?? '')) }))
-    .filter((x) => STATUS[x.status] && Number.isFinite(x.t)).sort((a, b) => a.t - b.t)
-    .map((x) => ({ mapped: STATUS[x.status], at: new Date(x.t).toISOString(), location: x.e.location ?? null, description: x.e.description || x.status, eventId: createHash('sha1').update(`${awb}|${x.status}|${x.e.timestamp}`).digest('hex') }));
-  const topStatus = normalize(item.status); const top = STATUS[topStatus];
+    .map((x) => ({ ...x, m: STATUS[x.status] ?? rtoFallback(x.status) }))
+    .filter((x) => x.m && Number.isFinite(x.t)).sort((a, b) => a.t - b.t)
+    .map((x) => ({ mapped: x.m as Mapped, at: new Date(x.t).toISOString(), location: x.e.location ?? null, description: x.e.description || x.status, eventId: createHash('sha1').update(`${awb}|${x.status}|${x.e.timestamp}`).digest('hex') }));
+  const topStatus = normalize(item.status); const top = STATUS[topStatus] ?? rtoFallback(topStatus);
   const current: NormalizedEvent | undefined = top ? { mapped: top, at: new Date().toISOString(), location: item.location ?? null, description: item.description || topStatus, eventId: `status:${topStatus}` } : undefined;
   return { awb, raw: item, events, current, unmappedStatus: topStatus && !top && !IGNORED.has(topStatus) ? topStatus : undefined };
 }

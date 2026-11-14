@@ -31,8 +31,8 @@ export function labelRows(items, cfg = {}) {
 }
 
 // The courier's own routing / sort code when it gave one; otherwise the lane (origin city > destination city), so a label never goes out without routing.
-const code3 = (city) => String(city || '').replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase();
-export const routingOf = (d) => d.routing_code || [code3(d.wh_city), code3(d.customer_city)].filter(Boolean).join(' > ') || '';
+// The courier's own routing / sort code (from the aggregator). Never made up: blank when the courier gave none.
+export const routingOf = (d) => d.routing_code || '';
 
 // A sample shipment for previewing and downloading the invoice / label design from the settings pages.
 export const SAMPLE_DOC = {
