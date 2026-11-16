@@ -244,8 +244,11 @@ export async function analyticsRoutes(app: FastifyInstance) {
                 (SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)::int FROM (SELECT duration_ms FROM assign_batch_items WHERE state IN ('ok','failed') AND duration_ms IS NOT NULL ORDER BY finished_at DESC LIMIT 200) r) AS p95,
                 (EXTRACT(EPOCH FROM now() - min(b.created_at) FILTER (WHERE i.state = 'queued')))::int AS oldest
          FROM assign_batch_items i JOIN assign_batches b ON b.id = i.batch_id WHERE i.state IN ('queued','running')`);
+      // Weight disputes waiting for a decision (all sellers), with the extra freight claimed.
+      const wd = (await db.query<{ n: number; amount: string }>(`SELECT count(*)::int AS n, COALESCE(sum(additional_charge_paise),0)::bigint AS amount FROM weight_disputes WHERE status IN ('open','disputed')`)).rows[0];
       return {
-        ...data, activeSellers: sellers.rows[0].value, ndrOpen: ndr.rows[0].value, kycPending: kyc.rows[0].value, codPendingPaise: cod.totalPaise,
+        ...data, weightDisputes: { open: wd?.n ?? 0, amountPaise: Number(wd?.amount ?? 0) },
+        activeSellers: sellers.rows[0].value, ndrOpen: ndr.rows[0].value, kycPending: kyc.rows[0].value, codPendingPaise: cod.totalPaise,
         daily: daily.rows.map((r) => ({ day: r.day, prepaid: r.prepaid, cod: r.cod })),
         pickupPending: { total: pickupTotal.rows[0].total, missed: pickupTotal.rows[0].missed, sellers: pickups.rows.map((r) => ({ id: r.id, name: r.legal_name, code: r.nexgo_code, count: r.n, overdue: r.overdue, oldestHours: r.oldest_hours })) },
         recentSignups: signups.rows,

@@ -92,7 +92,7 @@ export default function AdminDashboard({ mobile, phone }) {
     ['NDR action queue', `${n(live.ndrOpen)} open case${live.ndrOpen === 1 ? '' : 's'}`, 'a-ndr', '#B23A2B', '!'],
     ['COD payouts', `${rupees(live.codPendingPaise)} still to pay out`, 'a-cod', '#315F93', '₹'],
     ['Seller onboarding', `${n(live.kycPending)} KYC review${live.kycPending === 1 ? '' : 's'} waiting`, 'a-kyc', '#1581bd', '◎'],
-    ['Weight disputes', 'Review courier claims', 'a-disputes', '#8A5A00', '◇'],
+    ['Weight disputes', `${n(live.weightDisputes?.open)} open dispute${live.weightDisputes?.open === 1 ? '' : 's'} · ${rupees(live.weightDisputes?.amountPaise)} claimed`, 'a-disputes', '#8A5A00', '◇'],
   ] : [];
   const statusRows = live ? Object.entries(live.pipeline || {}).filter(([k, v]) => STATUS_COLORS[k] && v > 0) : [];
   // Live stages describe right now; delivered, RTO, lost and cancelled describe the selected period. They are never added together.
