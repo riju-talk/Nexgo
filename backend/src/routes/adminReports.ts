@@ -15,19 +15,19 @@ type Report = {
 };
 
 const num = (v: unknown) => Number(v ?? 0);
-const DAYS = `generate_series(current_date-interval '29 days',current_date,interval '1 day')`;
+const DAYS = `generate_series(((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp,(now() AT TIME ZONE 'Asia/Kolkata')::date::timestamp,interval '1 day')`;
 
 export async function adminReportRoutes(app: FastifyInstance) {
   app.get('/v1/admin/reports/revenue', { preHandler: requirePlatformAdmin }, async (): Promise<Report> => {
     const [total, series, mix, sellers] = await Promise.all([
-      db.query(`SELECT COALESCE(sum(shipping_charge_paise),0) AS v FROM shipments WHERE state<>'cancelled' AND booked_at>=current_date-interval '29 days'`),
+      db.query(`SELECT COALESCE(sum(shipping_charge_paise),0) AS v FROM shipments WHERE state<>'cancelled' AND booked_at>=((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp AT TIME ZONE 'Asia/Kolkata'`),
       db.query(`SELECT to_char(d::date,'DD Mon') AS day,(SELECT COALESCE(sum(shipping_charge_paise),0) FROM shipments s WHERE s.state<>'cancelled' AND (s.booked_at AT TIME ZONE 'Asia/Kolkata')::date=d::date) AS v FROM ${DAYS} d ORDER BY d`),
       db.query(`SELECT
-        (SELECT COALESCE(sum(subtotal_paise),0) FROM invoices WHERE status='issued' AND issued_at>=current_date-interval '29 days') AS invoiced,
-        (SELECT COALESCE(sum(gst_paise),0) FROM invoices WHERE status='issued' AND issued_at>=current_date-interval '29 days') AS gst,
-        (SELECT COALESCE(sum(amount_paise),0) FROM wallet_entries WHERE entry_type='credit' AND reference_type='wallet_recharge' AND created_at>=current_date-interval '29 days') AS recharged,
-        (SELECT count(*) FROM shipments WHERE state<>'cancelled' AND booked_at>=current_date-interval '29 days') AS shipments`),
-      db.query(`SELECT s.legal_name,count(*)::int AS shipments,COALESCE(sum(sh.shipping_charge_paise),0) AS v FROM shipments sh JOIN sellers s ON s.id=sh.seller_id WHERE sh.state<>'cancelled' AND sh.booked_at>=current_date-interval '29 days' GROUP BY s.legal_name ORDER BY v DESC LIMIT 15`),
+        (SELECT COALESCE(sum(subtotal_paise),0) FROM invoices WHERE status='issued' AND issued_at>=(((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp AT TIME ZONE 'Asia/Kolkata')) AS invoiced,
+        (SELECT COALESCE(sum(gst_paise),0) FROM invoices WHERE status='issued' AND issued_at>=(((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp AT TIME ZONE 'Asia/Kolkata')) AS gst,
+        (SELECT COALESCE(sum(amount_paise),0) FROM wallet_entries WHERE entry_type='credit' AND reference_type='wallet_recharge' AND created_at>=(((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp AT TIME ZONE 'Asia/Kolkata')) AS recharged,
+        (SELECT count(*) FROM shipments WHERE state<>'cancelled' AND booked_at>=((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp AT TIME ZONE 'Asia/Kolkata') AS shipments`),
+      db.query(`SELECT s.legal_name,count(*)::int AS shipments,COALESCE(sum(sh.shipping_charge_paise),0) AS v FROM shipments sh JOIN sellers s ON s.id=sh.seller_id WHERE sh.state<>'cancelled' AND sh.booked_at>=((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp AT TIME ZONE 'Asia/Kolkata' GROUP BY s.legal_name ORDER BY v DESC LIMIT 15`),
     ]);
     const m = mix.rows[0];
     return {
@@ -51,16 +51,16 @@ export async function adminReportRoutes(app: FastifyInstance) {
         count(*) FILTER (WHERE state='delivered' AND promised_delivery_at IS NOT NULL AND delivered_at<=promised_delivery_at)::int AS on_time,
         count(*) FILTER (WHERE pickup_deadline_at IS NOT NULL AND pickup_completed_at IS NOT NULL)::int AS pickups,
         count(*) FILTER (WHERE pickup_deadline_at IS NOT NULL AND pickup_completed_at<=pickup_deadline_at)::int AS pickups_ok,
-        count(*) FILTER (WHERE state='rto')::int AS rto, count(*) FILTER (WHERE state<>'cancelled')::int AS total
-        FROM shipments WHERE booked_at>=current_date-interval '29 days'`),
+        count(*) FILTER (WHERE state IN ('rto','rto_in_transit'))::int AS rto, count(*) FILTER (WHERE state<>'cancelled')::int AS total
+        FROM shipments WHERE booked_at>=((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp AT TIME ZONE 'Asia/Kolkata'`),
       db.query(`SELECT to_char(d::date,'DD Mon') AS day,
         COALESCE(round(100.0*count(*) FILTER (WHERE s.delivered_at<=s.promised_delivery_at)/NULLIF(count(*),0),1),0) AS v
         FROM ${DAYS} d LEFT JOIN shipments s ON s.state='delivered' AND s.promised_delivery_at IS NOT NULL AND (s.delivered_at AT TIME ZONE 'Asia/Kolkata')::date=d::date GROUP BY d ORDER BY d`),
       db.query(`SELECT cp.name,count(*)::int AS total,
         count(*) FILTER (WHERE s.state='delivered')::int AS delivered,
         COALESCE(round(100.0*count(*) FILTER (WHERE s.state='delivered' AND s.promised_delivery_at IS NOT NULL AND s.delivered_at<=s.promised_delivery_at)/NULLIF(count(*) FILTER (WHERE s.state='delivered' AND s.promised_delivery_at IS NOT NULL),0),1),0) AS on_time,
-        COALESCE(round(100.0*count(*) FILTER (WHERE s.state='rto')/NULLIF(count(*),0),1),0) AS rto
-        FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.state<>'cancelled' AND s.booked_at>=current_date-interval '29 days' GROUP BY cp.name ORDER BY total DESC`),
+        COALESCE(round(100.0*count(*) FILTER (WHERE s.state IN ('rto','rto_in_transit'))/NULLIF(count(*),0),1),0) AS rto
+        FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.state<>'cancelled' AND s.booked_at>=((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp AT TIME ZONE 'Asia/Kolkata' GROUP BY cp.name ORDER BY total DESC`),
     ]);
     const o = overall.rows[0]; const pct = (a: unknown, b: unknown) => (num(b) ? +((100 * num(a)) / num(b)).toFixed(1) : 0);
     return {
@@ -83,7 +83,7 @@ export async function adminReportRoutes(app: FastifyInstance) {
         COALESCE(round(100.0*count(*) FILTER (WHERE s.state='ndr')/NULLIF(count(*),0),1),0) AS ndr_rate,
         COALESCE(round(avg(EXTRACT(epoch FROM (s.delivered_at-s.booked_at))/86400) FILTER (WHERE s.delivered_at IS NOT NULL)::numeric,1),0) AS avg_days,
         COALESCE(round(avg(s.shipping_charge_paise)),0) AS avg_charge
-        FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.state<>'cancelled' AND s.booked_at>=current_date-interval '29 days' GROUP BY cp.name ORDER BY total DESC`),
+        FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.state<>'cancelled' AND s.booked_at>=((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp AT TIME ZONE 'Asia/Kolkata' GROUP BY cp.name ORDER BY total DESC`),
       db.query(`SELECT to_char(d::date,'DD Mon') AS day,(SELECT count(*) FROM shipments s WHERE s.state<>'cancelled' AND (s.booked_at AT TIME ZONE 'Asia/Kolkata')::date=d::date) AS v FROM ${DAYS} d ORDER BY d`),
     ]);
     const rows = couriers.rows;
@@ -106,10 +106,10 @@ export async function adminReportRoutes(app: FastifyInstance) {
     const [totals, series, sellers] = await Promise.all([
       db.query(`SELECT COALESCE(sum(subtotal_paise),0) AS taxable,COALESCE(sum(gst_paise),0) AS gst,count(*)::int AS invoices,
         (SELECT count(*) FROM sellers s LEFT JOIN seller_kyc k ON k.seller_id=s.id WHERE s.state='active' AND k.gstin IS NULL)::int AS missing_gstin
-        FROM invoices WHERE status='issued' AND issued_at>=current_date-interval '29 days'`),
+        FROM invoices WHERE status='issued' AND issued_at>=(((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp AT TIME ZONE 'Asia/Kolkata')`),
       db.query(`SELECT to_char(d::date,'DD Mon') AS day,(SELECT COALESCE(sum(gst_paise),0) FROM invoices i WHERE i.status='issued' AND (i.issued_at AT TIME ZONE 'Asia/Kolkata')::date=d::date) AS v FROM ${DAYS} d ORDER BY d`),
       db.query(`SELECT s.legal_name,COALESCE(k.gstin,'') AS gstin,count(*)::int AS invoices,sum(i.subtotal_paise) AS taxable,sum(i.gst_paise) AS gst
-        FROM invoices i JOIN sellers s ON s.id=i.seller_id LEFT JOIN seller_kyc k ON k.seller_id=s.id WHERE i.status='issued' AND i.issued_at>=current_date-interval '29 days' GROUP BY s.legal_name,k.gstin ORDER BY taxable DESC LIMIT 50`),
+        FROM invoices i JOIN sellers s ON s.id=i.seller_id LEFT JOIN seller_kyc k ON k.seller_id=s.id WHERE i.status='issued' AND i.issued_at>=(((now() AT TIME ZONE 'Asia/Kolkata')::date-29)::timestamp AT TIME ZONE 'Asia/Kolkata') GROUP BY s.legal_name,k.gstin ORDER BY taxable DESC LIMIT 50`),
     ]);
     const t = totals.rows[0];
     return {

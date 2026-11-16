@@ -291,20 +291,21 @@ export async function adminSellerProfileRoutes(app: FastifyInstance) {
   app.get('/v1/admin/sellers/:sellerId/performance', { preHandler: requirePlatformAdmin }, async (request) => {
     const sellerId = sellerParam(request);
     const q = range.parse(request.query);
-    const result = await db.query<{ packets: number; delivered: number; rto: number; ndr: number; in_transit: number; cancelled: number }>(
+    const result = await db.query<{ packets: number; delivered: number; rto: number; lost: number; ndr: number; in_transit: number; cancelled: number }>(
       `SELECT count(*) FILTER (WHERE state <> 'cancelled')::int AS packets,
               count(*) FILTER (WHERE state = 'delivered')::int AS delivered,
-              count(*) FILTER (WHERE state = 'rto')::int AS rto,
+              count(*) FILTER (WHERE state IN ('rto','rto_in_transit'))::int AS rto, count(*) FILTER (WHERE state = 'lost')::int AS lost,
               count(*) FILTER (WHERE state = 'ndr')::int AS ndr,
-              count(*) FILTER (WHERE state IN ('booked','in_transit','out_for_delivery'))::int AS in_transit,
+              count(*) FILTER (WHERE state IN ('in_transit','out_for_delivery'))::int AS in_transit,
               count(*) FILTER (WHERE state = 'cancelled')::int AS cancelled
        FROM shipments WHERE seller_id = $1
          AND ($2::date IS NULL OR (created_at AT TIME ZONE 'Asia/Kolkata')::date >= $2)
          AND ($3::date IS NULL OR (created_at AT TIME ZONE 'Asia/Kolkata')::date <= $3)`,
       [sellerId, q.from ?? null, q.to ?? null]);
     const r = result.rows[0];
-    // Delivery % = delivered / packets booked (cancelled excluded) in the booking-date window.
-    return { ...r, deliveryPercent: r.packets ? Math.round((r.delivered / r.packets) * 1000) / 10 : 0 };
+    // Delivery % = delivered / finished parcels (delivered + returned + lost), the same rule as the dashboards; cancelled never counts.
+    const finished = r.delivered + r.rto + r.lost;
+    return { ...r, deliveryPercent: finished ? Math.round((r.delivered / finished) * 1000) / 10 : 0 };
   });
 
   // Profit = Σ (rate given to the seller − rate got from the courier) over packets in the window.
