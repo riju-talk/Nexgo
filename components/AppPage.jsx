@@ -93,6 +93,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
   const isCodConfirmation = id === 'notifications';
   const isInvoiceSettings = id === 'inv-settings';
   const isEmailScheduler = id === 'email-reports';
+  const isWebhook = id === 'webhook';
   const isNotifyChannels = id === 'wa-api' || id === 'sms-api';
   const isCustomSetting = isTeamRoles || isCodConfirmation || isInvoiceSettings || isEmailScheduler || isNotifyChannels;
   const isAdminAudit = id === 'a-audit';
@@ -150,6 +151,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isLiveSellerSecurity && <LiveSellerSecurity mobile={mobile} />}
         {isLiveShipmentDetail && <LiveShipmentDetail mobile={mobile} />}
         {isLiveSellerWorkspace && <LiveSellerWorkspace activeId={id} mobile={mobile} />}
+        {isWebhook && <ComingSoon mobile={mobile} name="Webhooks" blurb="Sending shipment events to your own server is not available yet." />}
         {isTeamRoles && <LiveTeamRoles mobile={mobile} />}
         {isCodConfirmation && <LiveCodConfirmation mobile={mobile} />}
         {isInvoiceSettings && <LiveInvoiceSettings mobile={mobile} />}
@@ -159,7 +161,7 @@ export default function AppPage({ id, isDashboard = false, sellerId }) {
         {isAdminAudit && <AdminAuditTrail mobile={mobile} />}
         {isLiveAdminReport && <LiveAdminReports activeId={id} mobile={mobile} />}
         {isLiveWorkspaceTool && <LiveWorkspaceTools activeId={id} mobile={mobile} />}
-        {hasForm && !isNew && !isWeight && !isWarehouse && !isRateCalc && !isPincode && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isCustomSetting && <FormPage activeId={id} mobile={mobile} phone={phone} />}
+        {hasForm && !isNew && !isWeight && !isWarehouse && !isRateCalc && !isPincode && !isCreateOrder && !isComingSoon && !isLiveCreateOrder && !isLiveMarketing && !isLiveSellerSecurity && !isLiveSellerWorkspace && !isLiveWorkspaceTool && !isCustomSetting && !isLiveShipmentDetail && !isWebhook && <FormPage activeId={id} mobile={mobile} phone={phone} />}
         {isAccountConfig && <AccountConfiguration mobile={mobile} phone={phone} />}
       </PageContainer>
     </>

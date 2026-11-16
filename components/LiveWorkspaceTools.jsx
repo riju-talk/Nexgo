@@ -94,11 +94,11 @@ function Reports({ activeId, mobile }) {
 const TICKET_CATEGORIES = ['Delivery Issue', 'Pickup Issue', 'Damage', 'Lost', 'RTO (Return to Origin)', 'COD Issue', 'Other'];
 function Tickets({ admin, mobile }) {
   const { showToast } = useAppState();
-  const [items, setItems] = useState([]); const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false);
+  const [items, setItems] = useState([]); const [tStats, setTStats] = useState(null); const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false);
   const blank = { subject: '', category: '', message: '', priority: 'normal' };
   const [f, setF] = useState(blank);
   const [viewing, setViewing] = useState(null);
-  const load = useCallback(() => (admin ? adminApi.auditEvents().then(() => apiFetch('/v1/admin/tickets')) : apiFetch('/v1/tickets')).then((x) => setItems(x.items || [])), [admin]);
+  const load = useCallback(() => (admin ? adminApi.auditEvents().then(() => apiFetch('/v1/admin/tickets')) : apiFetch('/v1/tickets')).then((x) => { setItems(x.items || []); setTStats(x.stats || null); }), [admin]);
   useEffect(() => { load().catch(() => setItems([])); }, [load]);
   const create = async (e) => {
     e.preventDefault(); setBusy(true);
@@ -107,10 +107,8 @@ function Tickets({ admin, mobile }) {
     finally { setBusy(false); }
   };
   const update = async (r, state) => { try { await apiFetch(`/v1/admin/tickets/${r.id}`, { method: 'PATCH', body: { state, resolutionNote: state === 'resolved' ? 'Resolved from admin operations' : 'In review' } }); showToast('Ticket updated'); load(); } catch (err) { showToast(err.message || 'Ticket could not be updated', 'error'); } };
-  const today = new Date().toDateString();
-  const active = items.filter((r) => ['open', 'in_progress'].includes(r.state)).length;
-  const resolved = items.filter((r) => ['resolved', 'closed'].includes(r.state)).length;
-  const stats = [['Total tickets', items.length], ['Active tickets', active], ['SLA breached', 0], ['Resolved', resolved], ['Awaiting response', items.filter((r) => r.state === 'open').length], ['Created today', items.filter((r) => new Date(r.created_at).toDateString() === today).length]];
+  // Exact figures from the server (the list below shows only the newest tickets).
+  const stats = [['Total tickets', tStats?.total ?? items.length], ['Active tickets', tStats?.active ?? 0], ['SLA breached', tStats?.sla_breached ?? 0], ['Resolved', tStats?.resolved ?? 0], ['Awaiting response', tStats?.awaiting ?? 0], ['Created today', tStats?.today ?? 0]];
   const label = { display: 'block', color: T.TEXT_LABEL, fontSize: 12.5, fontWeight: 700 };
   return (
     <main style={{ padding: mobile ? '14px 12px 42px' : '18px 28px 48px', maxWidth: '100%' }}>
