@@ -70,7 +70,8 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
   // require a second, different approver here later without a schema change.
   app.post('/v1/admin/cod-remittances/:cycleId/remit', { preHandler: [requirePlatformAdmin, requireFinanceAdmin] }, async (request, reply) => {
     const cycleId = z.string().uuid().parse((request.params as { cycleId: string }).cycleId);
-    const { bankReference } = z.object({ bankReference: z.string().trim().min(3).max(120) }).parse(request.body);
+    // walletDeductionPaise is optional: omitted = recover the whole negative balance (up to the COD amount); a number = recover exactly that much.
+    const { bankReference, walletDeductionPaise } = z.object({ bankReference: z.string().trim().min(3).max(120), walletDeductionPaise: z.coerce.number().int().min(0).optional() }).parse(request.body);
     const outcome = await withTransaction(async (client) => {
       const cycle = await client.query<{ id: string; seller_id: string; status: string; net_remitted_paise: string; due_date: string | null; overdue: boolean }>(
         'SELECT id, seller_id, status, net_remitted_paise, due_date::text, (due_date IS NULL OR due_date <= current_date) AS overdue FROM cod_remittance_cycles WHERE id=$1 FOR UPDATE', [cycleId]);
@@ -82,7 +83,9 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${c.seller_id}`]);
       const wallet = await client.query<{ balance: string }>(`SELECT COALESCE(SUM(CASE WHEN entry_type IN ('credit','release') THEN amount_paise WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END),0)::bigint AS balance FROM wallet_entries WHERE seller_id=$1`, [c.seller_id]);
       const balance = BigInt(wallet.rows[0].balance); const net = BigInt(c.net_remitted_paise);
-      const offset = balance < 0n ? (-balance < net ? -balance : net) : 0n;
+      const maxOffset = balance < 0n ? (-balance < net ? -balance : net) : 0n;
+      if (walletDeductionPaise !== undefined && BigInt(walletDeductionPaise) > maxOffset) return { error: `DEDUCTION_TOO_HIGH_MAX_${maxOffset}`, status: 409 } as { error: string; status: number };
+      const offset = walletDeductionPaise !== undefined ? BigInt(walletDeductionPaise) : maxOffset;
       if (offset > 0n) {
         await client.query(`INSERT INTO wallet_entries (seller_id, entry_type, amount_paise, reference_type, reference_id, idempotency_key, description) VALUES ($1,'credit',$2,'cod_remittance',$3,$4,'Negative wallet balance recovered from COD remittance') ON CONFLICT DO NOTHING`, [c.seller_id, offset.toString(), cycleId, `cod-offset:${cycleId}`]);
       }
@@ -110,7 +113,9 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
   app.get('/v1/admin/cod-remittances', { preHandler: requirePlatformAdmin }, async (request) => {
     const q = z.object({ sellerId: z.string().uuid().optional(), status: z.enum(['pending', 'approved', 'remitted']).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0) }).parse(request.query);
     const result = await db.query(
-      `SELECT c.*, s.legal_name AS seller_name FROM cod_remittance_cycles c JOIN sellers s ON s.id = c.seller_id
+      `SELECT c.*, s.legal_name AS seller_name,
+              (SELECT COALESCE(SUM(CASE WHEN w.entry_type IN ('credit','release') THEN w.amount_paise WHEN w.entry_type IN ('debit','hold') THEN -w.amount_paise ELSE w.amount_paise END),0)::bigint FROM wallet_entries w WHERE w.seller_id = c.seller_id) AS wallet_balance_paise
+         FROM cod_remittance_cycles c JOIN sellers s ON s.id = c.seller_id
        WHERE ($1::uuid IS NULL OR c.seller_id = $1) AND ($2::cod_remittance_status IS NULL OR c.status = $2)
        ORDER BY c.created_at DESC, c.id DESC LIMIT $3 OFFSET $4`,
       [q.sellerId ?? null, q.status ?? null, q.limit + 1, q.offset],
