@@ -31,6 +31,8 @@ export const pickupPendingSql = (a = '') => `${a}state IN ${PICKUP_STATES} AND $
 /** Pickup missed: pickup pending past its deadline (24 hours from booking unless it was rescheduled). */
 export const pickupMissedSql = (a = '') => `${pickupPendingSql(a)} AND COALESCE(${a}pickup_deadline_at, ${a}booked_at + interval '24 hours') < now()`;
 
+import { summarizeDue, unpaidItems } from './codCycles.js';
+
 type Db = Pool | PoolClient;
 
 /**
@@ -38,21 +40,11 @@ type Db = Pool | PoolClient;
  * The COD page, the dashboard and the admin screens all read this one function.
  */
 export async function codPending(client: Db, sellerId?: string) {
-  const scope = sellerId ? 'AND seller_id = $1' : '';
-  const args = sellerId ? [sellerId] : [];
-  const [cycles, uncycled, next] = await Promise.all([
-    client.query<{ v: string }>(`SELECT COALESCE(sum(net_remitted_paise),0)::bigint AS v FROM cod_remittance_cycles WHERE status IN ('pending','approved') ${scope}`, args),
-    client.query<{ v: string }>(
-      `SELECT COALESCE(sum(o.cod_amount_paise - s.shipping_charge_paise),0)::bigint AS v
-       FROM shipments s JOIN orders o ON o.id = s.order_id
-       WHERE s.state = 'delivered' AND o.payment_mode = 'cod' ${sellerId ? 'AND s.seller_id = $1' : ''}
-         AND NOT EXISTS (SELECT 1 FROM cod_remittance_cycles c WHERE c.seller_id = s.seller_id AND COALESCE(s.delivered_at, s.booked_at)::date BETWEEN c.cycle_start AND c.cycle_end)`, args),
-    sellerId
-      ? client.query<{ net: string; due_date: string | null }>(`SELECT net_remitted_paise::text AS net, due_date::text FROM cod_remittance_cycles WHERE seller_id = $1 AND status IN ('pending','approved') ORDER BY due_date NULLS LAST, cycle_end LIMIT 1`, [sellerId])
-      : Promise.resolve({ rows: [] as { net: string; due_date: string | null }[] }),
-  ]);
-  const cyclesNet = Number(cycles.rows[0].v); const uncycledNet = Math.max(0, Number(uncycled.rows[0].v));
-  return { cyclesNetPaise: cyclesNet, uncycledNetPaise: uncycledNet, totalPaise: cyclesNet + uncycledNet, nextExpectedPaise: next.rows[0] ? Number(next.rows[0].net) : 0, nextExpectedDate: next.rows[0]?.due_date ?? null };
+  // The rules live in lib/codCycles.ts (D+N, linked cycles, freight rule).
+  const items = await unpaidItems(client, sellerId);
+  const sum = summarizeDue(items);
+  const cyclesNet = items.filter((i) => i.kind === 'cycle').reduce((a, i) => a + i.netPaise, 0);
+  return { cyclesNetPaise: cyclesNet, uncycledNetPaise: sum.totalPaise - cyclesNet, totalPaise: sum.totalPaise, dueNowPaise: sum.dueNowPaise, nextExpectedPaise: sum.nextPaise, nextExpectedDate: sum.nextDate };
 }
 
 // ---- a small shared cache: one computation serves every open tab; a change by the owner clears it at once ----

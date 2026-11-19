@@ -6,6 +6,7 @@ import { requireAccountAdmin, requireFinanceAdmin, requirePlatformAdmin } from '
 import { requireSeller } from './seller.js';
 import { notify } from '../lib/notify.js';
 import { invalidateMetrics } from '../lib/metrics.js';
+import { codFreightSql, deliveredDaySql } from '../lib/codCycles.js';
 
 function principal(request: FastifyRequest) {
   if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
@@ -21,36 +22,26 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
     const cycle = await withTransaction(async (client) => {
       // Serialise per seller so two overlapping cycles can never be generated concurrently.
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`cod:${input.sellerId}`]);
-      const overlap = await client.query('SELECT 1 FROM cod_remittance_cycles WHERE seller_id=$1 AND cycle_start<=$3::date AND cycle_end>=$2::date LIMIT 1', [input.sellerId, input.cycleStart, input.cycleEnd]);
-      if (overlap.rows[0]) throw Object.assign(new Error('This period overlaps an existing COD remittance cycle for the seller'), { statusCode: 409 });
-      // COD is owed once the parcel is delivered, so cycles are cut on delivery date (booking date for legacy rows without one).
-      const totals = await client.query<{ shipment_count: string; cod_collected: string; charges_deducted: string }>(
-        `SELECT count(*)::int AS shipment_count, COALESCE(SUM(o.cod_amount_paise),0)::bigint AS cod_collected,
-                COALESCE(SUM(sh.shipping_charge_paise),0)::bigint AS charges_deducted
+      // Parcels in the chosen delivery days that are not in any cycle yet (each parcel is paid exactly once).
+      const rows = await client.query<{ id: string; day: string; cod: string; freight: string }>(
+        `SELECT sh.id, ${deliveredDaySql('sh.')}::text AS day, o.cod_amount_paise::text AS cod, LEAST(${codFreightSql('sh.')}, o.cod_amount_paise)::text AS freight
          FROM shipments sh JOIN orders o ON o.id = sh.order_id
-         WHERE sh.seller_id = $1 AND sh.state = 'delivered' AND o.payment_mode = 'cod'
-           AND COALESCE(sh.delivered_at, sh.booked_at)::date BETWEEN $2 AND $3`,
-        [input.sellerId, input.cycleStart, input.cycleEnd],
-      );
-      const row = totals.rows[0];
-      if (Number(row.shipment_count) === 0) throw Object.assign(new Error('No delivered COD shipments in this period'), { statusCode: 422 });
-      if (BigInt(row.charges_deducted) > BigInt(row.cod_collected)) throw Object.assign(new Error('Shipping charges exceed the COD collected for this period; settle the difference through the wallet first'), { statusCode: 422 });
-      // D+N: D is the delivery date. The cycle is payable N days after its latest delivery (N = the seller's remittance_days).
-      const due = await client.query<{ due: string }>(
-        `SELECT (max(COALESCE(sh.delivered_at, sh.booked_at)::date) + (SELECT remittance_days FROM sellers WHERE id = $1)::int)::text AS due
-         FROM shipments sh JOIN orders o ON o.id = sh.order_id
-         WHERE sh.seller_id = $1 AND sh.state = 'delivered' AND o.payment_mode = 'cod' AND COALESCE(sh.delivered_at, sh.booked_at)::date BETWEEN $2 AND $3`,
-        [input.sellerId, input.cycleStart, input.cycleEnd],
-      );
+         WHERE sh.seller_id = $1 AND sh.state = 'delivered' AND o.payment_mode = 'cod' AND sh.cod_cycle_id IS NULL AND ${deliveredDaySql('sh.')} BETWEEN $2 AND $3 FOR UPDATE OF sh`,
+        [input.sellerId, input.cycleStart, input.cycleEnd]);
+      if (!rows.rows.length) throw Object.assign(new Error('No unsettled delivered COD shipments in this period'), { statusCode: 422 });
+      const cod = rows.rows.reduce((a, r) => a + BigInt(r.cod), 0n); const freight = rows.rows.reduce((a, r) => a + BigInt(r.freight), 0n);
+      const lastDay = rows.rows.map((r) => r.day).sort().pop()!;
+      const n = (await client.query<{ n: number }>('SELECT remittance_days AS n FROM sellers WHERE id = $1', [input.sellerId])).rows[0].n;
       const result = await client.query(
         `INSERT INTO cod_remittance_cycles (seller_id, cycle_start, cycle_end, shipment_count, cod_collected_paise, charges_deducted_paise, net_remitted_paise, due_date)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [input.sellerId, input.cycleStart, input.cycleEnd, row.shipment_count, row.cod_collected, row.charges_deducted, BigInt(row.cod_collected) - BigInt(row.charges_deducted), due.rows[0]?.due ?? null],
+         VALUES ($1,$2,$3,$4,$5,$6,$7,($8::date + $9::int)) RETURNING *`,
+        [input.sellerId, input.cycleStart, input.cycleEnd, rows.rows.length, cod.toString(), freight.toString(), (cod - freight).toString(), lastDay, n],
       );
+      await client.query('UPDATE shipments SET cod_cycle_id = $1 WHERE id = ANY($2::uuid[])', [result.rows[0].id, rows.rows.map((r) => r.id)]);
       await client.query(
         `INSERT INTO audit_events (seller_id, actor_user_id, action, target_type, target_id, request_id, metadata)
          VALUES ($1,$2,'cod_remittance.generated','cod_remittance_cycle',$3,$4,$5)`,
-        [input.sellerId, request.adminPrincipal!.userId, result.rows[0].id, request.id, JSON.stringify({ shipmentCount: row.shipment_count })],
+        [input.sellerId, request.adminPrincipal!.userId, result.rows[0].id, request.id, JSON.stringify({ shipmentCount: rows.rows.length })],
       );
       return result.rows[0];
     });
@@ -143,8 +134,8 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
       const lines = (await client.query(
         `SELECT sh.awb, COALESCE(sh.delivered_at, sh.booked_at) AS delivered_on, o.order_number, c.full_name AS customer_name, cp.name AS courier_name, o.cod_amount_paise, sh.shipping_charge_paise
            FROM shipments sh JOIN orders o ON o.id=sh.order_id JOIN customers c ON c.id=o.customer_id JOIN courier_providers cp ON cp.id=sh.provider_id
-          WHERE sh.seller_id=$1 AND sh.state='delivered' AND o.payment_mode='cod' AND COALESCE(sh.delivered_at, sh.booked_at)::date BETWEEN $2 AND $3
-          ORDER BY COALESCE(sh.delivered_at, sh.booked_at), sh.awb LIMIT 20000`, [p.sellerId, cycle.cycle_start, cycle.cycle_end])).rows;
+          WHERE sh.seller_id=$1 AND sh.cod_cycle_id=$2
+          ORDER BY COALESCE(sh.delivered_at, sh.booked_at), sh.awb LIMIT 20000`, [p.sellerId, cycleId])).rows;
       return { cycle, lines };
     });
   });

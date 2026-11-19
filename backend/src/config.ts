@@ -67,6 +67,7 @@ const schema = z.object({
 
   // --- Object storage (S3-compatible; the AWS SDK also reads AWS_* itself) ---
   STORAGE_ENABLED: bool(false),
+  COD_DEDUCT_FREIGHT: bool(false), // false = freight was already paid from the wallet at booking, so COD is paid out in full; true = freight is also taken out of the COD payout
   ENFORCE_KYC_GATE: bool(false), // true = KYC submitted before orders and KYC verified before shipping (off while sellers are being onboarded)
   STORAGE_BUCKET: z.string().min(3).default('assets'),
   AWS_REGION: z.string().optional(),

@@ -25,3 +25,13 @@ export function verifyRazorpayWebhookSignature(rawBody: string, signature: strin
   const received = Buffer.from(signature, 'hex');
   return received.length === expected.length && timingSafeEqual(received, expected);
 }
+
+export function razorpayConfigured(): boolean { return !!(config.RAZORPAY_KEY_ID && config.RAZORPAY_KEY_SECRET); }
+
+/** Checkout success signature: HMAC-SHA256(order_id|payment_id) with the API key secret (not the webhook secret). */
+export function verifyRazorpayPaymentSignature(orderId: string, paymentId: string, signature: string): boolean {
+  if (!config.RAZORPAY_KEY_SECRET || !/^[0-9a-f]+$/i.test(signature)) return false;
+  const expected = Buffer.from(createHmac('sha256', config.RAZORPAY_KEY_SECRET).update(`${orderId}|${paymentId}`).digest('hex'), 'hex');
+  const received = Buffer.from(signature, 'hex');
+  return received.length === expected.length && timingSafeEqual(received, expected);
+}

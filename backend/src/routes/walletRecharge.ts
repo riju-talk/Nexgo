@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { withSellerTransaction, withTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
-import { createRazorpayOrder, verifyRazorpayWebhookSignature } from '../lib/razorpay.js';
+import { createRazorpayOrder, razorpayConfigured, verifyRazorpayPaymentSignature, verifyRazorpayWebhookSignature } from '../lib/razorpay.js';
 import { requireSeller } from './seller.js';
 
 function principal(request: FastifyRequest) {
@@ -16,6 +16,26 @@ const razorpayEvent = z.object({
   event: z.string(),
   payload: z.object({ payment: z.object({ entity: z.object({ id: z.string(), order_id: z.string(), status: z.string() }) }) }),
 });
+
+
+// Credits a recharge exactly once, whichever arrives first: the browser's verified checkout result or Razorpay's webhook.
+async function creditRecharge(orderId: string, paymentId: string, requestId: string): Promise<{ matched: boolean; duplicate?: boolean }> {
+  return withTransaction(async (client) => {
+    const recharge = await client.query<{ id: string; seller_id: string; amount_paise: string; status: string }>(
+      'SELECT id, seller_id, amount_paise, status FROM wallet_recharges WHERE provider_order_id = $1 FOR UPDATE', [orderId]);
+    if (!recharge.rows[0]) return { matched: false };
+    if (recharge.rows[0].status === 'succeeded') return { matched: true, duplicate: true };
+    await client.query("SELECT set_config('app.seller_id', $1, true)", [recharge.rows[0].seller_id]);
+    await client.query("UPDATE wallet_recharges SET status='succeeded', provider_payment_id=$1, completed_at=now() WHERE id=$2", [paymentId, recharge.rows[0].id]);
+    await client.query(
+      `INSERT INTO wallet_entries (seller_id, entry_type, amount_paise, reference_type, reference_id, idempotency_key, description)
+       VALUES ($1,'credit',$2,'wallet_recharge',$3,$4,'Wallet recharge via Razorpay')
+       ON CONFLICT (seller_id, idempotency_key) DO NOTHING`,
+      [recharge.rows[0].seller_id, recharge.rows[0].amount_paise, recharge.rows[0].id, `recharge:${recharge.rows[0].id}`]);
+    await audit(client, { sellerId: recharge.rows[0].seller_id, action: 'wallet.recharge_succeeded', targetType: 'wallet_recharge', targetId: recharge.rows[0].id, requestId, metadata: { providerPaymentId: paymentId } });
+    return { matched: true, duplicate: false };
+  });
+}
 
 export async function walletRechargeRoutes(app: FastifyInstance) {
   app.post('/v1/wallet/recharge', { preHandler: requireSeller }, async (request, reply) => {
@@ -31,6 +51,20 @@ export async function walletRechargeRoutes(app: FastifyInstance) {
       return result.rows[0];
     });
     return reply.code(201).send({ rechargeId: row.id, providerOrderId: order.id, amountPaise: order.amountPaise, currency: order.currency, keyId: order.keyId });
+  });
+
+  // Lets the page show a clear state before the seller types an amount.
+  app.get('/v1/wallet/recharge/config', { preHandler: requireSeller }, async () => ({ enabled: razorpayConfigured() }));
+
+  // Called by the browser after Razorpay Checkout succeeds: the signature proves the payment, the wallet is credited at once (the webhook is the backup and cannot double-credit).
+  app.post('/v1/wallet/recharge/verify', { preHandler: requireSeller }, async (request, reply) => {
+    const input = z.object({ orderId: z.string().min(5).max(80), paymentId: z.string().min(5).max(80), signature: z.string().min(20).max(200) }).parse(request.body);
+    const p = principal(request);
+    if (!verifyRazorpayPaymentSignature(input.orderId, input.paymentId, input.signature)) return reply.code(400).send({ error: 'INVALID_PAYMENT_SIGNATURE', message: 'The payment could not be verified. If money was deducted it will be credited automatically.' });
+    const own = await withSellerTransaction(p.sellerId, (client) => client.query('SELECT 1 FROM wallet_recharges WHERE provider_order_id = $1 AND seller_id = $2', [input.orderId, p.sellerId]));
+    if (!own.rows[0]) return reply.code(404).send({ error: 'RECHARGE_NOT_FOUND' });
+    const result = await creditRecharge(input.orderId, input.paymentId, request.id);
+    return { credited: true, duplicate: result.duplicate ?? false };
   });
 
   app.get('/v1/wallet/recharges', { preHandler: requireSeller }, async (request) => {
@@ -61,24 +95,7 @@ export async function walletRechargeRoutes(app: FastifyInstance) {
       ['razorpay:' + payment.id, createHash('sha256').update(raw).digest('hex'), JSON.stringify(input)],
     ));
     if (input.event !== 'payment.captured') return { accepted: true, ignored: input.event };
-    const result = await withTransaction(async (client) => {
-      const recharge = await client.query<{ id: string; seller_id: string; amount_paise: string; status: string }>(
-        'SELECT id, seller_id, amount_paise, status FROM wallet_recharges WHERE provider_order_id = $1 FOR UPDATE',
-        [payment.order_id],
-      );
-      if (!recharge.rows[0]) return { matched: false };
-      if (recharge.rows[0].status === 'succeeded') return { matched: true, duplicate: true };
-      await client.query('SELECT set_config(\'app.seller_id\', $1, true)', [recharge.rows[0].seller_id]);
-      await client.query('UPDATE wallet_recharges SET status=\'succeeded\', provider_payment_id=$1, completed_at=now() WHERE id=$2', [payment.id, recharge.rows[0].id]);
-      await client.query(
-        `INSERT INTO wallet_entries (seller_id, entry_type, amount_paise, reference_type, reference_id, idempotency_key, description)
-         VALUES ($1,'credit',$2,'wallet_recharge',$3,$4,'Wallet recharge via Razorpay')
-         ON CONFLICT (seller_id, idempotency_key) DO NOTHING`,
-        [recharge.rows[0].seller_id, recharge.rows[0].amount_paise, recharge.rows[0].id, `recharge:${recharge.rows[0].id}`],
-      );
-      await audit(client, { sellerId: recharge.rows[0].seller_id, action: 'wallet.recharge_succeeded', targetType: 'wallet_recharge', targetId: recharge.rows[0].id, requestId: request.id, metadata: { providerPaymentId: payment.id } });
-      return { matched: true, duplicate: false };
-    });
+    const result = await creditRecharge(payment.order_id, payment.id, request.id);
     if (delivery.rows[0]) {
       await withTransaction((client) => client.query('UPDATE webhook_deliveries SET processed_at=now(), processing_error=$1 WHERE id=$2', [result.matched ? null : 'Recharge not found for this order', delivery.rows[0].id]));
     }

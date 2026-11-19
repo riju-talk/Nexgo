@@ -17,11 +17,12 @@ export type Shipment = { id: string; seller_id: string; state: CanonicalShipment
 /** The NDR reason from the courier's own wording (the courier sends free text), so the reason charts show real reasons instead of "Other". */
 export function ndrReasonFrom(text: string): string {
   const t = text.toLowerCase();
-  if (/refus|rejected by (the )?customer|not accepted/.test(t)) return 'refused_delivery';
+  // "Code verified cancellation" = the customer cancelled when the courier verified the order by code/call; not a payment problem ("cod" must be a whole word).
+  if (/refus|rejected by (the )?customer|not accepted|cancel/.test(t)) return 'refused_delivery';
   if (/reschedul|asked (for )?(a )?(later|another)|postpone/.test(t)) return 'customer_requested_reschedule';
   if (/(incomplete|insufficient|short) address|address (is )?(incomplete|insufficient)/.test(t)) return 'address_incomplete';
   if (/(wrong|incorrect|invalid|bad) address|address (not found|incorrect|wrong)|landmark/.test(t)) return 'address_incorrect';
-  if (/cod|payment|cash not|amount not ready/.test(t)) return 'payment_not_ready';
+  if (/\bcod\b|payment|cash not|amount not ready/.test(t)) return 'payment_not_ready';
   if (/closed|shut|locked premises|office closed|shop closed/.test(t)) return 'premises_closed';
   if (/not (contactable|reachable|responding|answering)|unreachable|phone (off|switched)|no response|not picking/.test(t)) return 'customer_not_contactable';
   if (/not available|unavailable|not at home|door locked|nobody|no one|customer not/.test(t)) return 'customer_unavailable';

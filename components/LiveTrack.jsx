@@ -32,7 +32,9 @@ const PICKUP = ['booked', 'pickup_pending', 'pickup_scheduled'];
 const RTO = ['rto', 'rto_in_transit'];
 const CLOSED = ['delivered', 'cancelled', 'rto', 'lost'];
 const stageIndex = (state) => (PICKUP.includes(state) ? 0 : STAGES.indexOf(state));
-const isDelayed = (r) => !!r.promised_delivery_at && !CLOSED.includes(r.state) && new Date(r.promised_delivery_at) < new Date();
+// Delayed = a calendar day after the promised date has begun (India time). Due 18 Nov is still on time all of 18 Nov; it turns "delayed" on 19 Nov.
+const istDay = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+const isDelayed = (r) => !!r.promised_delivery_at && !CLOSED.includes(r.state) && istDay(r.promised_delivery_at) < istDay(Date.now());
 
 // Orders with no courier yet: 'ready' = the order is complete and only needs a courier assigned, 'failed' = something in the order must be fixed first.
 const isUnassigned = (r) => r.state === 'failed' || r.state === 'ready';

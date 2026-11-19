@@ -77,12 +77,22 @@ function CodTab() {
     >
       {(d) => (
         <>
-        <p style={{ margin: '0 0 10px', fontSize: 13, color: T.TEXT_SECONDARY }}>COD is paid <b>D+{d.summary?.remittanceDays ?? 2}</b>: {d.summary?.remittanceDays ?? 2} days after delivery. A negative wallet balance is recovered from the payout first.</p>
+        <p style={{ margin: '0 0 10px', fontSize: 13, color: T.TEXT_SECONDARY }}>COD is paid <b>D+{d.summary?.remittanceDays ?? 2}</b>: {d.summary?.remittanceDays ?? 2} days after the delivery date. A negative wallet balance is recovered from the payout first.</p>
         <div style={{ ...CARD, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', marginBottom: 12, textAlign: 'center' }}>
           {[['Remitted Till Date', d.summary?.remittedTillDatePaise], ['Last Remittance', d.summary?.lastRemittancePaise], ['Next Remittance (Expected)', d.summary?.nextRemittancePaise], ['Total Remittance Due', d.summary?.totalDuePaise]].map(([l, v], i) => (
-            <div key={l} style={{ padding: '16px 10px', borderLeft: i ? `1px solid ${T.DIVIDER}` : 0 }}><span style={{ fontSize: 13, color: T.TEXT_SECONDARY }}>{l}</span><b style={{ display: 'block', fontSize: 24, marginTop: 4, color: T.TEXT }}>{d.summary ? inr(v).replace('.00', '') : '—'}</b></div>
+            <div key={l} style={{ padding: '16px 10px', borderLeft: i ? `1px solid ${T.DIVIDER}` : 0 }}><span style={{ fontSize: 13, color: T.TEXT_SECONDARY }}>{l}</span><b style={{ display: 'block', fontSize: 24, marginTop: 4, color: T.TEXT }}>{d.summary ? inr(v).replace('.00', '') : '—'}</b>{l.startsWith('Next') && d.summary?.nextRemittanceDate && v > 0 && <small style={{ display: 'block', marginTop: 2, fontSize: 12, color: T.TEXT_SECONDARY }}>{d.summary.dueNowPaise > 0 ? 'due since' : 'on'} {new Date(d.summary.nextRemittanceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} (D+{d.summary.remittanceDays ?? 2})</small>}</div>
           ))}
         </div>
+        {(d.upcoming || []).length > 0 && (
+          <div style={{ ...CARD, padding: 14, marginBottom: 12 }}>
+            <b style={{ fontSize: 13.5, color: T.TEXT }}>Delivered COD waiting for its payout day</b>
+            <div style={{ fontSize: 12.5, color: T.TEXT_SECONDARY, margin: '2px 0 8px' }}>Each parcel is paid on its delivery date + {d.summary?.remittanceDays ?? 2} days. It then moves into a remittance below.</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead><tr style={{ textAlign: 'left', color: T.TEXT_SECONDARY }}><th style={{ padding: '4px 0' }}>Payout day</th><th>Parcels</th><th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
+              <tbody>{d.upcoming.map((u) => <tr key={u.due_date} style={{ borderTop: `1px solid ${T.DIVIDER}` }}><td style={{ padding: '6px 0' }}>{new Date(u.due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}{u.due_date.slice(0, 10) <= new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) ? ' · due now' : ''}</td><td>{u.shipments}</td><td style={{ textAlign: 'right', fontWeight: 650 }}>{inr(u.amount_paise).replace('.00', '')}</td></tr>)}</tbody>
+            </table>
+          </div>
+        )}
         </>
       )}
     </ListTab>

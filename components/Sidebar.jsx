@@ -30,7 +30,6 @@ const ICONS = {
 // non-clickable phase-2 item; a ['#', label, screenId?] entry is a section heading.
 const MENU = [
   ['dashboard', 'Dashboard', 'dashboard', []],
-  ['alerts', 'Notifications', 'notif-center', []],
   ['intake', 'Orders Management', 'b2c', [['Create B2C order', 'b2c', ['bulk-orders']]]],
   ['flight', 'Track', 'shipments', [['Track shipments', 'shipments'], ['Pickup & Manifests', 'manifests'], ['Bulk AWB tracking', 'bulk-track']]],
   ['reports', 'Reports', 'ndr', [['NDR Management', 'ndr'], ['RTO Dashboard', 'rto'], ['MIS Report', 'mis'], ['Weight Management', 'weight']]],

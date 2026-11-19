@@ -1,3 +1,4 @@
+import { codNetSql, deliveredDaySql, generateDueCycles } from '../lib/codCycles.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
@@ -79,6 +80,7 @@ export async function billingRoutes(app: FastifyInstance) {
   // COD remittance: headline figures plus every payout cycle.
   app.get('/v1/billing/cod', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
+    await generateDueCycles(p.sellerId).catch((e) => request.log.error({ err: e }, 'cod cycle generation failed')); // anything already due is cut into a payout cycle before the page is drawn
     const query = z.object({ from: day.optional(), to: day.optional(), ...page }).parse(request.query);
     return withSellerTransaction(p.sellerId, async (client) => {
       const where = ['c.seller_id = $1']; const params: unknown[] = [p.sellerId];
@@ -86,16 +88,21 @@ export async function billingRoutes(app: FastifyInstance) {
       if (query.to) { params.push(query.to); where.push(`c.cycle_start <= $${params.length}::date`); }
       const total = Number((await client.query<{ n: string }>(`SELECT count(*) AS n FROM cod_remittance_cycles c WHERE ${where.join(' AND ')}`, params)).rows[0].n);
       const rows = await client.query(
-        `SELECT c.id, 'CR' || to_char(c.cycle_end, 'YYMMDD') || upper(substr(replace(c.id::text, '-', ''), 1, 3)) AS remittance_no, c.cycle_start, c.cycle_end, c.shipment_count, c.cod_collected_paise, c.charges_deducted_paise AS freight_deduction_paise,
-                c.net_remitted_paise AS remittance_paise, c.wallet_offset_paise, c.payout_paise, c.due_date, c.status, c.remitted_at AS payment_date, c.bank_reference
+        `SELECT c.id, 'CR' || to_char(c.cycle_end, 'YYMMDD') || upper(substr(replace(c.id::text, '-', ''), 1, 3)) AS remittance_no, c.cycle_start::text AS cycle_start, c.cycle_end::text AS cycle_end, c.shipment_count, c.cod_collected_paise, c.charges_deducted_paise AS freight_deduction_paise,
+                c.net_remitted_paise AS remittance_paise, c.wallet_offset_paise, c.payout_paise, c.due_date::text AS due_date, c.status, c.remitted_at AS payment_date, c.bank_reference
          FROM cod_remittance_cycles c WHERE ${where.join(' AND ')} ORDER BY c.cycle_end DESC, c.id LIMIT ${query.pageSize} OFFSET ${(query.page - 1) * query.pageSize}`, params);
       const sum = await client.query(`SELECT COALESCE(sum(COALESCE(payout_paise, net_remitted_paise)) FILTER (WHERE status = 'remitted'), 0)::bigint AS remitted, COALESCE(sum(net_remitted_paise) FILTER (WHERE status IN ('pending','approved')), 0)::bigint AS due FROM cod_remittance_cycles WHERE seller_id = $1`, [p.sellerId]);
       const last = await client.query(`SELECT COALESCE(payout_paise, net_remitted_paise) AS net_remitted_paise, remitted_at FROM cod_remittance_cycles WHERE seller_id = $1 AND status = 'remitted' ORDER BY remitted_at DESC NULLS LAST LIMIT 1`, [p.sellerId]);
-      const next = await client.query(`SELECT net_remitted_paise, cycle_end FROM cod_remittance_cycles WHERE seller_id = $1 AND status IN ('pending','approved') ORDER BY cycle_end LIMIT 1`, [p.sellerId]);
       const cfg = await client.query<{ remittance_days: number }>('SELECT remittance_days FROM sellers WHERE id = $1', [p.sellerId]);
+      const days = cfg.rows[0]?.remittance_days ?? 2;
+      const pending = await codPending(client, p.sellerId);
+      // Delivered COD that is not in a payout cycle yet, by the day it falls due (D+N): this is what "Total due" is made of before the daily cycle is cut.
+      const upcoming = await client.query(`SELECT (${deliveredDaySql()} + $2::int)::text AS due_date, count(*)::int AS shipments, sum(${codNetSql()})::bigint AS amount_paise
+         FROM shipments s JOIN orders o ON o.id = s.order_id WHERE s.seller_id = $1 AND s.state = 'delivered' AND o.payment_mode = 'cod' AND s.cod_cycle_id IS NULL GROUP BY 1 ORDER BY 1`, [p.sellerId, days]);
       return {
+        upcoming: upcoming.rows,
         items: rows.rows, total, page: query.page, pageSize: query.pageSize, pages: Math.max(1, Math.ceil(total / query.pageSize)),
-        summary: { remittanceDays: cfg.rows[0]?.remittance_days ?? 2, remittedTillDatePaise: Number(sum.rows[0].remitted), lastRemittancePaise: Number(last.rows[0]?.net_remitted_paise ?? 0), lastRemittanceAt: last.rows[0]?.remitted_at ?? null, nextRemittancePaise: Number(next.rows[0]?.net_remitted_paise ?? 0), totalDuePaise: (await codPending(client, p.sellerId)).totalPaise },
+        summary: { remittanceDays: days, remittedTillDatePaise: Number(sum.rows[0].remitted), lastRemittancePaise: Number(last.rows[0]?.net_remitted_paise ?? 0), lastRemittanceAt: last.rows[0]?.remitted_at ?? null, nextRemittancePaise: pending.nextExpectedPaise, nextRemittanceDate: pending.nextExpectedDate, dueNowPaise: pending.dueNowPaise, totalDuePaise: pending.totalPaise },
       };
     });
   });

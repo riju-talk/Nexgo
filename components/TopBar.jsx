@@ -15,7 +15,7 @@ const TAP_TRANSITION = { duration: 0.1 };
 
 export default function TopBar({ activeId, mobile }) {
   const { navOpen, setNavOpen, theme, nav } = useAppState();
-  const { me, balance } = useSellerSession({ wallet: true, refreshKey: activeId });
+  const { me, balance, balanceNote } = useSellerSession({ wallet: true, refreshKey: activeId });
   const meta = PAGES[activeId] || ['', ''];
   const crumb = meta[0], pageTitle = meta[1];
   const light = theme === 'light';
@@ -64,7 +64,7 @@ export default function TopBar({ activeId, mobile }) {
           <SearchBox placeholder="Paste an AWB, phone, order or pincode, or type awb: status: inv: ... (? for all)" />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto' }}>
             <NotificationBell />
-            <motion.div onClick={() => nav('wallet')} whileTap={TAP} transition={TAP_TRANSITION} title="Open wallet" style={{ height: 38, display: 'flex', alignItems: 'center', gap: 9, padding: '0 12px 0 6px', cursor: 'pointer', borderRadius: 10, background: 'var(--nx-chrome-search)', border: '1px solid var(--nx-chrome-border)' }}>
+            <motion.div onClick={() => nav('wallet')} whileTap={TAP} transition={TAP_TRANSITION} title={balanceNote || "Open wallet"} style={{ height: 38, display: 'flex', alignItems: 'center', gap: 9, padding: '0 12px 0 6px', cursor: 'pointer', borderRadius: 10, background: 'var(--nx-chrome-search)', border: '1px solid var(--nx-chrome-border)' }}>
               <div style={{ width: 27, height: 27, display: 'grid', placeItems: 'center', borderRadius: 8, color: T.ACCENT, background: 'rgba(56,119,252,.12)', fontSize: 14, fontWeight: 750 }}>₹</div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, whiteSpace: 'nowrap' }}>
                 <span style={{ fontSize: 11.5, fontWeight: 650, color: 'var(--nx-chrome-muted)' }}>Balance</span>
