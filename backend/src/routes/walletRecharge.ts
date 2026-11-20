@@ -11,7 +11,7 @@ function principal(request: FastifyRequest) {
   return request.principal;
 }
 
-const recharge = z.object({ amountPaise: z.number().int().min(10_000).max(10_00_00_000) }); // ₹100 – ₹10L
+const recharge = z.object({ amountPaise: z.number().int().min(30_000).max(10_00_00_000) }); // ₹300 – ₹10L
 const razorpayEvent = z.object({
   event: z.string(),
   payload: z.object({ payment: z.object({ entity: z.object({ id: z.string(), order_id: z.string(), status: z.string() }) }) }),
