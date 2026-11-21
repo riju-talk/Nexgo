@@ -46,7 +46,7 @@ export type AggregatorPlugin = {
   /** Builds the adapter. Throws a readable 503 when the required credentials are missing, so nothing is ever faked. */
   create(credentials: Record<string, string>): CourierAdapter;
   webhook?: AggregatorWebhook;
-  /** Pull the newest tracking from the aggregator (used when pushes are missing or late). Only for plugins with capabilities.track. */
-  /** `wanted` = the AWBs we still need news about: the aggregator may read as far back as it takes to find them (newest first). */
+  /** Pull the newest tracking from the aggregator (used when pushes are missing or late). Only for plugins with capabilities.track.
+   *  `wanted` = the AWBs we still need news about: the aggregator may read as far back as it takes to find them (newest first). */
   poll?(credentials: Record<string, string>, wanted?: Set<string>): Promise<NormalizedUpdate[]>;
 };

@@ -33,7 +33,6 @@ const hook = (awb, status, events) => fetch(API + '/v1/webhooks/aggregators/lorr
 const when = (mins) => new Date(Date.now() - mins * 60000).toISOString();
 const state = async (id) => (await db.query('SELECT state::text AS s FROM shipments WHERE id = $1', [id])).rows[0].s;
 const ndrCase = async (id) => (await db.query('SELECT state::text AS s, attempt_number AS a, reason_detail AS r, ndr_reason::text AS reason FROM ndr_cases WHERE shipment_id = $1', [id])).rows[0];
-const track = async (tab) => (await call('GET', `/v1/shipments/summary`)).j;
 
 // 1. The stuck parcel: NDR first, then a hub scan, the courier's overall status is still NDR
 const A = await ship('A');
@@ -84,9 +83,8 @@ await hook(E.awb, 'NDR', [PICK, NDRC, { status: 'DELIVERED', timestamp: when(50)
 T('a delivered parcel stays delivered', (await state(E.id)) === 'delivered', await state(E.id));
 
 // 5. Track shows the counts the board shows
-const sum = (await call('GET', '/v1/shipments/summary')).j;
-const tabs = JSON.stringify(sum);
-T('Track summary answers', !!sum, tabs.slice(0, 200));
+const cnt = (await call('GET', '/v1/shipments/summary')).j?.counts ?? {};
+T('Track tab counts match: 3 NDR (A, B, C), 0 in transit, 1 RTO, 1 delivered', cnt.ndr === 3 && cnt.in_transit === 0 && cnt.rto === 1 && cnt.delivered === 1, JSON.stringify(cnt));
 
 console.log(out.join('\n'));
 console.log(out.filter((l) => l.startsWith('FAIL')).length ? 'SOME FAILED' : 'ALL PASSED');
