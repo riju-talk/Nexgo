@@ -20,6 +20,7 @@ const safeEqual = (a: string, b: string) => { const x = Buffer.from(a), y = Buff
 
 // Any other RTO-prefixed status the aggregator may send (RTO_REACHED, RTO_UNDELIVERED ...) still means the parcel is returning.
 function rtoFallback(status: string): Mapped | undefined {
+  if (/^(NDR|UNDELIVERED)(_|$)/.test(status)) return { state: 'ndr' }; // e.g. NDR_1_ATTEMPT: a failed delivery attempt, whatever the suffix
   if (!/^RTO(_|$)/.test(status)) return undefined;
   return /DELIVERED/.test(status) && !/UNDELIVERED/.test(status) ? { state: 'rto', rto: 'delivered' } : /OFD|OUT_FOR/.test(status) ? { state: 'rto', rto: 'out_for_delivery' } : { state: 'rto', rto: 'in_transit' };
 }
@@ -43,7 +44,11 @@ export function toUpdate(item: Item): NormalizedUpdate | null {
     .filter((x) => x.m && Number.isFinite(x.t)).sort((a, b) => a.t - b.t)
     .map((x) => ({ mapped: x.m as Mapped, at: new Date(x.t).toISOString(), location: x.e.location ?? null, description: x.e.description || x.status, eventId: createHash('sha1').update(`${awb}|${x.status}|${x.e.timestamp}`).digest('hex') }));
   const topStatus = normalize(item.status); const top = STATUS[topStatus] ?? rtoFallback(topStatus);
-  const current: NormalizedEvent | undefined = top ? { mapped: top, at: new Date().toISOString(), location: item.location ?? null, description: item.description || topStatus, eventId: `status:${topStatus}` } : undefined;
+  // The courier's overall status is the truth about where the parcel is now. Its id carries the time of the newest scan, so when a later scan
+  // has moved the state elsewhere (e.g. a hub scan after an NDR) the same overall status is applied again instead of being skipped as "seen".
+  const lastScan = (Array.isArray(item.tracking_events) ? item.tracking_events : []).map((e) => Date.parse(String(e?.timestamp ?? ''))).filter(Number.isFinite).reduce((a, b) => Math.max(a, b), 0);
+  const sameKind = [...events].reverse().find((e) => top && e.mapped.state === top.state && e.mapped.rto === top.rto); // keeps the courier's real wording (NDR reason)
+  const current: NormalizedEvent | undefined = top ? { mapped: top, at: new Date().toISOString(), location: item.location ?? sameKind?.location ?? null, description: item.description || sameKind?.description || topStatus, eventId: `status:${topStatus}:${lastScan}` } : undefined;
   return { awb, raw: item, events, current, unmappedStatus: topStatus && !top && !IGNORED.has(topStatus) ? topStatus : undefined };
 }
 

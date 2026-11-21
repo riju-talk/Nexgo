@@ -23,6 +23,27 @@ describe('Lorrigo plugin: webhook', () => {
     }
   });
 
+  // Regression: parcels stayed "In transit" in NEXGO while the aggregator showed NDR. A hub scan after the NDR moved the state on, and the overall
+  // status "NDR" was skipped because that status had been seen before. The overall status now carries the newest scan time, so it applies again.
+  it('re-applies the overall NDR status when a later scan has moved the state, and keeps the real NDR reason', () => {
+    const base = [{ status: 'PICKED_UP', timestamp: T }, { status: 'NDR', timestamp: '2026-11-07T10:00:00.000Z', description: 'Customer not available' }];
+    const [first] = lorrigo.webhook!.parse({ awb: 'N1', status: 'NDR', tracking_events: base });
+    const [later] = lorrigo.webhook!.parse({ awb: 'N1', status: 'NDR', tracking_events: [...base, { status: 'IN_TRANSIT', timestamp: '2026-11-08T10:00:00.000Z' }] });
+    expect(later.current?.mapped.state).toBe('ndr');
+    expect(later.current?.eventId).not.toBe(first.current?.eventId);
+    expect(later.current?.description).toBe('Customer not available');
+    const [again] = lorrigo.webhook!.parse({ awb: 'N1', status: 'NDR', tracking_events: [...base, { status: 'IN_TRANSIT', timestamp: '2026-11-08T10:00:00.000Z' }] });
+    expect(again.current?.eventId).toBe(later.current?.eventId); // an identical poll is still a no-op
+  });
+
+  it('treats NDR-style status variants as a failed attempt', () => {
+    for (const status of ['NDR', 'NDR_1_ATTEMPT', 'ndr-2', 'UNDELIVERED']) {
+      const [u] = lorrigo.webhook!.parse({ awb: 'V1', status });
+      expect(u.current?.mapped.state).toBe('ndr');
+      expect(u.unmappedStatus).toBeUndefined();
+    }
+  });
+
   it('maps return-to-origin statuses and keeps the RTO sub-status', () => {
     const [u] = lorrigo.webhook!.parse({ awb: 'A1', status: 'RTO_DELIVERED', tracking_events: [
       { status: 'rto-initiated', timestamp: T }, { status: 'RTO_OFD', timestamp: '2026-11-07T10:00:00.000Z' }, { status: 'RTO_DELIVERED', timestamp: '2026-11-08T10:00:00.000Z' }] });

@@ -17,7 +17,7 @@ const CHANNEL = { single: 'Single created', bulk_upload: 'Bulk upload' };
 const PAGE_SIZE = 25;
 
 export default function LiveRto({ mobile }) {
-  const { showToast, nav } = useAppState();
+  const { showToast, nav, setTrackFocus } = useAppState();
   const [stage, setStage] = useState('all');
   const [filters, setFilters] = useState(EMPTY_FILTERS); const [panel, setPanel] = useState(false);
   const [format, setFormat] = useState('csv'); const [busy, setBusy] = useState(false);
@@ -102,7 +102,7 @@ export default function LiveRto({ mobile }) {
               { h: 'Value', cell: (r) => <span><b>{r.payment_mode === 'cod' ? inr(r.cod_amount_paise) : 'Prepaid'}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>Freight {inr(r.shipping_charge_paise)}</small></span> },
               { h: 'RTO started', cell: (r) => dateTime(r.rto_started_at) },
               { h: 'Status', cell: (r) => { const [name, color] = STAGE_PILL[r.stage] || [titleCase(r.stage), T.TEXT_MUTED]; return <Pill color={color}>{name}</Pill>; } },
-              { h: 'Action', cell: () => <Btn small onClick={() => nav('shipments')}>Track</Btn> },
+              { h: 'Action', cell: (r) => <Btn small onClick={() => { if (r.awb) setTrackFocus(r.awb); nav('shipments'); }}>Track</Btn> },
             ]} />
           <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && list.items.length > 0} onMore={list.loadMore} noun="RTO shipments" />
         </section>
