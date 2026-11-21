@@ -20,7 +20,7 @@ export async function pollOnce(log: Log): Promise<number> {
        WHERE cp.aggregator = $1 AND s.awb IS NOT NULL AND s.state NOT IN ('delivered', 'cancelled', 'lost') AND s.booked_at > now() - interval '60 days'`, [plugin.id]);
     if (!live.rows.length) continue;
     const wanted = new Set(live.rows.map((r) => r.awb));
-    const updates = (await plugin.poll(credentialsFor(plugin.id))).filter((u) => wanted.has(u.awb));
+    const updates = (await plugin.poll(credentialsFor(plugin.id), wanted)).filter((u) => wanted.has(u.awb));
     for (const update of updates) {
       // The delivery key is a hash of the payload, so an unchanged shipment is a cheap "duplicate" and a changed one is applied.
       const outcome = await ingestUpdate(plugin.id, update, JSON.stringify(update.raw ?? update), log);

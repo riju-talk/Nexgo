@@ -23,17 +23,13 @@ describe('Lorrigo plugin: webhook', () => {
     }
   });
 
-  // Regression: parcels stayed "In transit" in NEXGO while the aggregator showed NDR. A hub scan after the NDR moved the state on, and the overall
-  // status "NDR" was skipped because that status had been seen before. The overall status now carries the newest scan time, so it applies again.
-  it('re-applies the overall NDR status when a later scan has moved the state, and keeps the real NDR reason', () => {
-    const base = [{ status: 'PICKED_UP', timestamp: T }, { status: 'NDR', timestamp: '2026-11-07T10:00:00.000Z', description: 'Customer not available' }];
-    const [first] = lorrigo.webhook!.parse({ awb: 'N1', status: 'NDR', tracking_events: base });
-    const [later] = lorrigo.webhook!.parse({ awb: 'N1', status: 'NDR', tracking_events: [...base, { status: 'IN_TRANSIT', timestamp: '2026-11-08T10:00:00.000Z' }] });
-    expect(later.current?.mapped.state).toBe('ndr');
-    expect(later.current?.eventId).not.toBe(first.current?.eventId);
-    expect(later.current?.description).toBe('Customer not available');
-    const [again] = lorrigo.webhook!.parse({ awb: 'N1', status: 'NDR', tracking_events: [...base, { status: 'IN_TRANSIT', timestamp: '2026-11-08T10:00:00.000Z' }] });
-    expect(again.current?.eventId).toBe(later.current?.eventId); // an identical poll is still a no-op
+  // Regression: parcels stayed "In transit" in NEXGO while the aggregator showed NDR (a hub scan after the NDR moved the state on).
+  // The overall status keeps the courier's real NDR wording, so re-applying it never replaces the reason with the bare word "NDR".
+  it('keeps the real NDR reason on the overall status', () => {
+    const [u] = lorrigo.webhook!.parse({ awb: 'N1', status: 'NDR', tracking_events: [
+      { status: 'PICKED_UP', timestamp: T }, { status: 'NDR', timestamp: '2026-11-07T10:00:00.000Z', description: 'Customer not available' }, { status: 'IN_TRANSIT', timestamp: '2026-11-08T10:00:00.000Z' }] });
+    expect(u.current?.mapped.state).toBe('ndr');
+    expect(u.current?.description).toBe('Customer not available');
   });
 
   it('treats NDR-style status variants as a failed attempt', () => {

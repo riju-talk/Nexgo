@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { clearCached, useLiveQuery } from '@/lib/queryCache';
-import { GROUPS, KINDS, NOTIFICATIONS_CHANGED, notificationsChanged, timeAgo } from '@/lib/notificationKinds';
+import { GROUPS, KINDS, awbOf, NOTIFICATIONS_CHANGED, notificationsChanged, timeAgo } from '@/lib/notificationKinds';
 import * as T from '@/lib/theme';
 import { BLUE, Btn, CARD, LoadMore } from './Kit';
 import { usePagedList } from '@/lib/useInfiniteList';
@@ -13,7 +13,7 @@ const PAGE_SIZE = 20;
 
 // Notifications: what happened to your parcels, wallet and account, in one place. Unread ones are marked; opening one takes you to the screen it is about.
 export default function LiveNotifications({ mobile }) {
-  const { nav, showToast } = useAppState();
+  const { nav, showToast, setTrackFocus } = useAppState();
   const [group, setGroup] = useState('all'); const [busy, setBusy] = useState(false);
   const query = useMemo(() => {
     const p = new URLSearchParams();
@@ -34,6 +34,7 @@ export default function LiveNotifications({ mobile }) {
   };
   const open = async (n) => {
     if (!n.read_at) { try { await markRead({ ids: [n.id] }); } catch { /* opening still works */ } }
+    if (n.screen === 'shipments' && awbOf(n)) setTrackFocus(awbOf(n));
     if (n.screen) nav(n.screen);
   };
   const markAll = async () => {

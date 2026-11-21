@@ -31,10 +31,10 @@ export function ndrReasonFrom(text: string): string {
   return 'other';
 }
 
-export async function applyEvent(tx: PoolClient, s: Shipment, m: Mapped, at: string, location: string | null, description: string, eventId: string, raw: unknown): Promise<void> {
+export async function applyEvent(tx: PoolClient, s: Shipment, m: Mapped, at: string, location: string | null, description: string, eventId: string, raw: unknown, force = false): Promise<void> {
   description = sellerSafeMessage(description); // courier wording shown to sellers never names the aggregator
   const fresh = await tx.query("INSERT INTO shipment_events (shipment_id,state,occurred_at,location,description,source,source_event_id,raw_payload) VALUES ($1,$2,$3,$4,$5,'courier_webhook',$6,$7) ON CONFLICT DO NOTHING RETURNING id", [s.id, m.state, at, location?.slice(0, 200) ?? null, description.slice(0, 500), eventId, JSON.stringify(raw)]);
-  if (!fresh.rows[0]) return; // already processed on an earlier delivery
+  if (!fresh.rows[0] && !force) return; // already processed on an earlier delivery (force = the courier's overall status asserting the state again)
   // Couriers skip scans and a history can have gaps, so a booked shipment may jump ahead (e.g. straight to delivered). Going backwards is still refused.
   const skipsAhead = ['booked', 'pickup_pending', 'pickup_scheduled'].includes(s.state) && ['out_for_delivery', 'delivered', 'ndr', 'rto'].includes(m.state);
   if (!skipsAhead && !isProgressionAllowed(s.state, m.state)) return; // kept in the timeline, state stays (e.g. a stale scan arriving late)
@@ -53,6 +53,17 @@ export async function applyEvent(tx: PoolClient, s: Shipment, m: Mapped, at: str
       reason_detail = EXCLUDED.reason_detail, courier_notes = EXCLUDED.courier_notes, ndr_reason = EXCLUDED.ndr_reason, updated_at = now()`, [s.seller_id, s.id, description.slice(0, 500), ndrReasonFrom(description)]);
   s.state = m.state;
   await applyShipmentStateEffects(tx, s.seller_id, s.id, m.state); // RTO freight billed once, NDR case closed on delivery / return
+}
+
+/** Should the courier's current NDR status put a parcel that is not in NDR back into it? Only if no seller answer is newer than the courier's last NDR scan. */
+async function ndrStillStands(tx: PoolClient, s: Shipment, update: NormalizedUpdate): Promise<boolean> {
+  if (!['booked', 'pickup_pending', 'pickup_scheduled', 'in_transit', 'out_for_delivery'].includes(s.state)) return false; // ndr already, or finished
+  const found = await tx.query<{ state: string; answered_at: string | null }>('SELECT state::text AS state, COALESCE(resolved_at, updated_at) AS answered_at FROM ndr_cases WHERE shipment_id = $1', [s.id]);
+  const nc = found.rows[0];
+  if (!nc || nc.state === 'open') return true;
+  if (nc.state === 'rto_requested') return false;
+  const lastNdr = [...update.events].reverse().find((e) => e.mapped.state === 'ndr');
+  return !!lastNdr && !!nc.answered_at && Date.parse(lastNdr.at) > new Date(nc.answered_at).getTime();
 }
 
 export type IngestOutcome = 'processed' | 'duplicate' | 'unknown';
@@ -80,7 +91,11 @@ export async function ingestUpdate(aggregator: string, update: NormalizedUpdate,
     for (const e of update.events) await applyEvent(tx, shipment, e.mapped, e.at, e.location, e.description, e.eventId, e);
     const c = update.current;
     // The courier's overall status is recorded in the history too (once per status), even when the state does not change, so e.g. "RTO in transit" shows up.
-    if (c && (c.mapped.state !== shipment.state || c.mapped.rto)) await applyEvent(tx, shipment, c.mapped, c.at, c.location, c.description, c.eventId, { status: c.description });
+    if (c && c.mapped.state === 'ndr') {
+      // The courier says NDR but a later scan (a hub scan after the failed attempt) moved the parcel on: say NDR again, unless the seller already
+      // answered that attempt (their reattempt request is still waiting for the courier to act on it).
+      if (await ndrStillStands(tx, shipment, update)) await applyEvent(tx, shipment, c.mapped, c.at, c.location, c.description, c.eventId, { status: c.description }, true);
+    } else if (c && (c.mapped.state !== shipment.state || c.mapped.rto)) await applyEvent(tx, shipment, c.mapped, c.at, c.location, c.description, c.eventId, { status: c.description });
     // What the seller should hear about (stored once per event; sent after commit).
     if (startState !== shipment.state) {
       if (shipment.state === 'delivered') notes.push({ kind: 'delivered', title: 'Shipment delivered', body: `AWB ${update.awb} was delivered to the customer.`, screen: 'shipments', entityId: shipment.id, dedupeKey: `delivered:${shipment.id}` });

@@ -236,12 +236,14 @@ export class LorrigoAdapter implements CourierAdapter {
   }
 
   /** The newest orders with their tracking history, for the poll fallback: awb, status and trackingEvents per order. Up to `pages` x 100 orders. */
-  async recentOrders(pages = 5): Promise<Record<string, unknown>[]> {
+  async recentOrders(pages = 5, wanted?: Set<string>): Promise<Record<string, unknown>[]> {
     const out: Record<string, unknown>[] = [];
+    const missing = wanted ? new Set(wanted) : null; // the account is shared by every seller, so a parcel can sit far down the newest-first list
     for (let page = 1; page <= pages; page++) {
       const res = await this.call('GET', `/orders?page=${page}&limit=100`);
       const orders = isObj(res) && Array.isArray(res.orders) ? res.orders.filter(isObj) : [];
       out.push(...orders);
+      if (missing) { for (const o of orders) if (o.awb) missing.delete(String(o.awb)); if (!missing.size) break; }
       if (!hasNextPage(res, page, orders.length, 100)) break;
     }
     return out;

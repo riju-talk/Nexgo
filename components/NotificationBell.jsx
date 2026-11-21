@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { apiFetch } from '@/lib/api';
 import { clearCached, useLiveQuery } from '@/lib/queryCache';
-import { KINDS, NOTIFICATIONS_CHANGED, notificationsChanged, timeAgo } from '@/lib/notificationKinds';
+import { KINDS, NOTIFICATIONS_CHANGED, awbOf, notificationsChanged, timeAgo } from '@/lib/notificationKinds';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 
@@ -106,7 +106,7 @@ function ItemsBell({ admin = false }) {
 
 // Sellers: the unread count and the latest notifications from their inbox (stored events: deliveries, returns, NDRs, missed pickups, wallet, COD, ...).
 function SellerBell() {
-  const { nav } = useAppState();
+  const { nav, setTrackFocus } = useAppState();
   const { data, error, refresh } = useLiveQuery('/v1/notifications/summary', { every: 30000 });
   const [open, setOpen] = useState(false);
   const box = useRef(null);
@@ -124,6 +124,7 @@ function SellerBell() {
   const go = async (n) => {
     setOpen(false);
     if (!n.read_at) { try { await apiFetch('/v1/notifications/read', { method: 'POST', body: { ids: [n.id] } }); clearCached('/v1/notifications'); refresh(); notificationsChanged(); } catch { /* opening still works */ } }
+    if (n.screen === 'shipments' && awbOf(n)) setTrackFocus(awbOf(n));
     nav(n.screen || 'notif-center');
   };
   return (

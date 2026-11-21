@@ -44,11 +44,10 @@ export function toUpdate(item: Item): NormalizedUpdate | null {
     .filter((x) => x.m && Number.isFinite(x.t)).sort((a, b) => a.t - b.t)
     .map((x) => ({ mapped: x.m as Mapped, at: new Date(x.t).toISOString(), location: x.e.location ?? null, description: x.e.description || x.status, eventId: createHash('sha1').update(`${awb}|${x.status}|${x.e.timestamp}`).digest('hex') }));
   const topStatus = normalize(item.status); const top = STATUS[topStatus] ?? rtoFallback(topStatus);
-  // The courier's overall status is the truth about where the parcel is now. Its id carries the time of the newest scan, so when a later scan
-  // has moved the state elsewhere (e.g. a hub scan after an NDR) the same overall status is applied again instead of being skipped as "seen".
-  const lastScan = (Array.isArray(item.tracking_events) ? item.tracking_events : []).map((e) => Date.parse(String(e?.timestamp ?? ''))).filter(Number.isFinite).reduce((a, b) => Math.max(a, b), 0);
+  // The courier's overall status is the truth about where the parcel is now. When it describes the same stage as a scan in the history, that
+  // scan's own wording (e.g. the real NDR reason) is kept instead of the bare status name.
   const sameKind = [...events].reverse().find((e) => top && e.mapped.state === top.state && e.mapped.rto === top.rto); // keeps the courier's real wording (NDR reason)
-  const current: NormalizedEvent | undefined = top ? { mapped: top, at: new Date().toISOString(), location: item.location ?? sameKind?.location ?? null, description: item.description || sameKind?.description || topStatus, eventId: `status:${topStatus}:${lastScan}` } : undefined;
+  const current: NormalizedEvent | undefined = top ? { mapped: top, at: new Date().toISOString(), location: item.location ?? sameKind?.location ?? null, description: item.description || sameKind?.description || topStatus, eventId: `status:${topStatus}` } : undefined;
   return { awb, raw: item, events, current, unmappedStatus: topStatus && !top && !IGNORED.has(topStatus) ? topStatus : undefined };
 }
 
@@ -68,9 +67,9 @@ export const lorrigo: AggregatorPlugin = {
     return new LorrigoAdapter(credentials.apiKey, credentials.baseUrl || 'https://app.lorrigo.com/api/v2');
   },
   // The order list carries the same history as the webhook (as trackingEvents), so one call per 100 orders replaces per-AWB lookups.
-  async poll(credentials) {
+  async poll(credentials, wanted) {
     const adapter = new LorrigoAdapter(credentials.apiKey, credentials.baseUrl || 'https://app.lorrigo.com/api/v2');
-    return (await adapter.recentOrders(5))
+    return (await adapter.recentOrders(wanted?.size ? 20 : 5, wanted))
       .filter((o) => o.awb)
       .map((o) => toUpdate({ awb: o.awb as string, status: o.status as string, tracking_events: Array.isArray(o.trackingEvents) ? (o.trackingEvents as TrackingEvent[]) : [] }))
       .filter((u): u is NormalizedUpdate => !!u);

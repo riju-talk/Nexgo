@@ -47,5 +47,6 @@ export type AggregatorPlugin = {
   create(credentials: Record<string, string>): CourierAdapter;
   webhook?: AggregatorWebhook;
   /** Pull the newest tracking from the aggregator (used when pushes are missing or late). Only for plugins with capabilities.track. */
-  poll?(credentials: Record<string, string>): Promise<NormalizedUpdate[]>;
+  /** `wanted` = the AWBs we still need news about: the aggregator may read as far back as it takes to find them (newest first). */
+  poll?(credentials: Record<string, string>, wanted?: Set<string>): Promise<NormalizedUpdate[]>;
 };

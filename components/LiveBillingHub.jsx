@@ -121,7 +121,7 @@ function WalletTab() {
 }
 
 function ChargesTab() {
-  const { nav } = useAppState();
+  const { nav, setTrackFocus } = useAppState();
   return (
     <ListTab
       path="/v1/billing/shipping-charges" filters={['q']} exportName="shipping-charges" empty="No shipments in this period." minWidth={1180}
@@ -131,7 +131,7 @@ function ChargesTab() {
         { h: 'Freight charges (₹)', cell: (r) => inr(r.freight_paise) }, { h: 'COD charges (₹)', cell: (r) => money(r.cod_fee_paise) }, { h: 'Entered wgt (kg)', cell: (r) => kg(r.entered_weight_g).replace(' kg', '') },
         { h: 'Applied wgt (kg)', cell: (r) => kg(r.applied_weight_g).replace(' kg', '') }, { h: 'Extra wgt charges (₹)', cell: (r) => money(r.extra_weight_paise) }, { h: 'RTO charges', cell: () => dash },
         { h: 'COD charge reversed', cell: (r) => money(r.cod_reversed_paise) }, { h: 'Total charges (₹)', cell: (r) => <b>{inr(r.total_paise)}</b> },
-        { h: 'Action', cell: () => <Btn small onClick={() => nav('shipments')}>View</Btn> },
+        { h: 'Action', cell: (r) => <Btn small onClick={() => { if (r.awb) setTrackFocus(r.awb); nav('shipments'); }}>View</Btn> },
       ]}
       exportColumns={[
         { h: 'Shipment created', value: (r) => r.booked_at?.slice(0, 19).replace('T', ' ') }, { h: 'Courier', value: (r) => r.courier_name }, { h: 'Service', value: (r) => r.service_name }, { h: 'AWB', value: (r) => r.awb }, { h: 'Status', value: (r) => r.state },
