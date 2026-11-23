@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { BOOKING_PAUSED } from '../lib/sellerSafeError.js';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
@@ -21,7 +22,9 @@ function principal(request: FastifyRequest) {
   return request.principal;
 }
 
+// `paused` = orders waiting because courier booking is paused (they book by themselves when it resumes).
 const progressSql = `SELECT b.id, b.total, b.created_at, b.finished_at,
+    count(*) FILTER (WHERE i.state = 'queued' AND i.error = '${BOOKING_PAUSED.replace(/'/g, "''")}')::int AS paused,
     count(*) FILTER (WHERE i.state = 'ok')::int AS assigned, count(*) FILTER (WHERE i.state = 'failed')::int AS failed,
     count(*) FILTER (WHERE i.state = 'running')::int AS running, count(*) FILTER (WHERE i.state = 'queued')::int AS queued,
     (SELECT i2.error FROM assign_batch_items i2 WHERE i2.batch_id = b.id AND i2.state = 'failed' ORDER BY i2.finished_at LIMIT 1) AS first_error

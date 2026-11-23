@@ -1,5 +1,5 @@
 // End-to-end speed and correctness of the background queues (assign couriers, cancel) against a FAKE aggregator with a fixed delay per call.
-// Needs: Postgres on :5544 (throwaway), the API on :4011 started with LORRIGO_API_KEY=test LORRIGO_BASE_URL=http://127.0.0.1:4555 (development).
+// Needs: Postgres on :5544 (throwaway), the API on :4011 started with LORRIGO_API_KEY=test LORRIGO_BASE_URL=http://127.0.0.1:4555 ASSIGN_PAUSE_RETRY_SECONDS=2 ASSIGN_PROBE_SECONDS=4 (development).
 // Proves: many orders are booked / cancelled side by side (time), every booking and refund happens exactly once (money), the aggregator is called
 // as few times as possible, an empty aggregator balance ends a batch at once, an order created by an earlier failed attempt is reused, and a burst
 // of HTTP 429 slows things down without losing or duplicating anything. Run: node tests/e2e/speed.mjs
@@ -53,6 +53,11 @@ const runBatch = async (path, body, pollPath) => {
   return { q, ms: Date.now() - t0, batch: null };
 };
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const queueBatch = async (ids) => (await call('POST', '/v1/shipments/assign-batch', { orderIds: ids })).j.id;
+const batchOf = async (id) => (await call('GET', `/v1/shipments/assign-batch/${id}`)).j;
+const until = async (id, pred, ms = 30000) => { const t0 = Date.now(); let b; while (Date.now() - t0 < ms) { b = await batchOf(id); if (pred(b)) return b; await sleep(250); } return b; };
+
 // ---------------- 1. assign 40 orders (the aggregator answers POST /shipments with the AWB)
 let orders = await makeOrders(40);
 let r = await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/shipments/assign-batch');
@@ -84,23 +89,26 @@ r = await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/ship
 T('Without the AWB in the answer the booking still works (read back once per order)', r.batch && r.batch.assigned === 6 && (fake.stats.calls['GET /orders/:id'] || 0) - (callsBefore['GET /orders/:id'] || 0) === 6, JSON.stringify(r.batch && { assigned: r.batch.assigned }));
 fake.mode.postAwb = true;
 
-// ---------------- 4. the aggregator has no balance: the whole batch ends at once, clearly
+// ---------------- 4. the aggregator has no balance: nothing is failed, the orders are kept and wait (paused), nothing is charged
 fake.mode.nobalance = true; const shipsBefore = fake.stats.calls['POST /shipments'] || 0;
 orders = await makeOrders(20);
-r = await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/shipments/assign-batch');
+const pausedBatch = await queueBatch(orders);
+let pb = await until(pausedBatch, (b) => b.paused === 20, 15000);
 const refused = (fake.stats.calls['POST /shipments'] || 0) - shipsBefore;
-T('Empty aggregator balance: the batch of 20 ends within 6 s, none booked, all say booking is paused', r.batch && r.ms < 6000 && r.batch.assigned === 0 && r.batch.failed === 20 && r.batch.results.every((x) => /Courier booking is paused/.test(x.error || '')), `${r.ms} ms ${JSON.stringify(r.batch && r.batch.results?.[0])}`);
-T('...and it stopped after the first refusals (no retry storm: at most one refusal per order)', refused <= 20, `${refused} booking attempts for 20 orders`);
+T('Empty aggregator balance: all 20 orders are PAUSED (kept in the queue), none failed, none booked, the batch is not finished', pb && pb.paused === 20 && pb.failed === 0 && pb.assigned === 0 && !pb.finished_at, JSON.stringify(pb && { paused: pb.paused, failed: pb.failed, assigned: pb.assigned, finished: !!pb.finished_at }));
+T('...at most one refused booking per order (no retry storm)', refused <= 20, `${refused} booking attempts for 20 orders`);
 T('The seller was charged nothing', (await wallet()) === START - Number((await db.query(`SELECT COALESCE(sum(shipping_charge_paise),0)::bigint AS c FROM shipments WHERE seller_id = $1 AND state <> 'cancelled'`, [sellerId])).rows[0].c));
+T('The seller is told once that the orders are saved and will be booked automatically', (await db.query(`SELECT count(*)::int AS n FROM seller_notifications WHERE seller_id = $1 AND title LIKE 'Courier booking is paused%'`, [sellerId])).rows[0].n === 1);
 
-// ---------------- 5. "Order Id already exists": the earlier failed attempt left the order on the aggregator; the retry must reuse it.
-// Worst case: our database does not know those orders (as for the ones created before it remembered ids) and the aggregator's list pages by 25 with an
-// unreliable hasMore, so the 20 orders sit on several pages.
+// ---------------- 5. the balance comes back: the paused orders book BY THEMSELVES (nobody clicks anything). Also "Order Id already exists": the earlier attempt left
+// the orders on the aggregator; here our database forgets them (as for the ones created before it remembered ids) and the aggregator's list pages by 25
+// with an unreliable hasMore, so the 20 orders sit on several pages.
 await db.query('DELETE FROM aggregator_orders WHERE seller_id = $1', [sellerId]);
 fake.mode.listCap = 25; fake.mode.nobalance = false; const createdBefore = fake.stats.ordersCreated;
-r = await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/shipments/assign-batch');
-T('After the balance is back, the same 20 orders are booked by re-pushing them', r.batch && r.batch.assigned === 20 && r.batch.failed === 0, JSON.stringify(r.batch && { assigned: r.batch.assigned, failed: r.batch.failed, first: r.batch.results?.find((x) => !x.ok) }));
+pb = await until(pausedBatch, (b) => !!b.finished_at, 40000);
+T('After the balance is back, the same 20 orders are booked automatically (no new request from the seller)', pb && pb.assigned === 20 && pb.failed === 0 && pb.paused === 0, JSON.stringify(pb && { assigned: pb.assigned, failed: pb.failed, paused: pb.paused, why: pb.results?.filter((x) => !x.ok).map((x) => x.error) }));
 T('...reusing the orders already on the aggregator (no duplicate created, the "already exists" answer was handled)', fake.stats.ordersCreated === createdBefore && fake.stats.duplicateOrderRefusals >= 1, JSON.stringify([fake.stats.ordersCreated - createdBefore, fake.stats.duplicateOrderRefusals]));
+T('Charged exactly once per order', (await db.query(`SELECT count(*)::int AS n FROM (SELECT order_id FROM shipments WHERE seller_id = $1 GROUP BY order_id HAVING count(*) > 1) x`, [sellerId])).rows[0].n === 0);
 
 // ---------------- 6. a burst of HTTP 429: slower, never lost or duplicated
 fake.mode.maxInflight = 5; fake.stats.tooMany = 0;
@@ -113,13 +121,14 @@ T('The aggregator order ids found by searching were written to our database (one
 const dup = (await db.query(`SELECT count(*)::int AS n FROM (SELECT order_id FROM shipments WHERE seller_id = $1 GROUP BY order_id HAVING count(*) > 1) x`, [sellerId])).rows[0].n;
 T('No order has two shipments after all of it', dup === 0);
 
-// ---------------- 7. a second failed-then-retried batch: the ids are now in our database, so no search is needed any more
+// ---------------- 7. paused, then resumed again: the ids are in our database, so no search of the aggregator's list and no new order
 fake.mode.listCap = 0; fake.mode.nobalance = true;
 orders = await makeOrders(10);
-await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/shipments/assign-batch');
+const b7 = await queueBatch(orders);
+await until(b7, (b) => b.paused === 10, 15000);
 fake.mode.nobalance = false; const listBefore = fake.stats.calls['GET /orders'] || 0; const createdMid = fake.stats.ordersCreated;
-r = await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/shipments/assign-batch');
-T('A second retry books all 10 straight from the remembered ids: no search of the order list and no new order created', r.batch && r.batch.assigned === 10 && (fake.stats.calls['GET /orders'] || 0) === listBefore && fake.stats.ordersCreated === createdMid, JSON.stringify([r.batch && r.batch.assigned, (fake.stats.calls['GET /orders'] || 0) - listBefore, fake.stats.ordersCreated - createdMid]));
+const r7 = await until(b7, (b) => !!b.finished_at, 40000);
+T('Resumed batch books all 10 straight from the remembered ids: no search of the order list and no new order created', r7 && r7.assigned === 10 && (fake.stats.calls['GET /orders'] || 0) === listBefore && fake.stats.ordersCreated === createdMid, JSON.stringify(r7 && { assigned: r7.assigned }));
 
 // ---------------- 8. the aggregator answers HTTP 502 once for the rates check and once for the booking call of every order: nothing may be lost
 fake.mode.fail502Once = true; fake.mode.listCap = 0;
@@ -129,6 +138,21 @@ r = await runBatch('/v1/shipments/assign-batch', { orderIds: orders }, '/v1/ship
 T('A 502 on the rates check and on the booking call of every order: all 14 are still booked (the read is retried at once, the booking by the queue)', r.batch && r.batch.assigned === 14 && r.batch.failed === 0, JSON.stringify(r.batch && { assigned: r.batch.assigned, failed: r.batch.failed, err: r.batch.results?.find((x) => !x.ok)?.error }) + ` in ${r.ms} ms`);
 T('...each booked exactly once at the aggregator and in our database', fake.stats.shipmentsBooked - shipBefore === 14 && (await db.query(`SELECT count(*)::int AS n FROM (SELECT order_id FROM shipments WHERE seller_id = $1 GROUP BY order_id HAVING count(*) > 1) x`, [sellerId])).rows[0].n === 0, String(fake.stats.shipmentsBooked - shipBefore));
 fake.mode.fail502Once = false;
+
+// ---------------- 9. the wallet READS empty (GET /users/me): the queue stops spending calls (one trial order every few seconds), then resumes alone after the top-up
+fake.mode.nobalance = true; fake.mode.balance = -6237;
+orders = await makeOrders(15);
+const b9 = await queueBatch(orders);
+await until(b9, (b) => b.paused === 15, 20000);
+await sleep(9000); // two trial windows (ASSIGN_PROBE_SECONDS=4)
+const callsDuring = fake.stats.calls['POST /shipments'] || 0; await sleep(9000);
+const waitedCalls = (fake.stats.calls['POST /shipments'] || 0) - callsDuring;
+const stillPaused = await batchOf(b9);
+T('While the wallet reads empty, 15 waiting orders cost almost no calls (only trial bookings, not one per order)', waitedCalls <= 4, `${waitedCalls} booking calls in 9 s`);
+T('...and they are still all safely waiting, none failed', stillPaused.paused + stillPaused.running === 15 && stillPaused.failed === 0 && stillPaused.assigned === 0 && !stillPaused.finished_at, JSON.stringify({ paused: stillPaused.paused, running: stillPaused.running, failed: stillPaused.failed }));
+fake.mode.nobalance = false; fake.mode.balance = 5000; // the admin topped the wallet up
+const r9 = await until(b9, (b) => !!b.finished_at, 90000);
+T('After the top-up all 15 book by themselves (no click) and nobody was charged twice', r9 && r9.assigned === 15 && r9.failed === 0, JSON.stringify(r9 && { assigned: r9.assigned, failed: r9.failed, paused: r9.paused }));
 
 console.log(out.join('\n'));
 console.log(`\n${out.filter((x) => x.startsWith('PASS')).length}/${out.length} passed`);

@@ -1,5 +1,5 @@
 // A fake courier aggregator for end-to-end tests: speaks the few endpoints the Lorrigo adapter uses, with a fixed delay per call and switchable behaviour.
-//   mode.nobalance   POST /shipments answers "Insufficient balance"
+//   mode.nobalance   POST /shipments answers "Insufficient balance"; mode.balance is what GET /users/me reports (wallet_balance, rupees)
 //   mode.maxInflight more calls than this at once answer HTTP 429 (Retry-After: 1)
 //   mode.listCap     the order list returns at most this many orders per page (the real list pages, and its hasMore cannot be trusted)
 //   mode.fail502Once  the FIRST booking call and the FIRST rates call of every order answer HTTP 502 (a struggling aggregator), then work
@@ -9,7 +9,7 @@ import http from 'node:http';
 
 const RUN = Date.now().toString(36).toUpperCase();
 export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds = [] } = {}) {
-  const mode = { nobalance: false, maxInflight: 0, postAwb: true, listCap: 0, fail502Once: false, latencyMs };
+  const mode = { balance: 1000, nobalance: false, maxInflight: 0, postAwb: true, listCap: 0, fail502Once: false, latencyMs };
   const failedOnce = new Set(); // keys already answered with a 502
   const stats = { calls: {}, peak: 0, tooMany: 0, ordersCreated: 0, shipmentsBooked: 0, cancels: 0, duplicateOrderRefusals: 0 };
   const orders = new Map(); // id -> { id, ref, shipment: null | { id, awb }, cancelled }
@@ -28,6 +28,7 @@ export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds =
       const body = method === 'POST' ? await readBody(req) : {};
       if (mode.maxInflight && inflight > mode.maxInflight) { stats.tooMany += 1; return send(res, 429, { message: 'Too many requests' }, { 'retry-after': '1' }); }
       await new Promise((r) => setTimeout(r, mode.latencyMs));
+      if (method === 'GET' && path === '/users/me') { count('GET /users/me'); return send(res, 200, { is_active: true, wallet_balance: mode.balance }); }
       if (method === 'GET' && path === '/pickup-address') { count('GET /pickup-address'); return send(res, 200, { hubs: [...hubs.values()].map((h) => ({ id: h.id, name: h.name, is_active: true })), hasNextPage: false }); }
       if (method === 'POST' && path === '/pickup-address') {
         count('POST /pickup-address');

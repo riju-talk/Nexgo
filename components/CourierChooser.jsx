@@ -45,8 +45,8 @@ export function ActiveAssignBanner({ onFinished }) {
   const done = batch.assigned + batch.failed;
   return (
     <div role="status" style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, background: '#EAF1FF', border: '1px solid #BBD0FF', color: '#1E3A8A', fontSize: 13, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-      <b>Assigning couriers in the background</b>
-      <span>{done} of {batch.total} done{batch.failed ? ` · ${batch.failed} could not be assigned` : ''}. You can keep working or leave this page.</span>
+      <b>{batch.paused > 0 ? 'Courier booking is paused' : 'Assigning couriers in the background'}</b>
+      <span>{batch.paused > 0 ? `${batch.paused} order${batch.paused === 1 ? ' is' : 's are'} saved and will be booked automatically when it resumes (${done} of ${batch.total} done).` : `${done} of ${batch.total} done${batch.failed ? ` · ${batch.failed} could not be assigned` : ''}. You can keep working or leave this page.`}</span>
       <span style={{ flex: '0 0 120px', height: 6, borderRadius: 3, background: '#D4E2FF' }}><span style={{ display: 'block', height: '100%', width: `${Math.round((done / batch.total) * 100)}%`, borderRadius: 3, background: '#3877fc' }} /></span>
     </div>
   );

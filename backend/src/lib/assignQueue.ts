@@ -4,6 +4,7 @@ import { assignOneOrder, loadCourierRank, type CourierRank } from '../routes/shi
 import { BOOKING_PAUSED, sellerSafeMessage } from './sellerSafeError.js';
 import { notify, notifyFunds } from './notify.js';
 import { isTemporaryError } from './transientErrors.js';
+import { aggregatorBalances } from './aggregatorBalance.js';
 
 /**
  * Works through assign_batch_items (courier assignment queued by POST /v1/shipments/assign-batch).
@@ -20,6 +21,18 @@ const MAX_ATTEMPTS = 4;
 const STALE_MINUTES = 5;
 
 let inflight = 0;
+// When the courier network refuses to book (its prepaid wallet is empty) nothing is failed: every waiting order stays queued, marked with BOOKING_PAUSED,
+// and is booked automatically once bookings work again. While the wallet reads empty only ONE order is tried every PROBE_MS (a successful booking
+// opens the gate for OPEN_MS), so the wait costs no wasted calls and resumes on its own after a top-up.
+const PROBE_MS = config.ASSIGN_PROBE_SECONDS * 1000; const OPEN_MS = 10 * 60_000; const PAUSE_RETRY_SECONDS = config.ASSIGN_PAUSE_RETRY_SECONDS; const PAUSE_GIVE_UP_HOURS = 24;
+let lastProbe = 0; let openUntil = 0; let lastPauseLog = 0; let lastPausedAt = 0; let lastSweep = 0;
+async function pauseGate(): Promise<{ includePaused: boolean; limit: number | null }> {
+  if (Date.now() < openUntil) return { includePaused: true, limit: null };
+  const empty = (await aggregatorBalances().catch(() => [])).some((b) => b.status === 'empty');
+  if (!empty) return { includePaused: true, limit: null };
+  if (Date.now() - lastProbe >= PROBE_MS) { lastProbe = Date.now(); return { includePaused: true, limit: 1 }; } // one trial booking
+  return { includePaused: false, limit: 0 };
+}
 const rankCache = new Map<string, { at: number; rank: CourierRank }>();
 async function rankFor(sellerId: string): Promise<CourierRank> {
   const hit = rankCache.get(sellerId);
@@ -29,7 +42,7 @@ async function rankFor(sellerId: string): Promise<CourierRank> {
   return rank;
 }
 
-async function claim(limit: number): Promise<Claimed[]> {
+async function claim(limit: number, includePaused = true): Promise<Claimed[]> {
   return withTransaction(async (client) => {
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended('assign-queue-claim', 0))");
     const picked = await client.query<{ id: string }>(
@@ -37,9 +50,9 @@ async function claim(limit: number): Promise<Claimed[]> {
             cand AS (
               SELECT i.id, i.seller_id, row_number() OVER (PARTITION BY i.seller_id ORDER BY b.created_at, i.id) AS rn, b.created_at
               FROM assign_batch_items i JOIN assign_batches b ON b.id = i.batch_id
-              WHERE i.state = 'queued' AND (i.retry_at IS NULL OR i.retry_at <= now()))
+              WHERE i.state = 'queued' AND (i.retry_at IS NULL OR i.retry_at <= now()) AND ($3::boolean OR i.error IS DISTINCT FROM $4))
        SELECT c.id FROM cand c LEFT JOIN running r ON r.seller_id = c.seller_id
-       WHERE c.rn <= $2 - COALESCE(r.c, 0) ORDER BY c.created_at, c.rn LIMIT $1`, [limit, config.ASSIGN_PER_SELLER]);
+       WHERE c.rn <= $2 - COALESCE(r.c, 0) ORDER BY c.created_at, c.rn LIMIT $1`, [limit, config.ASSIGN_PER_SELLER, includePaused, BOOKING_PAUSED]);
     if (!picked.rows.length) return [];
     const claimed = await client.query<Claimed>(
       `UPDATE assign_batch_items i SET state = 'running', started_at = now(), attempts = i.attempts + 1
@@ -70,6 +83,8 @@ async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void
       await db.query(`UPDATE assign_batch_items SET state = 'queued', retry_at = now() + (($2::int * 5) || ' seconds')::interval, error = $3 WHERE id = $1`, [item.id, item.attempts, sellerSafeMessage(out.error).slice(0, 500)]);
       return;
     }
+    // The courier network cannot book for anyone (its balance is used up): nothing is failed, every waiting order is kept and booked automatically later.
+    if (!out.ok && out.error === BOOKING_PAUSED) { await pauseEverything(item); return; }
     await db.query(
       `UPDATE assign_batch_items SET state = $2, awb = $3, courier = $4, error = $5, duration_ms = $6, finished_at = now() WHERE id = $1`,
       [item.id, out.ok ? 'ok' : 'failed', out.awb ?? null, out.courier ?? null, out.ok ? null : sellerSafeMessage(out.error ?? 'Could not assign a courier').slice(0, 500), out.ms]);
@@ -78,11 +93,7 @@ async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void
       await db.query(`UPDATE assign_batch_items SET state = 'failed', error = $2, finished_at = now() WHERE batch_id = $1 AND state = 'queued'`, [item.batch_id, sellerSafeMessage(out.error).slice(0, 500)]);
       await notifyFunds(item.seller_id, sellerSafeMessage(out.error));
     }
-    // The courier network cannot book for anyone (its balance is used up): every other order in this batch would fail the same way, so end them now with the same clear message.
-    if (!out.ok && out.error === BOOKING_PAUSED) {
-      console.error('Courier booking is paused: the aggregator account has no balance. Top it up to resume bookings.');
-      await db.query(`UPDATE assign_batch_items SET state = 'failed', error = $2, finished_at = now() WHERE batch_id = $1 AND state = 'queued'`, [item.batch_id, BOOKING_PAUSED]);
-    }
+    if (out.ok && Date.now() - lastPausedAt > 30_000) openUntil = Date.now() + OPEN_MS; // bookings work: no need to probe (a booking that was already in flight when the pause began does not count)
     await finishBatchIfDone(item.batch_id);
   } catch (error) {
     log.error(error, 'assign queue item crashed');
@@ -91,12 +102,37 @@ async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void
   }
 }
 
+/** Puts this order and every other waiting order back in the queue, marked as paused, and tells the seller once that nothing is lost. */
+async function pauseEverything(item: Claimed) {
+  openUntil = 0; lastPausedAt = Date.now();
+  await aggregatorBalances(true).catch(() => []); // read the wallet again now: a minute-old reading must not keep the gate open after a refusal
+  await db.query(`UPDATE assign_batch_items SET state = 'queued', error = $2, attempts = 0, started_at = NULL, retry_at = now() + ($3 || ' seconds')::interval WHERE id = $1`, [item.id, BOOKING_PAUSED, String(PAUSE_RETRY_SECONDS)]);
+  // The same sweep for every other waiting order. Many in-flight orders hit the refusal at once, so it runs under one lock (also across processes), skips rows
+  // another worker is touching and is not repeated within a few seconds: concurrent sweeps over the same rows used to deadlock.
+  if (Date.now() - lastSweep > 3000) {
+    lastSweep = Date.now();
+    await withTransaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('assign-pause-sweep', 0))");
+      await client.query(`UPDATE assign_batch_items SET error = $1, retry_at = now() + ($2 || ' seconds')::interval
+        WHERE id IN (SELECT id FROM assign_batch_items WHERE state = 'queued' AND (error IS NULL OR error = $1) ORDER BY id FOR UPDATE SKIP LOCKED)`, [BOOKING_PAUSED, String(PAUSE_RETRY_SECONDS)]);
+    });
+  }
+  if (Date.now() - lastPauseLog > 60_000) { lastPauseLog = Date.now(); console.error('Courier booking is paused: the aggregator account has no balance. Waiting orders are kept and book automatically after a top-up.'); }
+  const waiting = (await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM assign_batch_items WHERE batch_id = $1 AND state = 'queued'`, [item.batch_id])).rows[0]?.n ?? 0;
+  await notify(item.seller_id, { kind: 'batch', title: 'Courier booking is paused: your orders are saved', body: `${waiting} order${waiting === 1 ? '' : 's'} will be booked automatically as soon as courier booking resumes. Nothing is lost and you do not need to do anything.`, screen: 'shipments', entityId: item.batch_id, dedupeKey: `assign-paused:${item.batch_id}` });
+}
+
 async function recoverStale() {
   await db.query(`UPDATE assign_batch_items SET state = 'queued', retry_at = now() WHERE state = 'running' AND started_at < now() - ($1 || ' minutes')::interval AND attempts < $2`, [String(STALE_MINUTES), MAX_ATTEMPTS]);
   const dead = await db.query<{ batch_id: string }>(
     `UPDATE assign_batch_items SET state = 'failed', error = 'The booking was interrupted. Check Track, then assign again if it is not booked.', finished_at = now()
      WHERE state = 'running' AND started_at < now() - ($1 || ' minutes')::interval AND attempts >= $2 RETURNING batch_id`, [String(STALE_MINUTES), MAX_ATTEMPTS]);
   for (const row of dead.rows) await finishBatchIfDone(row.batch_id);
+  // Paused for a whole day: stop waiting and say so, so the order shows up as needing attention instead of waiting for ever.
+  const gaveUp = await db.query<{ batch_id: string }>(
+    `UPDATE assign_batch_items i SET state = 'failed', error = 'Courier booking was unavailable for 24 hours, so this order was not booked. Please assign a courier again.', finished_at = now()
+     FROM assign_batches b WHERE b.id = i.batch_id AND i.state = 'queued' AND i.error = $1 AND b.created_at < now() - ($2 || ' hours')::interval RETURNING i.batch_id`, [BOOKING_PAUSED, String(PAUSE_GIVE_UP_HOURS)]);
+  for (const batchId of new Set(gaveUp.rows.map((r) => r.batch_id))) await finishBatchIfDone(batchId);
 }
 
 export function startAssignProcessor(log: { error: (o: unknown, m?: string) => void; info: (m: string) => void }) {
@@ -111,7 +147,10 @@ export function startAssignProcessor(log: { error: (o: unknown, m?: string) => v
         if (Date.now() - lastRecover > 15_000) { lastRecover = Date.now(); await recoverStale(); }
         const room = config.ASSIGN_WORKERS - inflight;
         if (room > 0) {
-          const items = await claim(room);
+          const gate = await pauseGate();
+          // Closed gate: orders queued meanwhile are shown as paused straight away (not "0 of N" until the next trial booking).
+          if (gate.limit === 0) await db.query(`UPDATE assign_batch_items SET error = $1, retry_at = now() + ($2 || ' seconds')::interval WHERE id IN (SELECT id FROM assign_batch_items WHERE state = 'queued' AND error IS NULL ORDER BY id FOR UPDATE SKIP LOCKED)`, [BOOKING_PAUSED, String(PAUSE_RETRY_SECONDS)]);
+          const items = gate.limit === 0 ? [] : await claim(gate.limit ? Math.min(room, gate.limit) : room, gate.includePaused);
           if (items.length) console.log(JSON.stringify({ evt: 'assign.claim', claimed: items.length, inflight: inflight + items.length }));
           for (const item of items) { inflight++; void run(item, log).finally(() => { inflight--; void pump(); }); }
           if (items.length) again = true; // there may be more waiting

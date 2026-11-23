@@ -22,20 +22,21 @@ function JobCard({ job, onOpenTrack }) {
   }, [job.phase]);
   // Finished without any problem: the card goes away by itself. Problems stay until the seller closes them.
   useEffect(() => {
-    if (job.phase !== 'done' || job.failed) return undefined;
+    if (job.phase !== 'done' || job.failed || job.paused) return undefined;
     const t = setTimeout(() => dismissJob(job.id), 9000);
     return () => clearTimeout(t);
-  }, [job.phase, job.failed, job.id]);
+  }, [job.phase, job.failed, job.paused, job.id]);
 
   const running = job.phase === 'running';
-  const problem = job.phase === 'error' || (job.phase === 'done' && job.failed > 0);
+  const paused = job.phase === 'done' && job.paused > 0; // saved, waiting for courier booking to resume
+  const problem = job.phase === 'error' || (job.phase === 'done' && job.failed > 0 && !paused);
   const slow = running && now - job.changedAt > 20000; // nothing moved for 20 s
-  const tone = problem ? '#B23A2B' : job.phase === 'done' ? T.GREEN : c.color;
+  const tone = problem ? '#B23A2B' : paused ? '#B7791F' : job.phase === 'done' ? T.GREEN : c.color;
   return (
     <div role="status" aria-live="polite" style={{ width: 'min(360px, calc(100vw - 24px))', background: 'var(--nx-surface)', border: `1px solid ${problem ? '#F1B8B8' : 'var(--nx-border)'}`, borderLeft: `4px solid ${tone}`, borderRadius: 12, boxShadow: '0 12px 32px rgba(11,31,68,.18)', padding: '14px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {running ? <Spinner size={18} color={c.color} /> : <span aria-hidden style={{ width: 18, height: 18, borderRadius: '50%', background: tone, color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 800 }}>{problem ? '!' : '✓'}</span>}
-        <b style={{ flex: 1, fontSize: 14, color: T.TEXT }}>{running ? `${c.running}…` : job.phase === 'error' ? 'This could not be completed' : problem ? 'Finished with some problems' : c.finished}</b>
+        <b style={{ flex: 1, fontSize: 14, color: T.TEXT }}>{running ? `${c.running}…` : job.phase === 'error' ? 'This could not be completed' : paused ? 'Saved: waiting for courier booking' : problem ? 'Finished with some problems' : c.finished}</b>
         {!running && <button type="button" aria-label="Close" onClick={() => dismissJob(job.id)} style={{ border: 0, background: 'transparent', color: T.TEXT_MUTED, fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>×</button>}
       </div>
 
@@ -57,7 +58,8 @@ function JobCard({ job, onOpenTrack }) {
 
       {!running && (
         <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-          <div style={{ fontSize: 13.5, color: T.TEXT }}>{job.phase === 'error' ? job.error : job.failed ? c.partial(job) : c.ok(job)}</div>
+          <div style={{ fontSize: 13.5, color: T.TEXT }}>{job.phase === 'error' ? job.error : paused ? `${job.ok} assigned. ${job.paused} order${job.paused === 1 ? ' is' : 's are'} saved and will be booked automatically as soon as courier booking resumes.` : job.failed ? c.partial(job) : c.ok(job)}</div>
+          {paused && <div style={{ padding: '7px 9px', borderRadius: 8, background: '#FFF7E0', border: '1px solid #E0B24A', color: '#6B4A00', fontSize: 12.5, lineHeight: 1.45 }}>Courier booking is paused for a short while. Nothing is lost and you do not need to click anything again. Check Track &gt; Pickup Pending later for the new AWBs.</div>}
           {job.phase === 'done' && job.failed > 0 && job.firstError && <div style={{ padding: '7px 9px', borderRadius: 8, background: '#FDF2F2', border: '1px solid #F1B8B8', color: '#9B1C1C', fontSize: 12.5, lineHeight: 1.45 }}>Main reason: {job.firstError}</div>}
           {job.kind === 'assign' && job.phase === 'done' && <div style={{ marginTop: 4 }}><Btn small primary onClick={() => { onOpenTrack(); dismissJob(job.id); }}>View in Track</Btn></div>}
         </div>
