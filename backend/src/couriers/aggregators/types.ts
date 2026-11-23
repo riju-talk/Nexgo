@@ -9,7 +9,7 @@ import type { Mapped } from '../../lib/trackingIngest.js';
 export type CredentialField = { key: string; label: string; secret: boolean; required: boolean; hint?: string };
 
 /** What this aggregator can do. A capability that is false is simply hidden or skipped (for example no NDR actions, no tracking poll). */
-export type AggregatorCapabilities = { listServices: boolean; serviceability: boolean; track: boolean; ndrAction: boolean; cancel: boolean };
+export type AggregatorCapabilities = { listServices: boolean; serviceability: boolean; track: boolean; ndrAction: boolean; cancel: boolean; /** reports the platform's prepaid balance (adapter.balance) */ balance?: boolean };
 
 /** One tracking event in NEXGO's own vocabulary, whatever the aggregator called it. */
 export type NormalizedEvent = { mapped: Mapped; at: string; location: string | null; description: string; eventId: string };

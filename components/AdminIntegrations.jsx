@@ -49,6 +49,17 @@ function Aggregator({ a, onChanged }) {
         ))}
       </div>
 
+      {a.balance && (
+        <div role="status" style={{ padding: 12, borderRadius: 10, border: `1px solid ${a.balance.status === 'ok' ? '#BFE3C9' : a.balance.status === 'unknown' ? T.BORDER : '#E5A3A3'}`, background: a.balance.status === 'ok' ? '#F1FAF4' : a.balance.status === 'unknown' ? 'var(--nx-surface-soft)' : '#FDECEC', fontSize: 13, color: T.TEXT }}>
+          <b>Wallet with {a.label}: {a.balance.balance === null ? 'unknown' : `₹${Number(a.balance.balance).toLocaleString('en-IN')}`}</b>
+          {a.balance.status === 'empty' && <span style={{ color: T.RED }}> · empty: bookings are refused for every seller until it is topped up</span>}
+          {a.balance.status === 'low' && <span style={{ color: '#8A5A00' }}> · low (warning below ₹{Number(a.lowBalanceBelow).toLocaleString('en-IN')})</span>}
+          {a.balance.status === 'ok' && <span style={{ color: T.GREEN }}> · enough for now</span>}
+          {a.balance.message && <div style={{ color: T.TEXT_MUTED, marginTop: 3 }}>{a.balance.message}</div>}
+          <div style={{ color: T.TEXT_MUTED, marginTop: 3 }}>This wallet pays for every booking, including test bookings. Top it up in {a.label}&apos;s own dashboard.</div>
+        </div>
+      )}
+
       {a.webhookUrl && (
         <div style={{ padding: 12, borderRadius: 10, background: 'var(--nx-surface-soft)', display: 'grid', gap: 6 }}>
           <b style={{ fontSize: 13, color: T.TEXT }}>Webhook (tracking updates)</b>

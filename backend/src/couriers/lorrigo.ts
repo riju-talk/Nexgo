@@ -235,6 +235,13 @@ export class LorrigoAdapter implements CourierAdapter {
     return null;
   }
 
+  /** The platform's wallet with Lorrigo in rupees (GET /users/me -> wallet_balance; negative means bookings are refused). Null if the answer has no balance. */
+  async balance(): Promise<number | null> {
+    const raw = findByKey(await this.call('GET', '/users/me'), /^wallet_?balance$/i);
+    const n = raw === null ? NaN : Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+
   /** The newest orders with their tracking history, for the poll fallback: awb, status and trackingEvents per order. Up to `pages` x 100 orders. */
   async recentOrders(pages = 5, wanted?: Set<string>): Promise<Record<string, unknown>[]> {
     const out: Record<string, unknown>[] = [];

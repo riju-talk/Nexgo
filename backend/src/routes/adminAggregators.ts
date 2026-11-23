@@ -7,6 +7,7 @@ import { requireCommercialAdmin, requirePlatformAdmin } from '../lib/adminAuth.j
 import { pluginById } from '../couriers/aggregators/index.js';
 import { allPlugins, describeCredentials, isConfigured, saveCredentials } from '../couriers/credentials.js';
 import { aggregatorAdapter } from '../couriers/registry.js';
+import { aggregatorBalances } from '../lib/aggregatorBalance.js';
 
 /**
  * Admin > Integrations: the courier aggregators NEXGO can book through (one plugin each, see couriers/aggregators). An admin pastes an API key,
@@ -26,6 +27,7 @@ export async function adminAggregatorRoutes(app: FastifyInstance) {
     const hooks = await db.query<{ provider_code: string; last_at: string | null; last24: number }>(
       `SELECT provider_code, max(received_at) AS last_at, count(*) FILTER (WHERE received_at > now() - interval '24 hours')::int AS last24 FROM webhook_deliveries GROUP BY provider_code`);
     const couriers = await db.query<{ aggregator: string; couriers: number }>(`SELECT aggregator, count(*)::int AS couriers FROM courier_providers WHERE aggregator IS NOT NULL GROUP BY aggregator`);
+    const balances = await aggregatorBalances().catch(() => []);
     return {
       items: allPlugins().map((p) => {
         const saved = rows.rows.find((r) => r.aggregator === p.id); const hook = hooks.rows.find((h) => h.provider_code === p.id);
@@ -34,6 +36,7 @@ export async function adminAggregatorRoutes(app: FastifyInstance) {
           webhookUrl: p.webhook ? `${config.FRONTEND_ORIGIN}${p.id === 'lorrigo' ? '/v1/webhooks/lorrigo' : `/v1/webhooks/aggregators/${p.id}`}` : null,
           lastWebhookAt: hook?.last_at ?? null, webhooks24h: hook?.last24 ?? 0,
           lastTestedAt: saved?.last_tested_at ?? null, lastTestOk: saved?.last_test_ok ?? null, lastTestMessage: saved?.last_test_message ?? null,
+          balance: balances.find((b) => b.id === p.id) ?? null, lowBalanceBelow: config.AGGREGATOR_LOW_BALANCE,
           courierCount: couriers.rows.find((c) => c.aggregator === p.id)?.couriers ?? 0,
         };
       }),

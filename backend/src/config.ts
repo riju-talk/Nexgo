@@ -22,6 +22,7 @@ const schema = z.object({
 
   // --- Sessions, cookies, CSRF ---
   // How often the worker asks aggregators for tracking itself (a safety net next to their webhooks). 0 turns it off.
+  AGGREGATOR_LOW_BALANCE: z.coerce.number().min(0).default(3000), // rupees: below this an admin is warned that the courier network wallet needs a top-up
   TRACKING_POLL_MINUTES: z.coerce.number().int().min(0).max(240).default(10),
   // Background courier assignment (lib/assignQueue.ts): bookings in flight per process, and per seller.
   ASSIGN_WORKERS: z.coerce.number().int().min(1).max(128).default(64),

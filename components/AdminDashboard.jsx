@@ -22,6 +22,22 @@ function CardTitle({ children }) {
 }
 const ROW = { width: '100%', display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', padding: '10px 0', border: 0, borderBottom: '1px solid var(--ops-divider)', background: 'transparent', cursor: 'pointer', textAlign: 'left', color: 'var(--ops-text)' };
 // Tracking comes only from the courier aggregator's webhook. Green = updates are arriving (or nothing is in flight); amber = look at it.
+// The platform's prepaid wallet with each courier aggregator pays for every booking of every seller: when it is empty ALL bookings are refused.
+function WalletWarning({ items }) {
+  const bad = (items || []).filter((b) => b.status === 'empty' || b.status === 'low');
+  if (!bad.length) return null;
+  return bad.map((b) => {
+    const empty = b.status === 'empty';
+    return (
+      <section key={b.id} role="alert" style={{ marginTop: 14, padding: '12px 16px', borderRadius: 10, border: `1px solid ${empty ? '#E5A3A3' : '#E0B24A'}`, background: empty ? '#FDECEC' : '#FFF7E0', color: '#26324A', fontSize: 13, lineHeight: 1.5 }}>
+        <b style={{ color: empty ? '#9B1C1C' : '#8A5A00' }}>{empty ? `${b.label} wallet is empty: every seller's bookings are being refused` : `${b.label} wallet is running low`}</b>
+        {' · '}balance <b>₹{Number(b.balance).toLocaleString('en-IN')}</b>
+        <div style={{ marginTop: 3 }}>{empty ? 'Orders cannot be booked (they stay in Ready to ship) until the wallet is topped up in the courier network dashboard.' : 'Top it up before it reaches zero, or bookings will stop for all sellers.'}</div>
+      </section>
+    );
+  });
+}
+
 function TrackingHealth({ t }) {
   const quiet = t.liveShipments > 0 && t.webhooks24h === 0;
   const warn = quiet || t.stuckBooked > 0;
@@ -161,6 +177,7 @@ export default function AdminDashboard({ mobile, phone }) {
           </Card>
         </section>
 
+        <WalletWarning items={live.aggregatorBalances} />
         {live.trackingHealth && <TrackingHealth t={live.trackingHealth} />}
         {live.assignQueue && (live.assignQueue.queued + live.assignQueue.running > 0 || live.assignQueue.p95Ms) && (
           <section role="status" style={{ marginTop: 10, padding: '9px 16px', borderRadius: 10, border: '1px solid var(--ops-border)', background: 'var(--ops-surface)', color: '#26324A', fontSize: 13 }}>

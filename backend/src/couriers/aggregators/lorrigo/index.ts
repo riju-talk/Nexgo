@@ -59,7 +59,7 @@ export const lorrigo: AggregatorPlugin = {
     { key: 'webhookToken', label: 'Webhook token', secret: true, required: true, hint: 'The same value goes in Lorrigo > Webhooks > Token (sent as the x-api-key header)' },
     { key: 'baseUrl', label: 'API base URL', secret: false, required: false, hint: 'Leave empty for https://app.lorrigo.com/api/v2' },
   ],
-  capabilities: { listServices: true, serviceability: true, track: true, ndrAction: true, cancel: true },
+  capabilities: { listServices: true, serviceability: true, track: true, ndrAction: true, cancel: true, balance: true },
   envCredentials: () => ({ apiKey: config.LORRIGO_API_KEY ?? '', webhookToken: config.LORRIGO_WEBHOOK_TOKEN ?? '', baseUrl: config.LORRIGO_BASE_URL }),
   create(credentials) {
     // Never fall back to the mock here: a "live" aggregator that silently fakes an AWB would book nothing at the courier.

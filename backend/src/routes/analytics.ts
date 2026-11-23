@@ -4,6 +4,7 @@ import type { Pool, PoolClient } from 'pg';
 import { db, withSellerTransaction } from '../db/client.js';
 import { requireSeller } from './seller.js';
 import { requirePlatformAdmin } from '../lib/adminAuth.js';
+import { aggregatorBalances } from '../lib/aggregatorBalance.js';
 import { IST, cached, codPending, invalidateMetrics, pct, pickupMissedSql, pickupPendingSql, windowSql } from '../lib/metrics.js';
 
 function seller(request: FastifyRequest) { if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 }); return request.principal.sellerId; }
@@ -253,6 +254,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
         pickupPending: { total: pickupTotal.rows[0].total, missed: pickupTotal.rows[0].missed, sellers: pickups.rows.map((r) => ({ id: r.id, name: r.legal_name, code: r.nexgo_code, count: r.n, overdue: r.overdue, oldestHours: r.oldest_hours })) },
         recentSignups: signups.rows,
         assignQueue: { queued: queue.rows[0]?.queued ?? 0, running: queue.rows[0]?.running ?? 0, p95Ms: queue.rows[0]?.p95 ?? null, oldestWaitSeconds: queue.rows[0]?.oldest ?? null },
+        aggregatorBalances: await aggregatorBalances().catch(() => []),
         trackingHealth: { lastWebhookAt: tracking.rows[0].last_at, webhooks24h: tracking.rows[0].last24, stuckBooked: tracking.rows[0].stuck, liveShipments: tracking.rows[0].live, courierCancelled: tracking.rows[0].courier_cancelled },
       };
     });

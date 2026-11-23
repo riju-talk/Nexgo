@@ -8,6 +8,7 @@ import { startCancelProcessor } from './lib/cancelQueue.js';
 import { startCredentialRefresh } from './couriers/credentials.js';
 import { startTrackingPoll } from './lib/trackingPoll.js';
 import { scanPickupMissed } from './lib/notify.js';
+import { logLowBalances } from './lib/aggregatorBalance.js';
 import { generateDueCycles } from './lib/codCycles.js';
 
 type Job = { id: string; seller_id: string | null; job_type: string; payload: Record<string, unknown>; attempts: number };
@@ -127,7 +128,7 @@ const stopPoll = startTrackingPoll({ error: (o, m) => console.error(m ?? 'tracki
 const stopAssign = startAssignProcessor({ error: (o, m) => console.error(m ?? 'assign queue', o), info: (m) => console.log(m) });
 // COD that has reached D+N is cut into payout cycles every hour (the seller's COD page also does it on open).
 const codTimer = setInterval(() => { void generateDueCycles().catch((e) => console.error('cod cycles failed', e)); }, 60 * 60 * 1000); void generateDueCycles().catch((e) => console.error('cod cycles failed', e));
-const pickupTimer = setInterval(() => { void scanPickupMissed(); }, 10 * 60 * 1000); void scanPickupMissed();
+const pickupTimer = setInterval(() => { void scanPickupMissed(); void logLowBalances((m) => console.error(m)); }, 10 * 60 * 1000); void scanPickupMissed(); setTimeout(() => { void logLowBalances((m) => console.error(m)); }, 30_000);
 const stopCancel = startCancelProcessor({ error: (o, m) => console.error(m ?? 'cancel queue', o), info: (m) => console.log(m) });
 console.log('NEXGO worker started');
 

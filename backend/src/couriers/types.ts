@@ -29,6 +29,8 @@ export type CourierAdapter = {
   /** Tell the courier what to do with an undelivered parcel. Optional: only couriers with an NDR API implement it. */
   /** The courier's routing / sort code for a booked shipment, as the aggregator gives it (printed on the label). Optional. */
   routingCode?(providerShipmentId: string): Promise<string | null>;
+  /** The platform's own prepaid balance with this aggregator, in rupees (it pays for every booking). Null when the aggregator does not say. Optional. */
+  balance?(): Promise<number | null>;
   ndrAction?(awb: string, action: NdrCourierAction, comment: string): Promise<void>;
 };
 export type NdrCourierAction = 'reattempt' | 'return' | 'cancel';
