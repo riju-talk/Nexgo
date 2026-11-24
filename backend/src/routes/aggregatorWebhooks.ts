@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { credentialsFor } from '../couriers/credentials.js';
-import { pluginById } from '../couriers/aggregators/index.js';
+import { PLUGINS, pluginById } from '../couriers/aggregators/index.js';
 import { ingestUpdate, type IngestOutcome } from '../lib/trackingIngest.js';
 
 /**
@@ -30,4 +30,6 @@ export async function aggregatorWebhookRoutes(app: FastifyInstance) {
   const options = { bodyLimit: 5_000_000, config: { rawBody: true, rateLimit: { max: 1200, timeWindow: '1 minute' } } };
   app.post('/v1/webhooks/aggregators/:id', options, handle());
   for (const path of ['/v2/webhooks/lorrigo', '/v1/webhooks/lorrigo']) app.post(path, options, handle('lorrigo'));
+  // An aggregator that needs its own URL path (see AggregatorWebhook.path) gets it as well.
+  for (const plugin of PLUGINS) if (plugin.webhook?.path) app.post(plugin.webhook.path, options, handle(plugin.id));
 }

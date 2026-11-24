@@ -1,6 +1,6 @@
 # Adding a courier aggregator
 
-NEXGO books couriers through **aggregators** (Lorrigo today). Each one is a **plugin**: one folder, one registry line, credentials pasted on an admin page. Nothing else in the code names an aggregator.
+NEXGO books couriers through **aggregators** (Lorrigo and Shiprocket today; see `docs/SHIPROCKET_SETUP.md`). Each one is a **plugin**: one folder, one registry line, credentials pasted on an admin page. Nothing else in the code names an aggregator.
 
 ## What you need from the aggregator
 - API documentation and a sandbox/test key.
@@ -20,6 +20,9 @@ NEXGO books couriers through **aggregators** (Lorrigo today). Each one is a **pl
 7. **Admin > Integrations:** paste the API key and webhook token, press **Test connection**, copy the webhook URL into the aggregator's dashboard.
 8. **Admin > Couriers > + Add courier:** choose the aggregator, pick its services (`listServices`), then **Assign courier & rates** for sellers. Prices always come from NEXGO rate cards.
 9. Book one real test order and cancel it; check the wallet before and after.
+
+## Two aggregators, one wallet each: failover
+Every aggregator has its own prepaid wallet. Give the plugin `capabilities.balance: true` and an adapter `balance()` (rupees) so NEXGO can read it. When an aggregator refuses a booking because that wallet is empty, throw an error whose message is `BOOKING_PAUSED` with `statusCode: 503` (see `outOfBalance()` in `couriers/shiprocket.ts`): the booking code then skips that aggregator's couriers (without any call) and tries a courier on another aggregator; orders only wait (and book by themselves after a top-up) when **no** aggregator with a live courier has funds. A webhook URL that the aggregator refuses (Shiprocket forbids the words "shiprocket", "sr", "kr") can be named with `webhook.path`.
 
 ## Rules every adapter keeps
 - **Never fake a booking.** Missing credentials throw a readable 503, never a made-up AWB (the in-process mock is only for the sandbox courier).

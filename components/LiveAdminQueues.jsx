@@ -19,14 +19,25 @@ function Button({ children, onClick, disabled, primary = false }) { return <moti
 
 const slug = (v = '') => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-// Admin "Add courier": a courier (Delhivery, Bluedart ...) is added by hand and books through an aggregator such as Lorrigo.
+// Admin "Add courier": a courier (Delhivery, Bluedart ...) is added by hand and books through an aggregator (Lorrigo, Shiprocket ... whichever are set up on Integrations).
 // The aggregator is never listed as a courier itself; each service just stores the aggregator's own id for it.
 function AddCourier({ onAdded }) {
   const { showToast } = useAppState();
-  const blank = { name: '', cod: true, aggregator: 'lorrigo', services: [{ name: '', type: 'surface', externalId: '' }] };
+  const blank = { name: '', cod: true, aggregator: '', services: [{ name: '', type: 'surface', externalId: '' }] };
   const [open, setOpen] = useState(false); const [f, setF] = useState(blank); const [catalogue, setCatalogue] = useState(null); const [busy, setBusy] = useState(false);
-  const loadCatalogue = useCallback(() => adminApi.aggregatorCouriers('lorrigo').then((x) => setCatalogue(x.items || [])).catch(() => setCatalogue([])), []);
-  useEffect(() => { if (open && f.aggregator === 'lorrigo' && catalogue === null) loadCatalogue(); }, [open, f.aggregator, catalogue, loadCatalogue]);
+  const [aggregators, setAggregators] = useState(null); // the aggregators that are set up on Integrations (id, label)
+  useEffect(() => {
+    if (!open || aggregators !== null) return;
+    adminApi.aggregators().then((x) => { const list = (x.items || []).filter((a) => a.configured); setAggregators(list); setF((s) => (s.aggregator ? s : { ...s, aggregator: list[0]?.id || '' })); }).catch(() => setAggregators([]));
+  }, [open, aggregators]);
+  const aggLabel = (aggregators || []).find((a) => a.id === f.aggregator)?.label || 'the aggregator';
+  // The services on offer belong to the chosen aggregator: read them again when it changes.
+  useEffect(() => {
+    if (!open || !f.aggregator) return undefined;
+    let live = true; setCatalogue(null); // eslint-disable-line react-hooks/set-state-in-effect -- the list belongs to the aggregator picked above
+    adminApi.aggregatorCouriers(f.aggregator).then((x) => { if (live) setCatalogue(x.items || []); }).catch(() => { if (live) setCatalogue([]); });
+    return () => { live = false; };
+  }, [open, f.aggregator]);
   const setService = (i, patch) => setF((s) => ({ ...s, services: s.services.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
   const save = async () => {
     const code = slug(f.name);
@@ -46,7 +57,11 @@ function AddCourier({ onAdded }) {
       <p style={{ margin: '5px 0 12px', fontSize: 12.5, color: 'var(--ops-muted)' }}>Add the courier sellers will see, for example Delhivery. Bookings go through the aggregator; the aggregator itself is never shown to sellers as a courier.</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 10 }}>
         <input aria-label="Courier name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Courier name (e.g. Delhivery)" maxLength={120} style={FIELD} />
-        <select aria-label="Books through" value={f.aggregator} onChange={(e) => setF({ ...f, aggregator: e.target.value })} style={FIELD}><option value="lorrigo">Books through Lorrigo</option></select>
+        <select aria-label="Books through" value={f.aggregator} onChange={(e) => setF({ ...f, aggregator: e.target.value, services: f.services.map((x) => ({ ...x, externalId: '' })) })} style={FIELD}>
+          {aggregators === null && <option value="">Loading…</option>}
+          {aggregators?.length === 0 && <option value="">No aggregator set up (see Integrations)</option>}
+          {(aggregators || []).map((a) => <option key={a.id} value={a.id}>Books through {a.label}</option>)}
+        </select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5 }}><input type="checkbox" checked={f.cod} onChange={(e) => setF({ ...f, cod: e.target.checked })} /> Supports COD</label>
       </div>
       <div style={{ marginTop: 12, fontSize: 11.5, fontWeight: 750, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--ops-muted)' }}>Services</div>
@@ -55,8 +70,8 @@ function AddCourier({ onAdded }) {
           <input aria-label="Service name" value={s.name} onChange={(e) => setService(i, { name: e.target.value })} placeholder="Service name (e.g. Delhivery Surface 0.5 kg)" maxLength={120} style={FIELD} />
           <select aria-label="Service type" value={s.type} onChange={(e) => setService(i, { type: e.target.value })} style={FIELD}>{['surface', 'express', 'air'].map((t) => <option key={t} value={t}>{title(t)}</option>)}</select>
           {f.aggregator && (catalogue?.length
-            ? <select aria-label="Aggregator service" value={s.externalId} onChange={(e) => { const c = catalogue.find((x) => x.id === e.target.value); setService(i, { externalId: e.target.value, ...(c && !s.name.trim() ? { name: c.name } : {}), ...(c && ['surface', 'express', 'air'].includes(c.type) ? { type: c.type } : {}) }); }} style={FIELD}><option value="">Pick the Lorrigo service</option>{catalogue.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-            : <input aria-label="Aggregator service id" value={s.externalId} onChange={(e) => setService(i, { externalId: e.target.value })} placeholder={catalogue === null ? 'Loading Lorrigo services…' : 'Lorrigo service id'} style={FIELD} />)}
+            ? <select aria-label="Aggregator service" value={s.externalId} onChange={(e) => { const c = catalogue.find((x) => x.id === e.target.value); setService(i, { externalId: e.target.value, ...(c && !s.name.trim() ? { name: c.name } : {}), ...(c && ['surface', 'express', 'air'].includes(c.type) ? { type: c.type } : {}) }); }} style={FIELD}><option value="">Pick the {aggLabel} service</option>{catalogue.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            : <input aria-label="Aggregator service id" value={s.externalId} onChange={(e) => setService(i, { externalId: e.target.value })} placeholder={catalogue === null ? `Loading ${aggLabel} services…` : `${aggLabel} service id`} style={FIELD} />)}
         </div>
       ))}
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>

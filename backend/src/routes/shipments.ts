@@ -15,7 +15,8 @@ import { laneRefusalOf, rememberLaneRefusals, type LaneRefusal } from '../lib/la
 import { storage, STORAGE_NOT_CONNECTED } from '../lib/storage.js';
 import { config } from '../config.js';
 import { courierAdapter } from '../couriers/registry.js';
-import { sellerSafeMessage } from '../lib/sellerSafeError.js';
+import { sellerSafeMessage, BOOKING_PAUSED } from '../lib/sellerSafeError.js';
+import { pausedAggregatorIds, markEmpty } from '../lib/aggregatorBalance.js';
 import { invalidateMetrics } from '../lib/metrics.js';
 import { pickupPendingSql } from '../lib/metrics.js';
 import { notifyFunds } from '../lib/notify.js';
@@ -176,8 +177,8 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
       if (order.rows[0].state === 'booked') return { ok: false as const, error: 'Already assigned to a courier' };
       if (!['new', 'ready_to_ship'].includes(order.rows[0].state)) return { ok: false as const, error: `Order is ${order.rows[0].state}` };
       if (order.rows[0].state === 'new') await client.query(`UPDATE orders SET state = 'ready_to_ship', updated_at = now() WHERE id = $1`, [orderId]);
-      const services = await client.query<{ pcode: string; pname: string; scode: string }>(
-        `SELECT cp.code AS pcode, cp.name AS pname, cs.code AS scode FROM seller_courier_access sca JOIN courier_services cs ON cs.id = sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id = cs.provider_id AND cp.integration_state = 'live' WHERE sca.seller_id = $1 ORDER BY cp.name, cs.display_name`, [p.sellerId]);
+      const services = await client.query<{ pcode: string; pname: string; scode: string; agg: string | null }>(
+        `SELECT cp.code AS pcode, cp.name AS pname, cs.code AS scode, cp.aggregator AS agg FROM seller_courier_access sca JOIN courier_services cs ON cs.id = sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id = cs.provider_id AND cp.integration_state = 'live' WHERE sca.seller_id = $1 ORDER BY cp.name, cs.display_name`, [p.sellerId]);
       const ordered = services.rows.filter((c) => !providerCode || (c.pcode === providerCode && (!serviceCode || c.scode === serviceCode))).sort((a, b) => rank(a.pname, a.pcode) - rank(b.pname, b.pcode));
       if (!ordered.length) return { ok: false as const, error: providerCode ? 'The courier you chose is not enabled for this account' : 'No courier is enabled for this account' };
       return { ok: true as const, ordered };
@@ -186,7 +187,12 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
     // Step 2, one courier at a time: every attempt is its own booking (no connection held while the aggregator works), so a refused
     // courier leaves nothing behind and the next one is tried.
     let lastError = 'No serviceable courier for this order';
+    // Failover between aggregators: a courier whose aggregator has no balance left is skipped without a single call, and one that refuses for balance
+    // while being tried is skipped for the rest of this order. Only when no courier on a funded aggregator is left does the order wait (BOOKING_PAUSED).
+    const pausedAggs = await pausedAggregatorIds();
+    let skippedForBalance = false;
     for (const c of planned.ordered) {
+      if (c.agg && pausedAggs.has(c.agg)) { skippedForBalance = true; continue; }
       try {
         const booked = await bookDetached(p, requestId, { orderId, providerCode: c.pcode, serviceCode: c.scode }, `auto-assign:${orderId}:${c.pcode}:${c.scode}`);
         const awb = booked.shipment.awb as string;
@@ -198,9 +204,11 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
         lastError = sellerSafeMessage((e as Error).message || lastError);
         const lane = laneRefusalOf(e); if (lane) refusals.push({ lane, reason: lastError });
         if (status === 402) return { ok: false, error: lastError, ms: Date.now() - started }; // wallet short: no point trying other couriers
+        if (lastError === BOOKING_PAUSED) { if (c.agg) { pausedAggs.add(c.agg); markEmpty(c.agg); } skippedForBalance = true; continue; } // this aggregator is out of balance: try a courier on another one
         if (status !== 422) throw e;
       }
     }
+    if (skippedForBalance && (lastError === 'No serviceable courier for this order' || lastError === BOOKING_PAUSED)) return { ok: false, error: BOOKING_PAUSED, ms: Date.now() - started };
     return { ok: false, error: lastError, ms: Date.now() - started };
   } catch (e) {
     return { ok: false, error: sellerSafeMessage((e as Error).message || 'Could not assign a courier'), ms: Date.now() - started };

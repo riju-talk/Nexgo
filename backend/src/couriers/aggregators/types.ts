@@ -28,6 +28,8 @@ export type NormalizedUpdate = {
 };
 
 export type AggregatorWebhook = {
+  /** The URL path the aggregator posts to (default /v1/webhooks/aggregators/<id>). Some aggregators refuse certain words in a URL, so a plugin can name its own. */
+  path?: string;
   /** True when the credentials needed to check requests are set. Without them the endpoint answers 503, never 200. */
   configured(credentials: Record<string, string>): boolean;
   /** True when the request is genuinely from the aggregator (token / signature check). Never logs or returns the secret. */

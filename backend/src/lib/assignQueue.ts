@@ -4,7 +4,7 @@ import { assignOneOrder, loadCourierRank, type CourierRank } from '../routes/shi
 import { BOOKING_PAUSED, sellerSafeMessage } from './sellerSafeError.js';
 import { notify, notifyFunds } from './notify.js';
 import { isTemporaryError } from './transientErrors.js';
-import { aggregatorBalances } from './aggregatorBalance.js';
+import { aggregatorBalances, allBookingPaused } from './aggregatorBalance.js';
 
 /**
  * Works through assign_batch_items (courier assignment queued by POST /v1/shipments/assign-batch).
@@ -28,7 +28,7 @@ const PROBE_MS = config.ASSIGN_PROBE_SECONDS * 1000; const OPEN_MS = 10 * 60_000
 let lastProbe = 0; let openUntil = 0; let lastPauseLog = 0; let lastPausedAt = 0; let lastSweep = 0;
 async function pauseGate(): Promise<{ includePaused: boolean; limit: number | null }> {
   if (Date.now() < openUntil) return { includePaused: true, limit: null };
-  const empty = (await aggregatorBalances().catch(() => [])).some((b) => b.status === 'empty');
+  const empty = await allBookingPaused(); // only when EVERY aggregator is out of balance: one funded aggregator keeps bookings going
   if (!empty) return { includePaused: true, limit: null };
   if (Date.now() - lastProbe >= PROBE_MS) { lastProbe = Date.now(); return { includePaused: true, limit: 1 }; } // one trial booking
   return { includePaused: false, limit: 0 };
@@ -109,7 +109,9 @@ async function pauseEverything(item: Claimed) {
   await db.query(`UPDATE assign_batch_items SET state = 'queued', error = $2, attempts = 0, started_at = NULL, retry_at = now() + ($3 || ' seconds')::interval WHERE id = $1`, [item.id, BOOKING_PAUSED, String(PAUSE_RETRY_SECONDS)]);
   // The same sweep for every other waiting order. Many in-flight orders hit the refusal at once, so it runs under one lock (also across processes), skips rows
   // another worker is touching and is not repeated within a few seconds: concurrent sweeps over the same rows used to deadlock.
-  if (Date.now() - lastSweep > 3000) {
+  // The sweep over every waiting order only makes sense when nothing can be booked anywhere; a seller whose couriers are all on the empty aggregator
+  // simply waits (this item), the others carry on through the aggregator that still has funds.
+  if (Date.now() - lastSweep > 3000 && await allBookingPaused()) {
     lastSweep = Date.now();
     await withTransaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended('assign-pause-sweep', 0))");

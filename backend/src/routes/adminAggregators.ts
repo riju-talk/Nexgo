@@ -33,7 +33,7 @@ export async function adminAggregatorRoutes(app: FastifyInstance) {
         const saved = rows.rows.find((r) => r.aggregator === p.id); const hook = hooks.rows.find((h) => h.provider_code === p.id);
         return {
           id: p.id, label: p.label, configured: isConfigured(p.id), capabilities: p.capabilities, fields: describeCredentials(p.id),
-          webhookUrl: p.webhook ? `${config.FRONTEND_ORIGIN}${p.id === 'lorrigo' ? '/v1/webhooks/lorrigo' : `/v1/webhooks/aggregators/${p.id}`}` : null,
+          webhookUrl: p.webhook ? `${config.FRONTEND_ORIGIN}${p.webhook.path ?? (p.id === 'lorrigo' ? '/v1/webhooks/lorrigo' : `/v1/webhooks/aggregators/${p.id}`)}` : null,
           lastWebhookAt: hook?.last_at ?? null, webhooks24h: hook?.last24 ?? 0,
           lastTestedAt: saved?.last_tested_at ?? null, lastTestOk: saved?.last_test_ok ?? null, lastTestMessage: saved?.last_test_message ?? null,
           balance: balances.find((b) => b.id === p.id) ?? null, lowBalanceBelow: config.AGGREGATOR_LOW_BALANCE,

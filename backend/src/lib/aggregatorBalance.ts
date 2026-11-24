@@ -67,6 +67,39 @@ export async function alertAdmins(b: AggregatorBalance): Promise<boolean> {
   } catch (e) { console.error('Wallet alert could not be sent', e instanceof Error ? e.message : String(e)); return false; }
 }
 
+let inUseCache: { at: number; ids: Set<string> } | null = null;
+async function aggregatorsInUse(): Promise<Set<string>> {
+  if (inUseCache && Date.now() - inUseCache.at < TTL_MS) return inUseCache.ids;
+  try {
+    const rows = await db.query<{ aggregator: string }>(`SELECT DISTINCT cp.aggregator FROM courier_providers cp WHERE cp.aggregator IS NOT NULL AND cp.integration_state = 'live' AND EXISTS (SELECT 1 FROM courier_services cs WHERE cs.provider_id = cp.id AND cs.is_active)`);
+    inUseCache = { at: Date.now(), ids: new Set(rows.rows.map((r) => r.aggregator)) };
+  } catch { return new Set(allPlugins().map((p) => p.id)); } // cannot tell: count every aggregator
+  return inUseCache.ids;
+}
+
+/** An aggregator just refused a booking for balance: every booking that starts from now on skips it, without waiting for the next balance reading. */
+export function markEmpty(id: string): void {
+  if (!cache) return;
+  const hit = cache.items.find((b) => b.id === id);
+  if (hit) { hit.status = 'empty'; cache.at = Date.now(); }
+  else { const label = allPlugins().find((p) => p.id === id)?.label ?? id; cache.items.push({ id, label, balance: null, status: 'empty', message: null, checkedAt: new Date().toISOString() }); cache.at = Date.now(); }
+}
+
+/** Aggregators whose prepaid wallet is empty right now (the booking code does not even try their couriers). */
+export async function pausedAggregatorIds(): Promise<Set<string>> {
+  return new Set((await aggregatorBalances().catch(() => [])).filter((b) => b.status === 'empty').map((b) => b.id));
+}
+
+/** True only when EVERY configured aggregator is known to be empty: then nothing can be booked anywhere. One aggregator with funds means bookings carry on through it. */
+export async function allBookingPaused(): Promise<boolean> {
+  // Only aggregators that actually have a live courier count: credentials saved for one nobody uses must not keep the others' pause from closing.
+  const inUse = await aggregatorsInUse();
+  const configured = allPlugins().filter((p) => isConfigured(p.id) && inUse.has(p.id));
+  if (!configured.length) return false;
+  const balances = await aggregatorBalances().catch(() => []);
+  return balances.length === configured.length && balances.every((b) => b.status === 'empty'); // an aggregator that cannot report its balance counts as open
+}
+
 /** For the worker: say it loudly in the logs while a wallet is low or empty, and e-mail the admins. */
 export async function logLowBalances(log: (m: string) => void): Promise<void> {
   for (const b of await aggregatorBalances(true).catch(() => [])) {
