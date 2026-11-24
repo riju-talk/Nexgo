@@ -88,7 +88,9 @@ function SingleOrder({ order, onClose, onDone }) {
       onDone();
     } catch (e) {
       const reason = e instanceof ApiError ? e.message : 'Booking failed';
-      bookingErrorToast(e instanceof ApiError ? e : new Error(reason), showToast);
+      // Courier booking is paused (the courier network's own balance is used up): do not just refuse, offer to keep the order and book it by itself later.
+      if (/courier booking is paused/i.test(reason)) setState((st) => ({ ...st, pausedChoice: { providerCode: chosen.provider.code, serviceCode: chosen.service.code, name: chosen.provider.name } }));
+      else bookingErrorToast(e instanceof ApiError ? e : new Error(reason), showToast);
       // 422 = this courier cannot take this parcel: move it to the "not available" list with the reason, so it is not tried again.
       if (e instanceof ApiError && e.status === 422) {
         setState((s) => ({ ...s, quotes: s.quotes.filter((q) => q !== chosen), unavailable: [...s.unavailable, { ...chosen, reason }], refusal: `${chosen.provider.name} ${chosen.service.name} could not take this parcel. ${reason}${/choose another courier.?$/i.test(reason) ? "" : " Choose another courier."}` }));
@@ -129,6 +131,12 @@ function SingleOrder({ order, onClose, onDone }) {
           <summary style={{ cursor: 'pointer' }}>{state.unavailable.length} courier{state.unavailable.length === 1 ? '' : 's'} not available for this order</summary>
           {state.unavailable.map((u, i) => <div key={i} style={{ marginTop: 5 }}><b style={{ color: T.TEXT }}>{u.provider.name} {u.service.name}</b>: {u.reason}</div>)}
         </details>
+      )}
+      {state.pausedChoice && (
+        <div role="alert" style={{ marginTop: 14, padding: 12, borderRadius: 9, background: '#FFF7E0', border: '1px solid #E0B24A', color: '#6B4A00', fontSize: 13, lineHeight: 1.5 }}>
+          <b>Courier booking is paused right now.</b> Nothing was charged. You can keep this order and have it booked with {state.pausedChoice.name} automatically as soon as booking resumes.
+          <div style={{ marginTop: 8 }}><Btn small primary loading={busy} onClick={async () => { setBusy(true); try { await assignInBatches([order.id], { courier: { providerCode: state.pausedChoice.providerCode, serviceCode: state.pausedChoice.serviceCode } }); showToast('Saved: this order will be booked automatically when courier booking resumes.'); onDone(); } catch (e) { showToast(e instanceof ApiError ? e.message : 'Could not save the order for automatic booking.', 'error'); } finally { setBusy(false); } }}>Keep it and book automatically</Btn></div>
+        </div>
       )}
       <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
         <Btn primary loading={busy} disabled={!chosen} onClick={book}>{busy ? 'Booking…' : chosen ? `Book with ${chosen.provider.name} · ${inr(chosen.price.total)}` : 'Select a courier to book'}</Btn>

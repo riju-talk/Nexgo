@@ -150,6 +150,8 @@ const waitedCalls = (fake.stats.calls['POST /shipments'] || 0) - callsDuring;
 const stillPaused = await batchOf(b9);
 T('While the wallet reads empty, 15 waiting orders cost almost no calls (only trial bookings, not one per order)', waitedCalls <= 4, `${waitedCalls} booking calls in 9 s`);
 T('...and they are still all safely waiting, none failed', stillPaused.paused + stillPaused.running === 15 && stillPaused.failed === 0 && stillPaused.assigned === 0 && !stillPaused.finished_at, JSON.stringify({ paused: stillPaused.paused, running: stillPaused.running, failed: stillPaused.failed }));
+const sumPaused = (await call('GET', '/v1/shipments/summary')).j;
+T('Track is told booking is paused while the wallet is empty (and the balance itself is never sent to the seller)', sumPaused.bookingPaused === true && !JSON.stringify(sumPaused).includes('6237'), JSON.stringify({ bookingPaused: sumPaused.bookingPaused }));
 fake.mode.nobalance = false; fake.mode.balance = 5000; // the admin topped the wallet up
 const r9 = await until(b9, (b) => !!b.finished_at, 90000);
 T('After the top-up all 15 book by themselves (no click) and nobody was charged twice', r9 && r9.assigned === 15 && r9.failed === 0, JSON.stringify(r9 && { assigned: r9.assigned, failed: r9.failed, paused: r9.paused }));

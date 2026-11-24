@@ -1,3 +1,4 @@
+import { aggregatorBalances } from '../lib/aggregatorBalance.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
@@ -158,7 +159,9 @@ export async function shipmentListRoutes(app: FastifyInstance) {
       const o = (await client.query(`SELECT ${ord.map((t) => `count(*) FILTER (WHERE ${orderTabSql(t)})::int AS "${t}"`).join(', ')} ${ORDER_FROM} WHERE o.seller_id = $1 AND ${ORDER_BASE} ${oFilters.map((c) => `AND ${c}`).join(' ')}`, op)).rows[0] as Record<Tab, number>;
       for (const t of ship) counts[t] += s[t] ?? 0;
       for (const t of ord) counts[t] += o[t] ?? 0;
-      return { counts };
+      // Is courier booking paused (the courier network's balance is used up)? Sellers are told before they push, never shown the balance itself.
+      const bookingPaused = (await aggregatorBalances().catch(() => [])).some((b) => b.status === 'empty');
+      return { counts, bookingPaused };
     });
   });
 

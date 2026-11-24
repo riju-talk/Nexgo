@@ -191,6 +191,7 @@ export default function LiveTrack({ mobile }) {
   const [allTags, setAllTags] = useState([]);
   const [options, setOptions] = useState({ couriers: [], warehouses: [] });
   const [counts, setCounts] = useState({});
+  const [bookingPaused, setBookingPaused] = useState(false); // courier booking is paused: pushes are kept and booked automatically later
   const [stale, setStale] = useState(false);
   const [working, setWorking] = useState('');
   const [exportFormat, setExportFormat] = useState('csv');
@@ -222,7 +223,7 @@ export default function LiveTrack({ mobile }) {
   useEffect(() => { listRef.current = list; });
   const items = list.items;
 
-  const loadSummary = useCallback(() => apiFetch(`/v1/shipments/summary?${qs({})}`).then((x) => { setCounts(x.counts || {}); return x.counts || {}; }).catch(() => null), [qs]);
+  const loadSummary = useCallback(() => apiFetch(`/v1/shipments/summary?${qs({})}`).then((x) => { setCounts(x.counts || {}); setBookingPaused(!!x.bookingPaused); return x.counts || {}; }).catch(() => null), [qs]);
   useEffect(() => { loadSummary(); }, [loadSummary]);  
   const loadTags = useCallback(() => apiFetch('/v1/shipments/tags').then((x) => setAllTags(x.items || [])).catch(() => {}), []);
   useEffect(() => { loadTags(); }, [loadTags]);
@@ -452,6 +453,7 @@ export default function LiveTrack({ mobile }) {
 
   return (
     <div style={{ padding: pad, position: 'relative' }}>
+      {bookingPaused && <div role="status" style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, background: '#FFF7E0', border: '1px solid #E0B24A', color: '#6B4A00', fontSize: 13, lineHeight: 1.5 }}><b>Courier booking is paused right now.</b> You can still push or assign orders: they are saved and booked automatically as soon as booking resumes. Nothing is charged until an AWB is created.</div>}
       <ActiveAssignBanner onFinished={load} />
       {working && <div role="status" style={{ marginBottom: 10, fontSize: 12.5, color: T.TEXT_SECONDARY, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner />{working}</div>}
       {stale && <div style={{ marginBottom: 10, fontSize: 12.5, color: T.AMBER, display: 'flex', gap: 10, alignItems: 'center' }}>New activity since you opened this list.<Btn small onClick={load}>Refresh</Btn></div>}
