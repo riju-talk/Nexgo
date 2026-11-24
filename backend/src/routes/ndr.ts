@@ -193,13 +193,13 @@ export async function ndrRoutes(app: FastifyInstance) {
 
       if (input.resolutionAction === 'reattempt' || input.resolutionAction === 'delivery_rescheduled') {
         nextState = 'reattempt_requested';
-        shipmentState = 'in_transit';
+        shipmentState = 'ndr'; // the courier has not moved: the parcel stays NDR (as the courier shows it) until the courier's next scan
       } else if (input.resolutionAction === 'rto') {
         nextState = 'rto_requested';
         shipmentState = 'rto';
       } else {
         nextState = 'resolved';
-        shipmentState = 'in_transit'; // Address updated, continue delivery
+        shipmentState = 'ndr'; // address updated: the courier's next scan (out for delivery) moves it on, not our click
       }
 
       // Update NDR case
@@ -296,7 +296,7 @@ export async function ndrRoutes(app: FastifyInstance) {
           }
 
           const nextState = input.resolutionAction === 'reattempt' ? 'reattempt_requested' : 'rto_requested';
-          const shipmentState = input.resolutionAction === 'reattempt' ? 'in_transit' : 'rto';
+          const shipmentState = input.resolutionAction === 'reattempt' ? 'ndr' : 'rto'; // a reattempt request changes nothing at the courier yet: the parcel stays NDR
 
           await client.query(`
             UPDATE ndr_cases 

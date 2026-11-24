@@ -1,6 +1,7 @@
 import { db } from '../db/client.js';
 import { config } from '../config.js';
 import { PLUGINS } from '../couriers/aggregators/index.js';
+import type { AggregatorPlugin } from '../couriers/aggregators/types.js';
 import { credentialsFor, isConfigured } from '../couriers/credentials.js';
 import { ingestUpdate } from './trackingIngest.js';
 
@@ -11,22 +12,27 @@ import { ingestUpdate } from './trackingIngest.js';
  */
 type Log = { error: (o: unknown, m?: string) => void; warn: (o: object, m: string) => void; info: (m: string) => void };
 
+/** One aggregator: asks it for the newest tracking of every parcel still on the way and records it like a webhook would. Returns how many parcels changed. */
+export async function pollPlugin(plugin: AggregatorPlugin, log: Log): Promise<{ asked: number; updated: number }> {
+  if (!plugin.poll || !plugin.capabilities.track || !isConfigured(plugin.id)) return { asked: 0, updated: 0 };
+  const live = await db.query<{ awb: string }>(
+    `SELECT s.awb FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id
+     WHERE cp.aggregator = $1 AND s.awb IS NOT NULL AND s.state NOT IN ('delivered', 'cancelled', 'lost') AND NOT (s.state = 'rto' AND s.rto_status = 'delivered') AND s.booked_at > now() - interval '60 days'`, [plugin.id]);
+  if (!live.rows.length) return { asked: 0, updated: 0 };
+  const wanted = new Set(live.rows.map((r) => r.awb));
+  const updates = (await plugin.poll(credentialsFor(plugin.id), wanted)).filter((u) => wanted.has(u.awb));
+  let updated = 0;
+  for (const update of updates) {
+    // The delivery key is a hash of the payload, so an unchanged shipment is a cheap "duplicate" and a changed one is applied.
+    const outcome = await ingestUpdate(plugin.id, update, JSON.stringify(update.raw ?? update), log);
+    if (outcome === 'processed') updated++;
+  }
+  return { asked: wanted.size, updated };
+}
+
 export async function pollOnce(log: Log): Promise<number> {
   let applied = 0;
-  for (const plugin of PLUGINS) {
-    if (!plugin.poll || !plugin.capabilities.track || !isConfigured(plugin.id)) continue;
-    const live = await db.query<{ awb: string }>(
-      `SELECT s.awb FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id
-       WHERE cp.aggregator = $1 AND s.awb IS NOT NULL AND s.state NOT IN ('delivered', 'cancelled', 'lost') AND s.booked_at > now() - interval '60 days'`, [plugin.id]);
-    if (!live.rows.length) continue;
-    const wanted = new Set(live.rows.map((r) => r.awb));
-    const updates = (await plugin.poll(credentialsFor(plugin.id), wanted)).filter((u) => wanted.has(u.awb));
-    for (const update of updates) {
-      // The delivery key is a hash of the payload, so an unchanged shipment is a cheap "duplicate" and a changed one is applied.
-      const outcome = await ingestUpdate(plugin.id, update, JSON.stringify(update.raw ?? update), log);
-      if (outcome === 'processed') applied++;
-    }
-  }
+  for (const plugin of PLUGINS) applied += (await pollPlugin(plugin, log)).updated;
   return applied;
 }
 

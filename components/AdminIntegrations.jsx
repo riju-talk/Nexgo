@@ -25,6 +25,12 @@ function Aggregator({ a, onChanged }) {
     try { setResult(await apiFetch(`/v1/admin/aggregators/${a.id}/test`, { method: 'POST', body: {} })); onChanged(); }
     catch (e) { setResult({ ok: false, message: e.message || 'The test could not run' }); } finally { setBusy(''); }
   };
+  // Reads the courier's newest status for every parcel still on the way, right now (the worker does the same every few minutes).
+  const syncTracking = async () => {
+    setBusy('sync'); setResult(null);
+    try { const r = await apiFetch(`/v1/admin/aggregators/${a.id}/sync-tracking`, { method: 'POST', body: {} }); setResult({ ok: true, message: `Asked ${a.label} about ${r.asked} parcel${r.asked === 1 ? '' : 's'} still on the way: ${r.updated} had news and ${r.updated === 1 ? 'was' : 'were'} updated.` }); }
+    catch (e) { setResult({ ok: false, message: e.message || 'The tracking sync could not run' }); } finally { setBusy(''); }
+  };
   const copy = () => navigator.clipboard?.writeText(a.webhookUrl).then(() => showToast('Webhook URL copied')).catch(() => showToast('Copy is not available in this browser', 'error'));
   const last = a.lastWebhookAt ? dateTime(a.lastWebhookAt) : 'never';
 
@@ -72,6 +78,7 @@ function Aggregator({ a, onChanged }) {
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <Btn primary disabled={!dirty || !!busy} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save'}</Btn>
         {a.capabilities.listServices && <Btn disabled={!!busy} onClick={test}>{busy === 'test' ? 'Testing…' : 'Test connection'}</Btn>}
+        {a.capabilities.track && a.configured && <Btn disabled={!!busy} onClick={syncTracking}>{busy === 'sync' ? 'Syncing…' : 'Sync tracking now'}</Btn>}
         {a.lastTestedAt && !result && <small style={{ color: a.lastTestOk ? T.GREEN : T.RED }}>Last test {dateTime(a.lastTestedAt)}: {a.lastTestMessage}</small>}
       </div>
     </section>

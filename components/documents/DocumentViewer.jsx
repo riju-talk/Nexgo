@@ -13,8 +13,10 @@ import InvoiceSheet from './InvoiceSheet';
 export default function DocumentViewer({ kind }) {
   const params = useSearchParams();
   const sample = params.get('sample') === '1'; // the settings pages preview the design with a sample shipment
-  const ids = params.get('ids') || (sample ? 'sample' : '');
+  const batch = params.get('batch') || ''; // a big selection: the ids were left in browser storage by the page that opened this one
+  const ids = params.get('ids') || (batch ? `batch:${batch}` : sample ? 'sample' : '');
   const [state, setState] = useState({ ids: '', items: [], error: '' });
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [layout, setLayout] = useState('thermal'); // labels: 4×6 in thermal, 3×5 in thermal, or four per A4 sheet
   const [cfg, setCfg] = useState({});
   const [labelCfg, setLabelCfg] = useState({}); // saved Label settings: what to hide on the label
@@ -24,11 +26,29 @@ export default function DocumentViewer({ kind }) {
     if (!ids) return undefined;
     if (ids === 'sample') { setState({ ids, items: [SAMPLE_DOC], error: '' }); return undefined; } // eslint-disable-line react-hooks/set-state-in-effect -- static sample, no fetch
     let live = true;
+    const fail = (e) => { if (live) setState({ ids, items: [], error: e instanceof ApiError && e.status === 401 ? 'Sign in to print documents.' : e.message || 'The documents could not be loaded.' }); };
+    if (ids.startsWith('batch:')) {
+      // Read the ids once, then fetch the documents 100 at a time (the API takes 100 per request) and show how far it is.
+      let list = [];
+      try { list = JSON.parse(localStorage.getItem(batch) || '[]'); } catch { list = []; }
+      if (!Array.isArray(list) || !list.length) { setState({ ids, items: [], error: 'This print job expired. Select the shipments again and press Print.' }); return undefined; }
+      (async () => {
+        const out = [];
+        for (let i = 0; i < list.length; i += 100) {
+          if (!live) return;
+          const x = await apiFetch(`/v1/shipments/documents?ids=${encodeURIComponent(list.slice(i, i + 100).join(','))}`);
+          out.push(...(x.items || []));
+          if (live) setProgress({ done: Math.min(i + 100, list.length), total: list.length });
+        }
+        if (live) { setState({ ids, items: out, error: '' }); try { localStorage.removeItem(batch); } catch { /* storage is a convenience */ } }
+      })().catch(fail);
+      return () => { live = false; };
+    }
     apiFetch(`/v1/shipments/documents?ids=${encodeURIComponent(ids)}`)
       .then((x) => { if (live) setState({ ids, items: x.items || [], error: '' }); })
-      .catch((e) => { if (live) setState({ ids, items: [], error: e instanceof ApiError && e.status === 401 ? 'Sign in to print documents.' : e.message || 'The documents could not be loaded.' }); });
+      .catch(fail);
     return () => { live = false; };
-  }, [ids]);
+  }, [ids, batch]);
 
   // Saved Control Tower settings: label size picks the layout, invoice settings dress the invoice.
   useEffect(() => {
@@ -65,7 +85,7 @@ export default function DocumentViewer({ kind }) {
         <button type="button" onClick={() => download('xlsx')} disabled={!items.length}>Download Excel</button>
         <button type="button" onClick={() => download('csv')} disabled={!items.length}>Download CSV</button>
       </header>
-      {loading && <p className="doc-msg">Preparing {label ? 'labels' : 'invoices'}…</p>}
+      {loading && <p className="doc-msg">Preparing {label ? 'labels' : 'invoices'}…{progress.total > 0 ? ` ${progress.done.toLocaleString('en-IN')} of ${progress.total.toLocaleString('en-IN')}` : ''}</p>}
       {!loading && error && <p className="doc-msg doc-err">{error}</p>}
       {!loading && skipped > 0 && <p className="doc-msg doc-err">{skipped} cancelled shipment{skipped === 1 ? ' was' : 's were'} left out: a cancelled AWB cannot be shipped or invoiced.</p>}
       <main className="doc-pages">

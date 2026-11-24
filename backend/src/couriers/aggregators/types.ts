@@ -21,6 +21,8 @@ export type NormalizedUpdate = {
   events: NormalizedEvent[];
   /** The current status, for payloads whose history is missing or shorter than the status. */
   current?: NormalizedEvent;
+  /** The aggregator's own current status for the parcel, as it shows it (label like PICKUP_EXCEPTION or NDR, and its reason). Stored so screens can show what the aggregator shows. */
+  courierStatus?: { label: string; note: string | null };
   /** A status NEXGO does not know and that is not on the ignore list: recorded on the delivery so support can look at it. */
   unmappedStatus?: string;
   /** The aggregator's own payload for this shipment, kept with the delivery for support and debugging. */

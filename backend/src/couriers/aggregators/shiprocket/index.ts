@@ -66,7 +66,9 @@ export function toUpdate(item: Item): NormalizedUpdate | null {
   const sameKind = [...events].reverse().find((e) => top && e.mapped.state === top.state && e.mapped.rto === top.rto);
   const current: NormalizedEvent | undefined = top ? { mapped: top, at: new Date().toISOString(), location: sameKind?.location ?? null, description: sameKind?.description || String(topLabel ?? ''), eventId: `status:${normalize(topLabel) || topId}` } : undefined;
   const unmapped = !top && normalize(topLabel) && !isIgnored(topLabel) ? normalize(topLabel).replace(/ /g, '_') : undefined;
-  return { awb, raw: item, events, current, unmappedStatus: unmapped };
+  const label = normalize(topLabel).replace(/ /g, '_');
+  const courierStatus = label ? { label, note: (sameKind?.description || events[events.length - 1]?.description || '').slice(0, 300) || null } : undefined;
+  return { awb, raw: item, events, current, courierStatus, unmappedStatus: unmapped };
 }
 
 /** The answer of GET /courier/track/awb/{awb} reshaped like a webhook payload. */

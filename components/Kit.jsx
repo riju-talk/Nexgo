@@ -5,7 +5,8 @@ import { apiFetch } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { useAutoLoad, useInfiniteList } from '@/lib/useInfiniteList';
+import { useAutoLoad } from '@/lib/useInfiniteList';
+import { usePageNav } from '@/lib/usePageNav';
 
 export const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`, borderRadius: 12 };
 export const FIELD = { height: 38, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
@@ -67,6 +68,42 @@ export function LoadMore({ shown, total, hasMore, loading, loadingMore, error, o
   );
 }
 
+// Numbered pagination under a table: "Showing 51-100 of 292", items per page, First / Previous / 1 2 3 ... / Next / Last.
+// Pairs with usePageNav / usePagedNav (lib/usePageNav.js). Hidden for an empty list.
+const pageWindow = (page, pages) => {
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1);
+  const out = [1]; const lo = Math.max(2, page - 1); const hi = Math.min(pages - 1, page + 1);
+  if (lo > 2) out.push('gap-a');
+  for (let n = lo; n <= hi; n++) out.push(n);
+  if (hi < pages - 1) out.push('gap-b');
+  out.push(pages);
+  return out;
+};
+export function Pagination({ page, pages, size, total, onPage, onSize, sizes = [15, 25, 50, 100], loading, noun = 'results' }) {
+  if (total === undefined || total === null) return null;
+  const from = total === 0 ? 0 : (page - 1) * size + 1; const to = Math.min(page * size, total);
+  const btn = (label, target, { on = false, off = false, aria } = {}) => (
+    <button key={aria || label} type="button" disabled={off || loading} aria-label={aria} aria-current={on ? 'page' : undefined} onClick={() => onPage(target)}
+      style={{ minWidth: 32, height: 32, padding: '0 9px', borderRadius: 7, border: `1px solid ${on ? T.NAVY : T.BORDER}`, background: on ? T.NAVY : T.SURFACE, color: on ? '#fff' : T.TEXT, fontSize: 12.5, fontWeight: on ? 750 : 600, cursor: off || loading ? 'default' : 'pointer', opacity: off ? 0.45 : 1 }}>{label}</button>
+  );
+  return (
+    <nav aria-label="Pagination" style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13, color: T.TEXT_SECONDARY }}>
+      <span aria-live="polite">{loading ? 'Loading…' : total === 0 ? `No ${noun}` : `Showing ${from.toLocaleString('en-IN')}-${to.toLocaleString('en-IN')} of ${Number(total).toLocaleString('en-IN')} ${noun}`}</span>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 8 }}>Items per page
+          <select value={size} onChange={(e) => onSize(Number(e.target.value))} style={{ height: 32, borderRadius: 7, border: `1px solid ${T.BORDER}`, background: T.SURFACE, color: T.TEXT, fontSize: 12.5, padding: '0 6px' }}>{sizes.map((n) => <option key={n} value={n}>{n}</option>)}</select>
+        </label>
+        {btn('First', 1, { off: page <= 1, aria: 'Go to first page' })}
+        {btn('Previous', page - 1, { off: page <= 1, aria: 'Go to previous page' })}
+        {pageWindow(page, pages).map((n) => (typeof n === 'string' ? <span key={n} aria-hidden style={{ padding: '0 2px' }}>...</span> : btn(String(n), n, { on: n === page, aria: `Page ${n}` })))}
+        {btn('Next', page + 1, { off: page >= pages, aria: 'Go to next page' })}
+        {btn('Last', pages, { off: page >= pages, aria: 'Go to last page' })}
+        <span style={{ marginLeft: 6 }}>Page {page} of {pages.toLocaleString('en-IN')}</span>
+      </div>
+    </nav>
+  );
+}
+
 export function Btn({ children, onClick, primary, danger, disabled, loading, small, type = 'button', style }) {
   const off = disabled || loading;
   return <button type={type} disabled={off} aria-busy={loading || undefined} onClick={onClick} style={{ height: small ? 32 : 38, padding: `0 ${small ? 11 : 16}px`, borderRadius: 8, border: `1px solid ${primary ? BLUE : danger ? T.RED : T.BORDER}`, background: primary ? BLUE : danger ? T.RED : T.SURFACE, color: primary || danger ? '#fff' : T.TEXT, fontWeight: 700, fontSize: small ? 12.5 : 13.5, cursor: loading ? 'progress' : disabled ? 'not-allowed' : 'pointer', opacity: off ? 0.65 : 1, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, ...style }}>{loading && <Spinner size={14} />}{children}</button>;
@@ -124,11 +161,11 @@ export function ListTab({ path, filters = [], columns, exportColumns, exportName
     if (filters.includes('status') && applied.status) p.set('status', applied.status);
     return p;
   }, [applied, filters]);
-  // Rows load a screenful at a time and more as the user scrolls (the filters start the list again from the top).
-  const list = useInfiniteList({
-    pageSize,
+  // One numbered page at a time (the filters start again at page 1).
+  const list = usePageNav({
+    name: path, defaultSize: 25,
     deps: [path, applied, filters.join(',')],
-    fetchPage: (cursor, size) => apiFetch(`${path}?${buildQuery(cursor || 1, size)}`).then((x) => { if (!cursor) { const { items: _items, ...rest } = x; setExtra(rest); } return x; }),
+    fetchPage: (page, size) => apiFetch(`${path}?${buildQuery(page, size)}`).then((x) => { const { items: _items, ...rest } = x; setExtra(rest); return { items: x.items || [], total: x.total ?? (x.items || []).length }; }),
   });
   const rows = list.items;
   const error = list.error ? (list.error.status === 401 ? 'Sign in to view this data.' : list.error.message || 'Could not load this data.') : '';
@@ -166,7 +203,7 @@ export function ListTab({ path, filters = [], columns, exportColumns, exportName
       {children && children(data)}
       <section style={{ ...CARD, overflow: 'hidden' }}>
         <Table columns={columns} rows={rows} loading={list.loading} error={error} empty={empty} minWidth={minWidth} />
-        {(rows.length > 0 || list.hasMore) && <LoadMore shown={rows.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && rows.length > 0} onMore={list.loadMore} />}
+        <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading && !rows.length} onPage={list.setPage} onSize={list.setSize} />
       </section>
     </div>
   );

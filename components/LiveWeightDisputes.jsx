@@ -6,8 +6,8 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { LoadMore } from './Kit';
-import { usePagedList } from '@/lib/useInfiniteList';
+import { Pagination } from './Kit';
+import { usePagedNav } from '@/lib/usePageNav';
 
 const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`, borderRadius: 12 };
 const FIELD = { height: 38, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
@@ -76,7 +76,7 @@ export default function LiveWeightDisputes({ mobile }) {
 
   useEffect(() => { const t = window.setTimeout(() => { setQ(qInput.trim()); }, 300); return () => window.clearTimeout(t); }, [qInput]);
   const params = useMemo(() => { const p = new URLSearchParams(); if (status) p.set('group', status); if (q) p.set('q', q); if (courier) p.set('courier', courier); if (from) p.set('from', from); if (to) p.set('to', to); return p.toString(); }, [status, q, courier, from, to]);
-  const list = usePagedList({ path: '/v1/weight-disputes', query: params, pageSize: 25, tick });
+  const list = usePagedNav({ path: '/v1/weight-disputes', query: params, defaultSize: 25, tick });
   const data = { items: list.items, total: list.total ?? 0, error: list.message };
   useEffect(() => { let live = true; apiFetch('/v1/weight-disputes/stats').then((x) => { if (live) setStats(x); }).catch(() => {}); return () => { live = false; }; }, [tick]);
   useEffect(() => { apiFetch('/v1/shipping/courier-options').then((x) => setCouriers([...new Map((x.items || []).map((c) => [c.code, c.name])).entries()])).catch(() => {}); }, []);
@@ -156,7 +156,7 @@ export default function LiveWeightDisputes({ mobile }) {
             </table>
           </div>
         )}
-        <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && list.items.length > 0} onMore={list.loadMore} />
+        <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading && !list.items.length} onPage={list.setPage} onSize={list.setSize} noun="results" />
       </section>
       {dialog && <ActionDialog row={dialog} onClose={() => setDialog(null)} onDone={() => { setDialog(null); refresh(); }} />}
     </div>

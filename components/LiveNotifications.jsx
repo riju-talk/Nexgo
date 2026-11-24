@@ -6,10 +6,10 @@ import { useAppState } from '@/lib/AppStateContext';
 import { clearCached, useLiveQuery } from '@/lib/queryCache';
 import { GROUPS, KINDS, awbOf, NOTIFICATIONS_CHANGED, notificationsChanged, timeAgo } from '@/lib/notificationKinds';
 import * as T from '@/lib/theme';
-import { BLUE, Btn, CARD, LoadMore } from './Kit';
-import { usePagedList } from '@/lib/useInfiniteList';
+import { BLUE, Btn, CARD, Pagination } from './Kit';
+import { usePagedNav } from '@/lib/usePageNav';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 25;
 
 // Notifications: what happened to your parcels, wallet and account, in one place. Unread ones are marked; opening one takes you to the screen it is about.
 export default function LiveNotifications({ mobile }) {
@@ -21,7 +21,7 @@ export default function LiveNotifications({ mobile }) {
     else if (group !== 'all') p.set('group', group);
     return p.toString();
   }, [group]);
-  const list = usePagedList({ path: '/v1/notifications', query, pageSize: PAGE_SIZE, every: 30000 });
+  const list = usePagedNav({ path: '/v1/notifications', query, defaultSize: PAGE_SIZE, every: 30000 });
   const { loading, refresh } = list;
   const error = list.error ? { message: list.message } : null;
   const items = list.items;
@@ -83,7 +83,7 @@ export default function LiveNotifications({ mobile }) {
             </button>
           );
         })}
-        {(items.length > 0 || list.hasMore) && <LoadMore shown={items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && items.length > 0} onMore={list.loadMore} noun="notifications" />}
+        {(items.length > 0 || list.hasMore) && <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading && !list.items.length} onPage={list.setPage} onSize={list.setSize} noun="notifications" />}
       </section>
     </div>
   );

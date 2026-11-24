@@ -9,8 +9,8 @@ import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import { diagnose, failedSheet, readCorrections, toPatch } from '@/lib/failedOrders';
-import { LoadMore, Spinner, TableSkeleton } from './Kit';
-import { useInfiniteList } from '@/lib/useInfiniteList';
+import { Pagination, Spinner, TableSkeleton } from './Kit';
+import { usePageNav } from '@/lib/usePageNav';
 import { cancelInBackground } from '@/lib/cancelBatches';
 import { ActiveCancelBanner, BatchProgressDialog } from './BatchProgress';
 import { setJobModal } from '@/lib/jobProgress';
@@ -34,6 +34,14 @@ const CLOSED = ['delivered', 'cancelled', 'rto', 'lost'];
 const stageIndex = (state) => (PICKUP.includes(state) ? 0 : STAGES.indexOf(state));
 // Delayed = a calendar day after the promised date has begun (India time). Due 18 Nov is still on time all of 18 Nov; it turns "delayed" on 19 Nov.
 const istDay = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+// What the courier network itself says about a parcel that is stuck or failed (its own status + reason), so Track shows the same thing the courier does.
+const courierNote = (r) => {
+  if (!r.courier_status || ['delivered', 'cancelled'].includes(r.state)) return null;
+  const note = r.courier_status_note;
+  if (/^PICKUP_EXCEPTION/.test(r.courier_status)) return { tone: '#8A5A00', text: `Pickup attempt failed${note ? `: ${note}` : ''}` };
+  if (/^(NDR|UNDELIVERED)/.test(r.courier_status)) return { tone: '#B23A2B', text: `Delivery attempt failed${note ? `: ${note}` : ''}` };
+  return null;
+};
 const isDelayed = (r) => !!r.promised_delivery_at && !CLOSED.includes(r.state) && istDay(r.promised_delivery_at) < istDay(Date.now());
 
 // Orders with no courier yet: 'ready' = the order is complete and only needs a courier assigned, 'failed' = something in the order must be fixed first.
@@ -86,7 +94,15 @@ function Progress({ state }) {
   );
 }
 
-const openDocs = (kind, ids) => window.open(`/documents/${kind}?ids=${ids.join(',')}`, '_blank', 'noopener');
+// Labels / invoices open in their own tab. A few ids travel in the address; a big selection (the address would be too long) goes through browser
+// storage, which the new tab reads once, and the page loads the documents 100 at a time (components/documents/DocumentViewer.jsx).
+const MAX_PRINT = 5000;
+const openDocs = (kind, ids) => {
+  if (ids.length <= 60) return window.open(`/documents/${kind}?ids=${ids.join(',')}`, '_blank', 'noopener');
+  const key = `nx-doc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  try { localStorage.setItem(key, JSON.stringify(ids)); } catch { return false; }
+  return window.open(`/documents/${kind}?batch=${key}`, '_blank');
+};
 const copyText = (text, showToast, done) => { navigator.clipboard?.writeText(text).then(() => showToast(done)).catch(() => showToast('Copy is not available in this browser', 'error')); };
 
 // Auto-assign couriers to not-yet-shipped orders using the seller's courier priority list (Settings > Courier rules).
@@ -141,6 +157,7 @@ function Detail({ shipment, mobile, onClose, reload, onChoose }) {
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Pill state={shipment.state} /><button aria-label="Close tracking panel" onClick={onClose} style={{ border: 0, background: 'transparent', color: T.TEXT_MUTED, fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button></div>
       </div>
+      {(() => { const n = courierNote(shipment); return n ? <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, background: `${n.tone}14`, color: n.tone, fontSize: 12.5, fontWeight: 650 }}>{n.text}</div> : null; })()}
       {delayed && <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, background: `${T.RED}12`, color: T.RED, fontSize: 12.5, fontWeight: 650 }}>Past its promised delivery date ({day(shipment.promised_delivery_at)}).</div>}
       {failedOrder ? (shipment.state === 'ready' ? <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, background: `${T.GREEN}14`, color: T.TEXT, fontSize: 12.5, fontWeight: 650 }}>This order is ready. Click “Book now” in the list to choose a courier.</div> : <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, background: `${T.RED}12`, color: T.RED, fontSize: 12.5, fontWeight: 650 }}>This order needs fixing before a courier can be booked. Correct the order details (mobile number, address, pincode, weight and size), then book a courier.</div>) : <Progress state={shipment.state} />}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 14px', margin: '14px 0', paddingTop: 14, borderTop: `1px solid ${T.DIVIDER}` }}>
@@ -214,11 +231,12 @@ export default function LiveTrack({ mobile }) {
   }, [qf]);
   // Order rows (no courier yet) are shaped like shipment rows so the table treats both the same.
   const norm = (r) => (r.kind === 'order' ? { ...r, awb: '', booked_at: r.created_at, shipping_charge_paise: 0, chargeable_weight_g: r.total_weight_g, whatsapp_status: 'not_sent' } : r);
-  const list = useInfiniteList({
-    pageSize: 50,
-    deps: [tab, qf],
-    fetchPage: (cursor, limit) => apiFetch(`/v1/shipments/list?${qs({ tab, limit, cursor })}`).then((x) => ({ items: (x.items || []).map(norm), nextCursor: x.nextCursor, total: x.total })),
+  // Numbered pagination (page + items per page), like the courier console: one page of rows at a time, the choice of page size is remembered.
+  const list = usePageNav({
+    name: 'track', defaultSize: 25, deps: [tab, qf],
+    fetchPage: (page, size) => apiFetch(`/v1/shipments/list?${qs({ tab, page, pageSize: size })}`).then((x) => ({ items: (x.items || []).map(norm), total: x.total })),
   });
+  const tableTop = useRef(null);
   const listRef = useRef(list);
   useEffect(() => { listRef.current = list; });
   const items = list.items;
@@ -232,8 +250,7 @@ export default function LiveTrack({ mobile }) {
   // Reload what is on screen after something changed: replace the first batch quietly, or start over if the user had scrolled further.
   const load = useCallback(async () => {
     setStale(false);
-    const did = await listRef.current.refreshFirst();
-    if (!did) listRef.current.reload();
+    await listRef.current.refreshQuiet();
     await Promise.all([loadSummary(), loadTags()]);
   }, [loadSummary, loadTags]);
   const [refreshing, setRefreshing] = useState(false);
@@ -245,9 +262,9 @@ export default function LiveTrack({ mobile }) {
       if (document.visibilityState !== 'visible') return;
       const c = await loadSummary();
       const l = listRef.current;
-      if (c && l.started && !l.loading && c[tab] !== undefined && l.total !== undefined && c[tab] !== l.total) { const did = await l.refreshFirst(); if (!did) setStale(true); }
+      if (c && l.started && !l.loading && c[tab] !== undefined && l.total !== undefined && c[tab] !== l.total) await l.refreshQuiet();
     };
-    const shown = () => { if (document.visibilityState === 'visible') { loadSummary(); listRef.current.refreshFirst(); } };
+    const shown = () => { if (document.visibilityState === 'visible') { loadSummary(); listRef.current.refreshQuiet(); } };
     const timer = setInterval(poll, 30000);
     document.addEventListener('visibilitychange', shown); window.addEventListener('focus', shown);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', shown); window.removeEventListener('focus', shown); };
@@ -284,7 +301,7 @@ export default function LiveTrack({ mobile }) {
   const set = (k) => (e) => { setF((x) => ({ ...x, [k]: e.target.value })); };
 
   // Walks the list endpoint (200 per request) to gather every row matching the tab and filters, for exports, manifests and fixing orders.
-  const fetchAll = async ({ tab: wantedTab = tab, filters = qf, cap = 20000 } = {}) => {
+  const fetchAll = async ({ tab: wantedTab = tab, filters = qf, cap = 100000 } = {}) => {
     const out = []; let cursor = null;
     do {
       setWorking(`Collecting shipments… ${out.length.toLocaleString('en-IN')}`);
@@ -423,8 +440,8 @@ export default function LiveTrack({ mobile }) {
   const printSelected = (kind) => {
     const ids = pickedList.filter((r) => !isUnassigned(r) && r.kind !== 'order').map((r) => r.id);
     if (!ids.length) return showToast('Select shipments that have an AWB first.', 'error');
-    if (ids.length > 100) return showToast('Print up to 100 shipments at a time.', 'error');
-    openDocs(kind, ids);
+    if (ids.length > MAX_PRINT) return showToast(`Select up to ${MAX_PRINT.toLocaleString('en-IN')} shipments for one print job (your browser has to draw every page).`, 'error');
+    if (openDocs(kind, ids) === false) showToast('This selection is too big for the browser to hand over. Select fewer shipments.', 'error');
   };
   // Only shipments the courier has not picked up can be cancelled; the rest are left alone and counted so nothing is silently skipped.
   const cancelSelected = async () => {
@@ -532,7 +549,7 @@ export default function LiveTrack({ mobile }) {
           <input aria-label="Tag name" value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="Tag name" maxLength={30} style={{ ...FIELD, height: 28, width: 130 }} />
           <Btn small disabled={!tagInput.trim()} onClick={() => tagSelected('add')}>Add tag</Btn>
           <Btn small disabled={!tagInput.trim()} onClick={() => tagSelected('remove')}>Remove tag</Btn>
-          {list.total > picked.size && list.hasMore && <Btn small onClick={selectAllMatching}>Select all {list.total.toLocaleString('en-IN')} matching</Btn>}
+          {list.total > picked.size && list.total > items.length && <Btn small onClick={selectAllMatching}>Select all {list.total.toLocaleString('en-IN')} matching</Btn>}
           <Btn small onClick={() => setPicked(new Map())}>Clear selection</Btn>
         </div>
       )}
@@ -541,7 +558,7 @@ export default function LiveTrack({ mobile }) {
         <section style={{ ...CARD, minHeight: 220, padding: 42, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}><div style={{ width: 42, height: 42, borderRadius: 12, display: 'grid', placeItems: 'center', background: 'rgba(56,119,252,.12)', color: T.ACCENT, fontSize: 20 }}>✈</div><b style={{ marginTop: 14, color: T.TEXT, fontSize: 16 }}>No shipments yet</b><span style={{ marginTop: 5, color: T.TEXT_MUTED, fontSize: 13 }}>Book an order with a courier and its live tracking will appear here.</span></section>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: selected && !mobile ? 'minmax(0,1fr) 400px' : '1fr', gap: 14, alignItems: 'start' }}>
-          <section style={{ ...CARD, overflow: 'hidden' }}>
+          <section ref={tableTop} style={{ ...CARD, overflow: 'hidden' }}>
             {!items.length && !list.loading ? <div style={{ padding: 26, color: T.TEXT_MUTED, fontSize: 13 }}>No shipments match these filters.{activeFilters && <> <button onClick={clearAll} style={{ border: 0, background: 'transparent', color: T.ACCENT, fontWeight: 700, cursor: 'pointer' }}>Clear filters</button></>}</div> : (
               <>
                 <div style={{ overflowX: 'auto' }}>
@@ -565,7 +582,7 @@ export default function LiveTrack({ mobile }) {
                             <td style={CELL}>{r.courier_name ? <><b>{r.courier_name}</b><small style={SUB}>{r.service_name}</small></> : <span style={{ color: T.TEXT_MUTED }}>Not assigned</span>}</td>
                             <td style={CELL}>{r.awb ? <b style={{ fontFamily: T.MONO }}>{r.awb}</b> : <span style={{ color: T.TEXT_MUTED }}>—</span>}</td>
                             <td style={CELL}><span style={{ color: waTone(r.whatsapp_status), fontWeight: 650 }}>{WHATSAPP[r.whatsapp_status] || 'Not sent'}</span></td>
-                            <td style={CELL}><Pill state={r.state} />{late && <small style={{ ...SUB, color: T.RED }}>Delayed · due {day(r.promised_delivery_at)}</small>}</td>
+                            <td style={CELL}><Pill state={r.state} />{late && <small style={{ ...SUB, color: T.RED }}>Delayed · due {day(r.promised_delivery_at)}</small>}{(() => { const n = courierNote(r); return n ? <small style={{ ...SUB, color: n.tone, maxWidth: 190, whiteSpace: 'normal' }}>{n.text}</small> : null; })()}</td>
                             <td style={CELL} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}>{r.state === 'ready' && <Btn small primary onClick={() => setChooser([r])}>Book now</Btn>}<Btn small onClick={() => setSelectedId(r.id)}>{isUnassigned(r) ? 'Details' : 'Track'}</Btn>{r.awb && <Btn small onClick={() => openDocs('label', [r.id])}>Label</Btn>}</div></td>
                           </tr>
                         );
@@ -573,7 +590,7 @@ export default function LiveTrack({ mobile }) {
                     </tbody>}
                   </table>
                 </div>
-                <LoadMore shown={items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error} onMore={list.loadMore} noun="shipments" />
+                <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading && !items.length} onPage={(n) => { list.setPage(n); tableTop.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }} onSize={list.setSize} noun="shipments" />
               </>
             )}
           </section>

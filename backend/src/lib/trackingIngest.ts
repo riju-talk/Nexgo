@@ -37,7 +37,9 @@ export async function applyEvent(tx: PoolClient, s: Shipment, m: Mapped, at: str
   if (!fresh.rows[0] && !force) return; // already processed on an earlier delivery (force = the courier's overall status asserting the state again)
   // Couriers skip scans and a history can have gaps, so a booked shipment may jump ahead (e.g. straight to delivered). Going backwards is still refused.
   const skipsAhead = ['booked', 'pickup_pending', 'pickup_scheduled'].includes(s.state) && ['out_for_delivery', 'delivered', 'ndr', 'rto'].includes(m.state);
-  if (!skipsAhead && !isProgressionAllowed(s.state, m.state)) return; // kept in the timeline, state stays (e.g. a stale scan arriving late)
+  // A parcel that is already NDR and fails again (a NEW scan: the same one would have been skipped above) is the next attempt, not a stale scan.
+  const repeatNdr = m.state === 'ndr' && s.state === 'ndr';
+  if (!skipsAhead && !repeatNdr && !isProgressionAllowed(s.state, m.state)) return; // kept in the timeline, state stays (e.g. a stale scan arriving late)
   await tx.query(`UPDATE shipments SET state=$1::shipment_state,updated_at=now(),
     pickup_completed_at=CASE WHEN $1 IN ('in_transit','out_for_delivery','delivered') THEN COALESCE(pickup_completed_at,$3::timestamptz) ELSE pickup_completed_at END,
     delivered_at=CASE WHEN $1='delivered' THEN COALESCE(delivered_at,$3::timestamptz) ELSE delivered_at END,
@@ -96,6 +98,16 @@ export async function ingestUpdate(aggregator: string, update: NormalizedUpdate,
       // answered that attempt (their reattempt request is still waiting for the courier to act on it).
       if (await ndrStillStands(tx, shipment, update)) await applyEvent(tx, shipment, c.mapped, c.at, c.location, c.description, c.eventId, { status: c.description }, true);
     } else if (c && (c.mapped.state !== shipment.state || c.mapped.rto)) await applyEvent(tx, shipment, c.mapped, c.at, c.location, c.description, c.eventId, { status: c.description });
+    // What the aggregator itself shows for this parcel (status + reason), kept next to our state so Track can show the same thing.
+    const cs = update.courierStatus;
+    if (cs?.label) {
+      const note = cs.note ? sellerSafeMessage(cs.note) : null;
+      await tx.query(`UPDATE shipments SET courier_status = $2, courier_status_note = $3, courier_status_at = now() WHERE id = $1 AND (courier_status IS DISTINCT FROM $2 OR courier_status_note IS DISTINCT FROM $3)`, [shipment.id, cs.label.slice(0, 60), note]);
+      // A failed pickup attempt is the most common reason a parcel just sits at "pickup pending": tell the seller why, once per reason.
+      if (/^PICKUP_EXCEPTION/.test(cs.label) && ['booked', 'pickup_pending', 'pickup_scheduled'].includes(shipment.state)) {
+        notes.push({ kind: 'pickup_missed', title: 'Pickup attempt failed', body: `AWB ${update.awb}: ${note ?? 'the courier could not collect the parcel'}. Make sure the pickup contact can be reached; the courier tries again.`, screen: 'shipments', entityId: shipment.id, dedupeKey: `pickup-exc:${shipment.id}:${createHash('sha1').update(note ?? '').digest('hex').slice(0, 8)}` });
+      }
+    }
     // What the seller should hear about (stored once per event; sent after commit).
     if (startState !== shipment.state) {
       if (shipment.state === 'delivered') notes.push({ kind: 'delivered', title: 'Shipment delivered', body: `AWB ${update.awb} was delivered to the customer.`, screen: 'shipments', entityId: shipment.id, dedupeKey: `delivered:${shipment.id}` });

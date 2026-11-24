@@ -121,6 +121,12 @@ function SellerBell() {
   const count = data?.unread ?? 0;
   const badge = count > 9 ? '9+' : String(count);
   const line = 'var(--nx-chrome-border, #dfe6f2)';
+  const [marking, setMarking] = useState(false);
+  // One click clears every unread notification (not just the six shown here); the badge and the full page refresh together.
+  const markAll = async () => {
+    setMarking(true);
+    try { await apiFetch('/v1/notifications/read', { method: 'POST', body: { all: true } }); clearCached('/v1/notifications'); refresh(); notificationsChanged(); } catch { /* the badge stays: try again */ } finally { setMarking(false); }
+  };
   const go = async (n) => {
     setOpen(false);
     if (!n.read_at) { try { await apiFetch('/v1/notifications/read', { method: 'POST', body: { ids: [n.id] } }); clearCached('/v1/notifications'); refresh(); notificationsChanged(); } catch { /* opening still works */ } }
@@ -136,7 +142,10 @@ function SellerBell() {
       </motion.button>
       {open && (
         <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 10px)', width: 360, maxWidth: 'calc(100vw - 24px)', background: 'var(--nx-surface, #fff)', border: `1px solid ${line}`, borderRadius: 12, boxShadow: '0 18px 44px rgba(11,31,68,.18)', zIndex: 90, overflow: 'hidden' }}>
-          <div style={{ padding: '12px 14px', borderBottom: `1px solid ${line}`, fontSize: 13, fontWeight: 750, color: 'var(--nx-chrome-text, #0b1f44)' }}>Notifications{count > 0 ? ` (${count} unread)` : ''}</div>
+          <div style={{ padding: '12px 14px', borderBottom: `1px solid ${line}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 750, color: 'var(--nx-chrome-text, #0b1f44)' }}>Notifications{count > 0 ? ` (${count} unread)` : ''}</span>
+            {count > 0 && <button type="button" onClick={markAll} disabled={marking} style={{ border: 0, background: 'transparent', color: T.ACCENT, fontSize: 12.5, fontWeight: 750, cursor: marking ? 'default' : 'pointer', padding: 0, opacity: marking ? 0.6 : 1 }}>{marking ? 'Marking…' : 'Mark all as read'}</button>}
+          </div>
           {error && !data ? <div style={{ padding: '22px 14px', fontSize: 13, color: 'var(--nx-chrome-muted, #51628a)', textAlign: 'center' }}>Could not load notifications. Try again in a moment.</div>
             : !data ? <div style={{ padding: '26px 14px', fontSize: 13.5, color: 'var(--nx-chrome-muted, #51628a)', textAlign: 'center' }}>Checking…</div>
             : !data.items.length ? <div style={{ padding: '26px 14px', fontSize: 13.5, color: 'var(--nx-chrome-muted, #51628a)', textAlign: 'center' }}>Nothing yet. Updates about your parcels and wallet will show here.</div>

@@ -6,9 +6,9 @@ import { useLiveQuery } from '@/lib/queryCache';
 import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { AwbLink, BLUE, Btn, CARD, FIELD, LoadMore, Pill, Stat, Table, dateTime, inr, inr0, isoDay, titleCase } from './Kit';
+import { AwbLink, BLUE, Btn, CARD, FIELD, Pagination, Pill, Stat, Table, dateTime, inr, inr0, isoDay, titleCase } from './Kit';
 import ShipmentFilters, { EMPTY_FILTERS, filterParams } from './ShipmentFilters';
-import { usePagedList } from '@/lib/useInfiniteList';
+import { usePagedNav } from '@/lib/usePageNav';
 
 const REASONS = { customer_unavailable: 'Customer not available', address_incomplete: 'Incomplete address', address_incorrect: 'Wrong address', refused_delivery: 'Customer refused', payment_not_ready: 'Payment not ready', customer_requested_reschedule: 'Rescheduled by customer', other: 'Other' };
 const STAGES = [['all', 'All RTO'], ['rto_in_transit', 'RTO in transit'], ['rto_out_for_delivery', 'RTO OFD'], ['rto_delivered', 'RTO delivered'], ['rto_lost', 'RTO lost'], ['rto_damaged', 'RTO damaged'], ['rto_undelivered', 'RTO undelivered']];
@@ -23,7 +23,7 @@ export default function LiveRto({ mobile }) {
   const [format, setFormat] = useState('csv'); const [busy, setBusy] = useState(false);
 
   const query = useMemo(() => filterParams(filters, new URLSearchParams({ stage })).toString(), [stage, filters]);
-  const list = usePagedList({ path: '/v1/rto/shipments', query, pageSize: PAGE_SIZE });
+  const list = usePagedNav({ path: '/v1/rto/shipments', query, defaultSize: PAGE_SIZE });
   const data = { items: list.items, total: list.total ?? 0, error: list.message };
   // The figures follow the same dates and courier as the list below, and are cached so the page opens with the last numbers.
   const statsUrl = `/v1/rto/stats?${filterParams({ from: filters.from, to: filters.to, courier: filters.courier }).toString()}`;
@@ -104,7 +104,7 @@ export default function LiveRto({ mobile }) {
               { h: 'Status', cell: (r) => { const [name, color] = STAGE_PILL[r.stage] || [titleCase(r.stage), T.TEXT_MUTED]; return <Pill color={color}>{name}</Pill>; } },
               { h: 'Action', cell: (r) => <Btn small onClick={() => { if (r.awb) setTrackFocus(r.awb); nav('shipments'); }}>Track</Btn> },
             ]} />
-          <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && list.items.length > 0} onMore={list.loadMore} noun="RTO shipments" />
+          <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading && !list.items.length} onPage={list.setPage} onSize={list.setSize} noun="RTO shipments" />
         </section>
 
         <aside style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(2,minmax(0,1fr))', gap: 14 }}>

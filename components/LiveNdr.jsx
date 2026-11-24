@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, reportsApi, ApiError } from '@/lib/api';
 import { useLiveQuery } from '@/lib/queryCache';
 import { useAppState } from '@/lib/AppStateContext';
-import { AwbLink, LoadMore } from './Kit';
-import { usePagedList } from '@/lib/useInfiniteList';
+import { AwbLink, Pagination } from './Kit';
+import { usePagedNav } from '@/lib/usePageNav';
 import { usePincode } from '@/lib/usePincode';
 import * as T from '@/lib/theme';
 import { FORMATS } from '@/lib/exportFile';
@@ -121,7 +121,7 @@ export default function LiveNdr({ mobile }) {
 
 
   const query = useMemo(() => { const p = filterParams(filters, new URLSearchParams({ tab })); if (reason) p.set('reason', reason); return p.toString(); }, [tab, filters, reason]);
-  const list = usePagedList({ path: '/v1/ndr/cases', query, pageSize: 25, tick });
+  const list = usePagedNav({ path: '/v1/ndr/cases', query, defaultSize: 25, tick });
   const data = { items: list.items, total: list.total ?? 0, error: list.message };
   // Figures follow the same dates and courier as the list, and are cached so the page opens with the last numbers.
   const statsUrl = `/v1/ndr/stats?${filterParams({ from: filters.from, to: filters.to, courier: filters.courier }).toString()}`;
@@ -212,7 +212,7 @@ export default function LiveNdr({ mobile }) {
               </table>
             </div>
           )}
-          <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && list.items.length > 0} onMore={list.loadMore} noun="NDRs" />
+          <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading && !list.items.length} onPage={list.setPage} onSize={list.setSize} noun="NDRs" />
         </section>
 
       </div>

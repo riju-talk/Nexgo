@@ -3,10 +3,10 @@
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
-import { usePagedList } from '@/lib/useInfiniteList';
+import { usePagedNav } from '@/lib/usePageNav';
 import { saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { BLUE, Btn, CARD, FIELD, LoadMore, Pill, ProgressBar, Table, dateTime } from './Kit';
+import { BLUE, Btn, CARD, FIELD, Pagination, Pill, ProgressBar, Table, dateTime } from './Kit';
 
 const PAGE_SIZE = 15;
 const STATUS = [['', 'All'], ['pending', 'Pending'], ['in_progress', 'In progress'], ['completed', 'Completed']];
@@ -27,7 +27,7 @@ export default function LiveManifests({ mobile }) {
     if (status) p.set('status', status); if (q) p.set('q', q); if (from) p.set('from', from); if (to) p.set('to', to);
     return p.toString();
   }, [status, q, from, to]);
-  const list = usePagedList({ path: '/v1/manifests', query, pageSize: PAGE_SIZE, every: 30000 });
+  const list = usePagedNav({ path: '/v1/manifests', query, defaultSize: PAGE_SIZE, every: 30000 });
   const { loading, refresh } = list;
   const error = list.error ? { message: list.message } : null;
   const items = list.items;
@@ -90,7 +90,7 @@ export default function LiveManifests({ mobile }) {
         </div>
         {dateBad && <div role="alert" style={{ padding: '0 14px 10px', color: T.RED, fontSize: 12.5 }}>The From date must be on or before the To date.</div>}
         <Table columns={columns} rows={dateBad ? [] : items} loading={loading} error={error ? (error.message || 'Manifests could not be loaded.') : ''} empty={status || q || from || to ? 'No manifests match these filters.' : 'No manifests yet. Book shipments, then generate today’s manifests.'} minWidth={900} />
-        <LoadMore shown={items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && items.length > 0} onMore={list.loadMore} noun="manifests" />
+        <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading && !list.items.length} onPage={list.setPage} onSize={list.setSize} noun="manifests" />
       </section>
     </div>
   );

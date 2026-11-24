@@ -12,7 +12,8 @@ const STATUS: Record<string, Mapped> = {
   RTO_OFD: { state: 'rto', rto: 'out_for_delivery' }, RTO_DELIVERED: { state: 'rto', rto: 'delivered' }, LOST: { state: 'lost' },
 };
 // Known statuses that need no action (booking already recorded them), so they are not reported as "unmapped".
-const IGNORED = new Set(['NEW', 'PICKUP_SCHEDULED', 'OUT_FOR_PICKUP']);
+// PICKUP_EXCEPTION (a failed pickup attempt) and COURIER_ASSIGNED change no state, but their status and reason are kept on the shipment (courierStatus).
+const IGNORED = new Set(['NEW', 'PICKUP_SCHEDULED', 'OUT_FOR_PICKUP', 'PICKUP_EXCEPTION', 'COURIER_ASSIGNED']);
 // CANCELLED is deliberately not applied: a cancellation made on Lorrigo's side has to go through NEXGO's own cancel flow so the wallet refund
 // happens exactly once. It comes back as an unmapped status, so support can act on it.
 const normalize = (s: unknown) => String(s ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
@@ -26,7 +27,7 @@ function rtoFallback(status: string): Mapped | undefined {
 }
 
 type TrackingEvent = { status?: string; location?: string | null; description?: string | null; timestamp?: string };
-type Item = { awb?: string | number; status?: string; location?: string; description?: string; tracking_events?: TrackingEvent[] };
+type Item = { awb?: string | number; status?: string; location?: string; description?: string; pickup_exception_reason?: string | null; tracking_events?: TrackingEvent[] };
 
 // Accepts { data: {...} }, { data: [...] }, a flat { awb, ... } or a bare array, so a change in Lorrigo's envelope cannot silently drop updates.
 function items(body: unknown): Item[] {
@@ -48,7 +49,11 @@ export function toUpdate(item: Item): NormalizedUpdate | null {
   // scan's own wording (e.g. the real NDR reason) is kept instead of the bare status name.
   const sameKind = [...events].reverse().find((e) => top && e.mapped.state === top.state && e.mapped.rto === top.rto); // keeps the courier's real wording (NDR reason)
   const current: NormalizedEvent | undefined = top ? { mapped: top, at: new Date().toISOString(), location: item.location ?? sameKind?.location ?? null, description: item.description || sameKind?.description || topStatus, eventId: `status:${topStatus}` } : undefined;
-  return { awb, raw: item, events, current, unmappedStatus: topStatus && !top && !IGNORED.has(topStatus) ? topStatus : undefined };
+  // What Lorrigo itself shows for the parcel: its status and the reason it gives (pickup exceptions carry one: "Seller Not Available / Phone no. Not Contactable").
+  const lastEvent = [...(Array.isArray(item.tracking_events) ? item.tracking_events : [])].filter((e) => normalize(e?.status) === topStatus).sort((a, b) => Date.parse(String(b?.timestamp ?? '')) - Date.parse(String(a?.timestamp ?? '')))[0];
+  const note = String(item.pickup_exception_reason || item.description || lastEvent?.description || '').trim() || null;
+  const courierStatus = topStatus ? { label: topStatus, note: note ? note.slice(0, 300) : null } : undefined;
+  return { awb, raw: item, events, current, courierStatus, unmappedStatus: topStatus && !top && !IGNORED.has(topStatus) ? topStatus : undefined };
 }
 
 export const lorrigo: AggregatorPlugin = {
@@ -69,9 +74,10 @@ export const lorrigo: AggregatorPlugin = {
   // The order list carries the same history as the webhook (as trackingEvents), so one call per 100 orders replaces per-AWB lookups.
   async poll(credentials, wanted) {
     const adapter = new LorrigoAdapter(credentials.apiKey, credentials.baseUrl || 'https://app.lorrigo.com/api/v2');
-    return (await adapter.recentOrders(wanted?.size ? 20 : 5, wanted))
+    // Lorrigo lists orders newest first, 100 per page, and has no per-AWB lookup: read as far back as it takes to find every parcel we still wait for.
+    return (await adapter.recentOrders(wanted?.size ? 100 : 5, wanted))
       .filter((o) => o.awb)
-      .map((o) => toUpdate({ awb: o.awb as string, status: o.status as string, tracking_events: Array.isArray(o.trackingEvents) ? (o.trackingEvents as TrackingEvent[]) : [] }))
+      .map((o) => toUpdate({ awb: o.awb as string, status: o.status as string, pickup_exception_reason: typeof o.pickupExceptionReason === 'string' ? o.pickupExceptionReason : null, tracking_events: Array.isArray(o.trackingEvents) ? (o.trackingEvents as TrackingEvent[]) : [] }))
       .filter((u): u is NormalizedUpdate => !!u);
   },
   webhook: {

@@ -95,7 +95,7 @@ const ORDER_COLUMNS = `o.id, o.order_number, o.nexgo_order_id, o.channel, o.stat
 
 type Row = Record<string, unknown> & { id: string; ts: string; kind: 'shipment' | 'order' };
 
-async function fetchSource(client: import('pg').PoolClient, sellerId: string, source: 'shipment' | 'order', tab: Tab, f: Filters, cursor: ReturnType<typeof decodeCursor>, take: number, minimal: boolean): Promise<Row[]> {
+async function fetchSource(client: import('pg').PoolClient, sellerId: string, source: 'shipment' | 'order', tab: Tab, f: Filters, cursor: ReturnType<typeof decodeCursor>, take: number, minimal: boolean, skip = 0): Promise<Row[]> {
   const tabSql = source === 'shipment' ? shipmentTabSql(tab) : orderTabSql(tab);
   if (!tabSql) return [];
   const params: unknown[] = [sellerId];
@@ -107,7 +107,7 @@ async function fetchSource(client: import('pg').PoolClient, sellerId: string, so
     ? (source === 'shipment' ? `s.id, 'shipment' AS kind, s.state::text AS state, ${tsText(tsCol)} AS ts` : `o.id, 'order' AS kind, ${ORDER_STATE} AS state, ${tsText(tsCol)} AS ts`)
     : (source === 'shipment' ? `${SHIPMENT_COLUMNS}, 'shipment' AS kind, ${tsText(tsCol)} AS ts` : `${ORDER_COLUMNS}, 'order' AS kind, ${tsText(tsCol)} AS ts`);
   const from = source === 'shipment' ? SHIPMENT_FROM(!minimal) : ORDER_FROM;
-  const rows = (await client.query(`SELECT ${select} ${from} WHERE ${where.join(' AND ')} ORDER BY ${tsCol} DESC, ${idCol} DESC LIMIT $${params.length}`, params)).rows as Row[];
+  const rows = (await client.query(`SELECT ${select} ${from} WHERE ${where.join(' AND ')} ORDER BY ${tsCol} DESC, ${idCol} DESC LIMIT $${params.length}${skip ? ` OFFSET ${Math.floor(skip)}` : ''}`, params)).rows as Row[];
   return rows;
 }
 
@@ -121,7 +121,8 @@ async function countSource(client: import('pg').PoolClient, sellerId: string, so
 }
 
 export async function shipmentListRoutes(app: FastifyInstance) {
-  const listQuery = z.object({ tab: z.enum(TABS).default('all'), ...filterShape, limit: z.string().optional(), cursor: z.string().max(400).optional() });
+  const listQuery = z.object({ tab: z.enum(TABS).default('all'), ...filterShape, limit: z.string().optional(), cursor: z.string().max(400).optional(), page: z.string().optional(), pageSize: z.string().optional() });
+  const MAX_DEPTH = 10000; // page mode reaches this many rows deep; older ones are reached with a filter or the search
 
   app.get('/v1/shipments/list', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
@@ -129,6 +130,23 @@ export async function shipmentListRoutes(app: FastifyInstance) {
     const limit = parseLimit(q.limit, 50, 200); const cursor = decodeCursor(q.cursor);
     return withSellerTransaction(p.sellerId, async (client) => {
       const wantShip = SHIPMENT_TABS.includes(q.tab); const wantOrder = ORDER_TABS.includes(q.tab);
+      // Page mode (page + pageSize): the numbered pagination under the table. Answers { items, total, page, pages, pageSize }.
+      if (q.page) {
+        const size = parseLimit(q.pageSize, 25, 200); const page = Math.max(1, Math.floor(Number(q.page)) || 1); const offset = (page - 1) * size;
+        const total = (wantShip ? await countSource(client, p.sellerId, 'shipment', q.tab, q) : 0) + (wantOrder ? await countSource(client, p.sellerId, 'order', q.tab, q) : 0);
+        const pages = Math.max(1, Math.ceil(total / size));
+        if (offset >= MAX_DEPTH) return { items: [], total, page, pages, pageSize: size, reachablePages: Math.floor(MAX_DEPTH / size) };
+        const mixed = wantShip && wantOrder; // shipments and unshipped orders share one newest-first list: merge, then cut the page out of it
+        const take = mixed ? offset + size : size; const skip = mixed ? 0 : offset;
+        const [pShips, pOrders] = await Promise.all([
+          wantShip ? fetchSource(client, p.sellerId, 'shipment', q.tab, q, null, take, false, skip) : Promise.resolve([]),
+          wantOrder ? fetchSource(client, p.sellerId, 'order', q.tab, q, null, take, false, skip) : Promise.resolve([]),
+        ]);
+        const rows = mixed ? mergeNewestFirst([pShips, pOrders], offset + size).slice(offset, offset + size) : mergeNewestFirst([pShips, pOrders], size);
+        const shipMasked = new Map(maskCustomerRows(rows.filter((r) => r.kind === 'shipment').map((r) => publicShipment(r) as Row), p, 'shipments.view_customer').map((r) => [r.id, r]));
+        const orderMasked = new Map(maskCustomerRows(rows.filter((r) => r.kind === 'order'), p, 'orders.view_customer').map((r) => [r.id, r]));
+        return { items: rows.map((r) => (r.kind === 'shipment' ? shipMasked.get(r.id) : orderMasked.get(r.id)) as Row), total, page, pages, pageSize: size };
+      }
       const [ships, orders] = await Promise.all([
         wantShip ? fetchSource(client, p.sellerId, 'shipment', q.tab, q, cursor, limit + 1, false) : Promise.resolve([]),
         wantOrder ? fetchSource(client, p.sellerId, 'order', q.tab, q, cursor, limit + 1, false) : Promise.resolve([]),

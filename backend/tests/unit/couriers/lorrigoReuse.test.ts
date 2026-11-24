@@ -136,3 +136,33 @@ describe('Lorrigo: the order id is remembered in our database', () => {
     expect(dbQuery.mock.calls.some((c) => /INSERT INTO aggregator_orders/.test(String(c[0])) && (c[1] as string[])[1] === 'found-id')).toBe(true);
   });
 });
+
+describe('Lorrigo: the tracking poll reaches the oldest parcels', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+  // Regression: the poll read only the newest 5 pages (500 orders); Lorrigo had 6 pages, so the oldest parcels (three of them sat in NDR) were never refreshed.
+  const sixPages = (urls: string[]) => vi.fn(async (url: string) => {
+    urls.push(url); const page = Number(new URL(url).searchParams.get('page') ?? '1');
+    const orders = Array.from({ length: page === 6 ? 23 : 100 }, (_, i) => ({ id: `o${page}-${i}`, awb: `AWB${page}-${i}`, status: 'IN_TRANSIT' }));
+    return json({ orders, total: 523, page, limit: 100, totalPages: 6, hasMore: page < 6 });
+  });
+
+  it('reads every page when a parcel we wait for is on the last one', async () => {
+    const urls: string[] = []; vi.stubGlobal('fetch', sixPages(urls));
+    const orders = await new LorrigoAdapter('key', 'https://lorrigo.test/api').recentOrders(100, new Set(['AWB6-22']));
+    expect(orders).toHaveLength(523);
+    expect(urls).toHaveLength(6);
+  });
+
+  it('stops as soon as every parcel we wait for has been found', async () => {
+    const urls: string[] = []; vi.stubGlobal('fetch', sixPages(urls));
+    await new LorrigoAdapter('key', 'https://lorrigo.test/api').recentOrders(100, new Set(['AWB2-5', 'AWB1-3']));
+    expect(urls).toHaveLength(2);
+  });
+
+  it('without a wish list it keeps the old small read (5 pages)', async () => {
+    const urls: string[] = []; vi.stubGlobal('fetch', sixPages(urls));
+    await new LorrigoAdapter('key', 'https://lorrigo.test/api').recentOrders();
+    expect(urls).toHaveLength(5);
+  });
+});
+

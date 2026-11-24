@@ -8,6 +8,7 @@ import { pluginById } from '../couriers/aggregators/index.js';
 import { allPlugins, describeCredentials, isConfigured, saveCredentials } from '../couriers/credentials.js';
 import { aggregatorAdapter } from '../couriers/registry.js';
 import { aggregatorBalances } from '../lib/aggregatorBalance.js';
+import { pollPlugin } from '../lib/trackingPoll.js';
 
 /**
  * Admin > Integrations: the courier aggregators NEXGO can book through (one plugin each, see couriers/aggregators). An admin pastes an API key,
@@ -66,6 +67,17 @@ export async function adminAggregatorRoutes(app: FastifyInstance) {
     await db.query(`INSERT INTO audit_events (actor_user_id, action, target_type, target_id, request_id, metadata) VALUES ($1, 'aggregator.tested', 'aggregator', $2, $3, $4)`,
       [request.adminPrincipal!.userId, plugin.id, request.id, JSON.stringify({ ok })]);
     return { ok, message, services };
+  });
+
+  // "Sync tracking now": asks the aggregator for the newest tracking of every parcel still on the way (the same work the worker does every few minutes).
+  app.post('/v1/admin/aggregators/:aggregator/sync-tracking', { preHandler: [requirePlatformAdmin, requireCommercialAdmin], config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const plugin = idParam(request);
+    if (!plugin.poll || !plugin.capabilities.track) return reply.code(409).send({ error: 'NO_TRACKING_READ', message: 'This aggregator has no tracking read; it relies on its webhook.' });
+    try {
+      const r = await pollPlugin(plugin, { error: (o, m) => request.log.error(o as object, m), warn: (o, m) => request.log.warn(o, m), info: (m) => request.log.info(m) });
+      await db.query(`INSERT INTO audit_events (actor_user_id, action, target_type, target_id, request_id, metadata) VALUES ($1, 'aggregator.sync_tracking', 'aggregator', $2, $3, $4)`, [request.adminPrincipal!.userId, plugin.id, request.id, JSON.stringify(r)]);
+      return { ok: true, ...r };
+    } catch (e) { return reply.code(502).send({ error: 'SYNC_FAILED', message: (((e as { detail?: string }).detail ?? (e as Error).message) || 'The tracking sync failed.').slice(0, 300) }); }
   });
 
   // The aggregator's own list of courier services, so an admin picks the id from a list instead of typing it when adding a courier.

@@ -40,6 +40,22 @@ describe('Lorrigo plugin: webhook', () => {
     }
   });
 
+  // Lorrigo showed 270 parcels as PICKUP_EXCEPTION ("Seller Not Available / Phone no. Not Contactable") while NEXGO said only "pickup pending".
+  it('keeps the courier\'s own status and reason, and is quiet about it (no state change, not "unmapped")', () => {
+    const [u] = lorrigo.webhook!.parse({ awb: 'P1', status: 'PICKUP_EXCEPTION', pickup_exception_reason: 'Seller Not Available / Phone no. Not Contactable',
+      tracking_events: [{ status: 'PICKUP_EXCEPTION', timestamp: T, description: 'Manifested - Shipper unavailable' }] });
+    expect(u.courierStatus).toEqual({ label: 'PICKUP_EXCEPTION', note: 'Seller Not Available / Phone no. Not Contactable' });
+    expect(u.events).toEqual([]);
+    expect(u.current).toBeUndefined();
+    expect(u.unmappedStatus).toBeUndefined();
+  });
+
+  it('falls back to the newest event wording for the reason, and records an NDR as the courier\'s status too', () => {
+    const [u] = lorrigo.webhook!.parse({ awb: 'N9', status: 'NDR', tracking_events: [{ status: 'NDR', timestamp: T, description: 'Pending - Consignee Unavailable' }] });
+    expect(u.courierStatus).toEqual({ label: 'NDR', note: 'Pending - Consignee Unavailable' });
+    expect(u.current?.mapped.state).toBe('ndr');
+  });
+
   it('maps return-to-origin statuses and keeps the RTO sub-status', () => {
     const [u] = lorrigo.webhook!.parse({ awb: 'A1', status: 'RTO_DELIVERED', tracking_events: [
       { status: 'rto-initiated', timestamp: T }, { status: 'RTO_OFD', timestamp: '2026-11-07T10:00:00.000Z' }, { status: 'RTO_DELIVERED', timestamp: '2026-11-08T10:00:00.000Z' }] });

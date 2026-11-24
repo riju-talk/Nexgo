@@ -5,8 +5,8 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { usePagedList } from '@/lib/useInfiniteList';
-import { BLUE, Btn, CARD, FIELD, LoadMore, Pill, Table, dayText, inr, isoDay, kg } from './Kit';
+import { usePagedNav } from '@/lib/usePageNav';
+import { BLUE, Btn, CARD, FIELD, Pagination, Pill, Table, dayText, inr, isoDay, kg } from './Kit';
 
 const STATUS = { open: ['Awaiting seller', '#C2410C'], disputed: ['Needs decision', BLUE], accepted: ['Accepted by seller', '#6B7280'], won: ['Won', T.GREEN], lost: ['Lost', T.RED], withdrawn: ['Withdrawn', '#6B7280'] };
 const TABS = [['', 'All'], ['disputed', 'Needs decision'], ['open', 'Awaiting seller'], ['won', 'Won'], ['lost', 'Lost'], ['accepted', 'Accepted'], ['withdrawn', 'Withdrawn']];
@@ -20,7 +20,7 @@ export default function LiveAdminDisputes({ mobile }) {
 
   useEffect(() => { const t = window.setTimeout(() => { setQ(qInput.trim()); }, 300); return () => window.clearTimeout(t); }, [qInput]);
   const params = useMemo(() => { const p = new URLSearchParams(); if (status) p.set('status', status); if (q) p.set('q', q); return p; }, [status, q]);
-  const list = usePagedList({ path: '/v1/admin/weight-disputes', query: params.toString(), pageSize: 25, tick });
+  const list = usePagedNav({ path: '/v1/admin/weight-disputes', query: params.toString(), defaultSize: 25, tick });
   const data = { items: list.items, total: list.total ?? 0, counts: list.extra.counts || {}, error: list.error ? (list.error.status === 401 || list.error.status === 403 ? 'Sign in as a platform administrator.' : list.message) : '' };
   const loading = list.loading; const c = data.counts;
   const openDialog = (row) => { setDialog(row); setOutcome('won'); setNote(''); };
@@ -62,7 +62,7 @@ export default function LiveAdminDisputes({ mobile }) {
             { h: 'Status', cell: (r) => { const [l, col] = STATUS[r.status] || [r.status, T.TEXT]; return <Pill color={col}>{l}</Pill>; } },
             { h: 'Action', cell: (r) => (r.status === 'disputed' ? <Btn small primary onClick={() => openDialog(r)}>Record decision</Btn> : <span style={{ color: T.TEXT_MUTED }}>—</span>) },
           ]} />
-        <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && list.items.length > 0} onMore={list.loadMore} />
+        <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading && !list.items.length} onPage={list.setPage} onSize={list.setSize} noun="results" />
       </section>
 
       {dialog && (

@@ -1,12 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { usePagedList } from '@/lib/useInfiniteList';
+import { usePagedNav } from '@/lib/usePageNav';
 import { apiFetch } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import { saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
-import { BLUE, Btn, CARD, FIELD, LoadMore, Pill, Stat, Table, dateTime } from './Kit';
+import { BLUE, Btn, CARD, FIELD, Pagination, Pill, Stat, Table, dateTime } from './Kit';
 
 const PAGE_SIZE = 25;
 const AGE_TABS = [['all', 'All pending', 'total'], ['missed', 'Missed (over 24 h)', 'missed'], ['today', 'Booked today', 'today'], ['yesterday', 'Booked yesterday', 'yesterday'], ['older', 'Older', 'older']];
@@ -23,7 +23,7 @@ export default function AdminPickups({ mobile }) {
     if (sellerId) p.set('sellerId', sellerId); if (courier) p.set('courier', courier); if (warehouse) p.set('warehouse', warehouse); if (search) p.set('q', search);
     return p;
   }, [age, sellerId, courier, warehouse, search]);
-  const list = usePagedList({ path: '/v1/admin/pickups', query: qs.toString(), pageSize: PAGE_SIZE, every: 30000 });
+  const list = usePagedNav({ path: '/v1/admin/pickups', query: qs.toString(), defaultSize: PAGE_SIZE, every: 30000 });
   const { refresh } = list;
   const data = list.items.length || list.extra.summary ? { ...list.extra, items: list.items, total: list.total ?? 0 } : null;
   const error = list.error ? { message: list.message } : null; const loading = list.loading;
@@ -84,7 +84,7 @@ export default function AdminPickups({ mobile }) {
           <Btn small onClick={refresh}>Refresh</Btn>
         </div>
         <Table columns={columns} rows={data?.items || []} loading={loading} error={error && !data ? (error.message || 'Pickups could not be loaded.') : ''} empty="No pickups are pending for these filters." minWidth={980} />
-        <LoadMore shown={list.items.length} total={list.total} hasMore={list.hasMore} loading={list.loading} loadingMore={list.loadingMore} error={!!list.error && list.items.length > 0} onMore={list.loadMore} noun="pickups" />
+        <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading && !list.items.length} onPage={list.setPage} onSize={list.setSize} noun="pickups" />
       </section>
     </div>
   );
