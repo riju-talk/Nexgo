@@ -122,3 +122,22 @@ Severity:
 For every defect: `Status`, `Owner`, `Evidence link`, `Reproduction steps`, `Fix commit`, `Test case IDs`, `Verification environment`, `Residual risk`.
 
 Do not close a defect solely because code was changed. Close only after the relevant test is run and evidence is attached.
+
+## J. First-pass frontend order/booking findings (2026-11-25)
+
+| ID | Severity | Finding | Evidence / status | Required outcome |
+|---|---|---|---|---|
+| UX-008 | P1 | Bulk upload can report orders as successfully created/assigned when assignment results are absent (e.g. paused queued items) | **Confirmed by static inspection** of `LiveBulkOrderImport.jsx` and `lib/assignBatches.js`: paused batch polling exits early; paused orders are not in `batch.results`; importer maps only returned results to `unassigned`; final “created” count includes `created && !unassigned`. No runtime reproduction yet. | Represent queued/paused separately from booked/assigned; reconcile each order against durable batch state; never count as assigned without confirmed result/AWB. Test provider pause/resume and worker outage. |
+| UX-009 | P2 | Bulk import assignment results are returned/merged only after the assignment polling helper exits; queued paused orders are not durable results in the importer | Same code path; static inspection | Show per-order states (created, queued, paused, booked, failed) and let seller see final outcomes later; preserve batch ID and result file. |
+| UX-010 | P2 | Print/document popup blocking is not detected reliably | **Confirmed by static inspection** in `LiveTrack.jsx`: `openDocs()` returns `window.open()`; browser may return null for blocked windows and for noopener behavior; caller only checks `=== false`, so null is not surfaced as failure. | Detect popup-blocked/hand-off failure reliably, provide same-tab/explicit download fallback and user message. |
+| BOOK-010 | P1 | Assignment queue eligibility query does not enforce full order readiness before enqueue | Confirmed in `assignBatches.ts`: queue query filters state and shipment absence; prior readiness predicate is not included. Recheck worker/assignOneOrder enforcement before external provider call. | Validate readiness in queue endpoint and common booking pipeline; invalid rows receive field-level diagnostics without provider request. |
+| DATA-010 | P2 | Bulk shipment select-all caps IDs at 5,000; UI warning exists, but operation is not complete select-all | Static inspection of `LiveTrack.jsx`: endpoint limit=5000 and explicit truncation toast. This is disclosed, not silent, but selection UX should make selected count vs total explicit and offer chunked/server selection for larger sets. | Confirm user understands subset; implement server-side selection or chunked action if needed; tests at 5,000 and >5,000. |
+
+### Frontend scope inspected
+
+- `AppPage.jsx`: route/page IDs dynamically map to live components; order and shipment pages are mostly wrapper routes, so QA must test the actual live component mapping rather than route files alone.
+- `LiveCreateOrder.jsx`: single-order creation persists order before requesting quotes; if quote call fails, order still exists. UX must clearly retain and explain created order/quote failure to avoid duplicate submission. Idempotency and recovery tests required.
+- `LiveBulkOrderImport.jsx`: imports up to 5,000 orders, resolves missing location metadata in concurrent chunks, creates orders in chunks of 50 (four concurrent workers), and then runs courier assignment. This is throughput-oriented but requires partial-result, pause, worker-down, retry and row-identity tests.
+- `LiveTrack.jsx`: numbered page controls; select-all is capped at 5,000 with warning; document opening uses popup windows and large selections use localStorage handoff. Popup/storage failure cases need explicit UX tests.
+
+**No frontend runtime or browser tests were executed in this pass.** These are code-inspection findings only.
