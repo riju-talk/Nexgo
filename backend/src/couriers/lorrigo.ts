@@ -167,7 +167,7 @@ export class LorrigoAdapter implements CourierAdapter {
   /** A stable reference for the Lorrigo order: it changes when the customer, products, weight or payment change, so a corrected order is not stuck with stale data. */
   private orderRef(d: BookingDetails, request: CourierBookingRequest) {
     const fingerprint = JSON.stringify([d.consignee, d.items, d.package, request.paymentMode, request.codAmountPaise, d.warehouse.id]);
-    return `${d.nexgoOrderId}-${createHash('sha1').update(fingerprint).digest('hex').slice(0, 6)}`;
+    return `${d.nexgoOrderId}-${createHash('sha1').update(fingerprint).digest('hex').slice(0, 6)}${d.undone ? `-R${d.undone}` : ''}`; // -R1, -R2 ...: an earlier booking was undone
   }
 
   /** The aggregator's id for an order we already sent, from our own database (no search on the aggregator needed). */
@@ -266,7 +266,7 @@ export class LorrigoAdapter implements CourierAdapter {
 
   /** The Lorrigo order record carries shipment { id, awb } once a courier is assigned; awb is null before that. */
   private async readShipment(lorrigoOrderId: string): Promise<{ id: string | null; awb: string | null; routing: string | null }> {
-    const order = await this.call('GET', `/orders/${encodeURIComponent(lorrigoOrderId)}`).catch(() => null);
+    const order = await this.call('GET', `/orders/${encodeURIComponent(lorrigoOrderId)}`);
     const shipment = isObj(order) ? order.shipment : null; // the routing / sort code, if Lorrigo exposes one on the shipment, is printed on the label
     return { id: firstString(order, ['shipment.id']), awb: firstString(order, ['shipment.awb']), routing: findByKey(shipment, /^(routing(_?code)?|sort_?code|destination_?code|dest_?code)$/i) };
   }
@@ -275,6 +275,18 @@ export class LorrigoAdapter implements CourierAdapter {
   async routingCode(providerShipmentId: string): Promise<string | null> {
     const s = await this.call('GET', `/shipments/${encodeURIComponent(providerShipmentId)}`).catch(() => null);
     return firstString(s, ['routing_code', 'routingCode', 'data.routing_code', 'shipment.routing_code']) ?? findByKey(s, /^(routing(_?code)?|sort_?code)$/i);
+  }
+
+  /** Did an earlier call already book this? Reads Lorrigo's own records; throws when they cannot be read (never "not booked" by mistake). */
+  async findBooking(request: CourierBookingRequest): Promise<CourierBookingResult | null> {
+    const d = request.details; if (!d) return null;
+    this.deadline = 0;
+    const ref = this.orderRef(d, request);
+    const orderId = await this.knownOrder(ref) ?? await this.findOrderIdByRef(ref);
+    if (!orderId) return null; // Lorrigo never received the order
+    await this.rememberOrder(ref, orderId, d.nexgoOrderId);
+    const s = await this.readShipment(orderId);
+    return s.awb ? { providerShipmentId: s.id ?? orderId, awb: s.awb, labelAvailable: true, routingCode: s.routing ?? undefined } : null;
   }
 
   /** A booking that went through also tells the rest of the system that Lorrigo accepts bookings (any earlier refusal for balance is over). */
@@ -301,7 +313,9 @@ export class LorrigoAdapter implements CourierAdapter {
     try {
       shipment = await this.call('POST', '/shipments', { order_id: order.id, courier_id: d.externalServiceId });
     } catch (e) {
-      if (e instanceof LorrigoError && e.statusCode === 502) { const after = await this.readShipment(order.id); if (after.awb) return result(after.awb, after.id, after.routing); } // timeout / 5xx: Lorrigo may have booked anyway
+      // Timeout / 5xx: Lorrigo may have booked anyway. A refusal can also mean "already shipped" (an earlier answer was lost), so the order is read before it is believed.
+      // When it cannot be read after a timeout, the ORIGINAL error goes up: the outcome is unknown and the reconciler finds out.
+      if (e instanceof LorrigoError && !isBalanceRefusal(e.message)) { const after = await this.readShipment(order.id).catch(() => null); if (after?.awb) return result(after.awb, after.id, after.routing); }
       if (e instanceof LorrigoError && isBalanceRefusal(e.message)) {
         console.error('Lorrigo refused a booking for balance: top the wallet up or raise the credit limit to resume bookings.'); // the platform's problem, not the seller's
         await markRefused('lorrigo'); // recorded for every process: bookings are on hold until Lorrigo accepts again
@@ -315,7 +329,7 @@ export class LorrigoAdapter implements CourierAdapter {
     const answeredId = firstString(shipment, ['shipment.id', 'data.shipment.id', 'shipment_id', 'shipmentId', 'data.shipment_id']);
     const after = answeredAwb && answeredId
       ? { id: answeredId, awb: answeredAwb, routing: findByKey(isObj(shipment) ? (shipment.shipment ?? shipment.data ?? shipment) : shipment, /^(routing(_?code)?|sort_?code|destination_?code|dest_?code)$/i) }
-      : await this.readShipment(order.id); // authoritative otherwise: it also holds the shipment id
+      : await this.readShipment(order.id).catch(() => ({ id: null, awb: null, routing: null })); // authoritative otherwise: it also holds the shipment id
     const awb = after.awb ?? firstString(shipment, ['awb', 'awb_number', 'awbNumber', 'shipment.awb', 'data.awb', 'data.shipment.awb']) ?? findByKey(shipment, /^(awb|awb_?number|waybill|tracking_?(number|id))$/i);
     if (!awb) throw new LorrigoError('Lorrigo did not return an AWB for this shipment. Check the shipment in the Lorrigo dashboard before booking again.', 502);
     const shipmentId = after.id ?? firstString(shipment, ['shipment.id', 'shipment_id', 'shipmentId', 'data.shipment.id']);

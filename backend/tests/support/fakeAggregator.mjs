@@ -4,14 +4,18 @@
 //   mode.listCap     the order list returns at most this many orders per page (the real list pages, and its hasMore cannot be trusted)
 //   mode.fail502Once  the FIRST booking call and the FIRST rates call of every order answer HTTP 502 (a struggling aggregator), then work
 //   mode.postAwb     POST /shipments carries the AWB and shipment id in its answer (false: they must be read back with GET /orders/:id)
+//   mode.loseAnswer   POST /shipments BOOKS the parcel but the connection drops before the answer (the courier has it, the caller does not know)
+//   mode.readsDown    every order / list read answers HTTP 500 (the caller cannot find out either)
+//   mode.dropShip     POST /shipments answers HTTP 502 and books nothing
+//   mode.cancelDown   cancel answers HTTP 500
 // Every call is counted in `stats`, so a test can prove how many calls a booking really made.
 import http from 'node:http';
 
 const RUN = Date.now().toString(36).toUpperCase();
 export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds = [] } = {}) {
-  const mode = { balance: 1000, nobalance: false, maxInflight: 0, postAwb: true, listCap: 0, fail502Once: false, latencyMs };
+  const mode = { balance: 1000, nobalance: false, maxInflight: 0, postAwb: true, listCap: 0, fail502Once: false, loseAnswer: false, readsDown: false, dropShip: false, cancelDown: false, latencyMs };
   const failedOnce = new Set(); // keys already answered with a 502
-  const stats = { calls: {}, peak: 0, tooMany: 0, ordersCreated: 0, shipmentsBooked: 0, cancels: 0, duplicateOrderRefusals: 0 };
+  const stats = { calls: {}, peak: 0, tooMany: 0, ordersCreated: 0, shipmentsBooked: 0, cancels: 0, duplicateOrderRefusals: 0, repeatShips: 0 };
   const orders = new Map(); // id -> { id, ref, shipment: null | { id, awb }, cancelled }
   const byRef = new Map();
   const hubs = new Map(); // facilityName -> { id, name }
@@ -41,6 +45,7 @@ export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds =
         const id = `ord_${++seq}`; const o = { id, ref: body.orderId, shipment: null, cancelled: false }; orders.set(id, o); byRef.set(o.ref, o); stats.ordersCreated += 1;
         return send(res, 200, { id });
       }
+      if (mode.readsDown && method === 'GET' && /^\/orders(\/|$)/.test(path)) { count('500 reads'); return send(res, 500, { message: 'Internal error' }); }
       if (method === 'GET' && path === '/orders') {
         count('GET /orders');
         // Like the real list: newest first, a page size that may be capped, and hasMore that is NOT reliable (always false); totalPages / total are.
@@ -57,12 +62,15 @@ export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds =
       if (method === 'POST' && path === '/shipments') {
         count('POST /shipments');
         if (mode.nobalance) return send(res, 400, { message: 'Insufficient balance. Please recharge your wallet to continue.' });
+        if (mode.dropShip) return send(res, 502, { message: 'Bad gateway' });
         const o = orders.get(body.order_id); if (!o) return send(res, 404, { message: 'Order not found' });
-        if (!o.shipment) { o.shipment = { id: `shp_${++seq}`, awb: `FK${RUN}${String(seq).padStart(6, "0")}` }; stats.shipmentsBooked += 1; }
+        if (o.shipment) stats.repeatShips += 1;
+        if (!o.shipment) { o.courierId = body.courier_id; o.shipment = { id: `shp_${++seq}`, awb: `FK${RUN}${String(seq).padStart(6, "0")}` }; stats.shipmentsBooked += 1; }
+        if (mode.loseAnswer) { count('lost answers'); req.socket.destroy(); return; }
         return send(res, 200, mode.postAwb ? { success: true, shipment: o.shipment } : { success: true });
       }
       const cancel = path.match(/^\/shipments\/([^/]+)\/cancel$/);
-      if (method === 'POST' && cancel) { count('POST /shipments/:id/cancel'); stats.cancels += 1; return send(res, 200, { success: true }); }
+      if (method === 'POST' && cancel) { count('POST /shipments/:id/cancel'); if (mode.cancelDown) return send(res, 500, { message: 'Internal error' }); stats.cancels += 1; for (const o of orders.values()) if (o.shipment?.id === cancel[1]) o.cancelled = true; return send(res, 200, { success: true }); }
       send(res, 404, { message: 'Unknown endpoint ' + method + ' ' + path });
     } catch (e) { send(res, 500, { message: String(e) }); } finally { inflight -= 1; }
   });

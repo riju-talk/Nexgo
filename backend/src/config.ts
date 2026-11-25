@@ -32,6 +32,12 @@ const schema = z.object({
   ASSIGN_PER_SELLER: z.coerce.number().int().min(1).max(64).default(32),
   CANCEL_WORKERS: z.coerce.number().int().min(1).max(128).default(16),
   CANCEL_PER_SELLER: z.coerce.number().int().min(1).max(64).default(16),
+  // A courier booking whose outcome is unclear is looked up at the courier after this long; one still marked "started" after BOOKING_STALE_SECONDS (longer than any
+  // booking can take) was interrupted by a crash.
+  RECONCILE_AFTER_SECONDS: z.coerce.number().int().min(1).max(600).default(20),
+  BOOKING_STALE_SECONDS: z.coerce.number().int().min(5).max(3600).default(120),
+  // Whether the API process also works the queues. Default: yes outside production, no in production (the worker container does it).
+  QUEUES_IN_API: bool(!production),
   // Calls to the courier aggregator in flight at once from this process; it backs off by itself when the aggregator answers 429 (couriers/aggregatorLimiter.ts).
   AGGREGATOR_MAX_CONCURRENCY: z.coerce.number().int().min(4).max(200).default(32),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().max(30).default(14), // absolute lifetime of one sign-in

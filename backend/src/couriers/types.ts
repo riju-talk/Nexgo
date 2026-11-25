@@ -1,6 +1,8 @@
 // Everything a real courier needs to create a shipment. Gathered once per booking (lib/bookingDetails.ts); the mock adapter ignores it.
 export type BookingDetails = {
   sellerName: string; orderNumber: string; nexgoOrderId: string;
+  /** How many courier bookings of this order were undone: a new booking must be a NEW order at the courier, never the cancelled one. */
+  undone?: number;
   /** The courier's own id for the chosen service (courier_services.external_service_id). */
   externalServiceId: string | null;
   /** The courier-side pickup address for this warehouse, once one exists (courier_pickup_hubs). */
@@ -26,6 +28,11 @@ export type CourierAdapter = {
   listServices?(): Promise<ServiceSummary[]>;
   book(request: CourierBookingRequest): Promise<CourierBookingResult>;
   cancel(providerShipmentId: string): Promise<void>;
+  /**
+   * Does the courier already hold a booking for exactly this request (an earlier call whose answer was lost)? The booking, or null when the courier says there is
+   * none. Must THROW when the courier cannot be asked: "could not read" is never "not booked".
+   */
+  findBooking?(request: CourierBookingRequest): Promise<CourierBookingResult | null>;
   /** Tell the courier what to do with an undelivered parcel. Optional: only couriers with an NDR API implement it. */
   /** The courier's routing / sort code for a booked shipment, as the aggregator gives it (printed on the label). Optional. */
   routingCode?(providerShipmentId: string): Promise<string | null>;

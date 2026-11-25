@@ -192,7 +192,7 @@ export class ShiprocketAdapter implements CourierAdapter {
   /** A stable reference for the Shiprocket order: it changes when the customer, products, weight or payment change, so a corrected order is not stuck with stale data. */
   private orderRef(d: BookingDetails, request: CourierBookingRequest) {
     const fingerprint = JSON.stringify([d.consignee, d.items, d.package, request.paymentMode, request.codAmountPaise, d.warehouse.id]);
-    return `${d.nexgoOrderId}-${createHash('sha1').update(fingerprint).digest('hex').slice(0, 6)}`;
+    return `${d.nexgoOrderId}-${createHash('sha1').update(fingerprint).digest('hex').slice(0, 6)}${d.undone ? `-R${d.undone}` : ''}`; // -R1, -R2 ...: an earlier booking was undone
   }
   /** Our own record of orders already sent (ref -> "orderId:shipmentId"): a retry reuses the order instead of creating it twice. */
   private async knownOrder(ref: string): Promise<{ orderId: string; shipmentId: string } | null> {
@@ -265,12 +265,13 @@ export class ShiprocketAdapter implements CourierAdapter {
     const result = (awb: string): CourierBookingResult => ({ providerShipmentId: order.orderId, awb, labelAvailable: true, pickupHubId: hub !== d.pickupHubId ? hub : undefined });
 
     // An earlier attempt may already have shipped this order (our side rolled back, or the answer was lost): reuse it, never ship twice.
-    if (order.reused) { const earlier = await this.readAwb(order.orderId); if (earlier) { await this.requestPickup(order.shipmentId); return result(earlier); } }
+    if (order.reused) { const earlier = await this.readAwbStrict(order.orderId); if (earlier) { await this.requestPickup(order.shipmentId); return result(earlier); } }
     await this.assertServiceable(d, request, d.externalServiceId);
     let assigned: unknown;
     try { assigned = await this.call('POST', '/courier/assign/awb', { shipment_id: order.shipmentId, courier_id: d.externalServiceId }); }
     catch (e) {
-      if (e instanceof ShiprocketError && e.statusCode === 502) { const after = await this.readAwb(order.orderId); if (after) return result(after); } // timeout / 5xx: Shiprocket may have booked anyway
+      // Timeout / 5xx: Shiprocket may have booked anyway; a refusal can also mean "already assigned" (an earlier answer was lost). Read the order before believing it.
+      if (e instanceof ShiprocketError && !isBalanceRefusal(e.detail)) { const after = await this.readAwb(order.orderId); if (after) return result(after); }
       if (e instanceof ShiprocketError && isBalanceRefusal(e.detail)) throw await outOfBalance();
       throw e;
     }
@@ -288,11 +289,22 @@ export class ShiprocketAdapter implements CourierAdapter {
   }
 
   /** The AWB of an order that may already be booked (GET /orders/show/{id}). */
-  private async readAwb(orderId: string): Promise<string | null> {
-    try {
-      const res = await this.call('GET', `/orders/show/${encodeURIComponent(orderId)}`);
-      return firstString(res, ['data.shipments.awb', 'data.shipments.0.awb', 'data.awb_data.awb', 'data.awb_code', 'data.awb']);
-    } catch { return null; }
+  private async readAwbStrict(orderId: string): Promise<string | null> {
+    const res = await this.call('GET', `/orders/show/${encodeURIComponent(orderId)}`);
+    return firstString(res, ['data.shipments.awb', 'data.shipments.0.awb', 'data.awb_data.awb', 'data.awb_code', 'data.awb']);
+  }
+  private async readAwb(orderId: string): Promise<string | null> { return this.readAwbStrict(orderId).catch(() => null); }
+  /**
+   * Did an earlier call already book this? Only an order whose id we stored can carry an AWB (the AWB is asked for after the id is known and stored), so no stored id
+   * means nothing was shipped. Throws when Shiprocket cannot be read (never "not booked" by mistake).
+   */
+  async findBooking(request: CourierBookingRequest): Promise<CourierBookingResult | null> {
+    const d = request.details; if (!d) return null;
+    this.deadline = 0;
+    const row = (await db.query<{ external_order_id: string }>(`SELECT external_order_id FROM aggregator_orders WHERE aggregator = 'shiprocket' AND ref = $1`, [this.orderRef(d, request)])).rows[0];
+    const orderId = row?.external_order_id.split(':')[0]; if (!orderId) return null;
+    const awb = await this.readAwbStrict(orderId);
+    return awb ? { providerShipmentId: orderId, awb, labelAvailable: true } : null;
   }
   /** Asks the courier to collect the parcel. Best effort: a booking whose pickup was already requested (or auto-scheduled) is still a booking. */
   private async requestPickup(shipmentId: string): Promise<void> {

@@ -17,6 +17,8 @@ import { config } from '../config.js';
 import { courierAdapter } from '../couriers/registry.js';
 import { sellerSafeMessage, BOOKING_PAUSED } from '../lib/sellerSafeError.js';
 import { READY_SQL, assertOrderReady } from '../lib/orderReadiness.js';
+import { assertNoOpenBooking, beginAttempt, bookingInProgress, bookingUnconfirmed, isAmbiguous, markAccepted, settleAttempt, waitWhileBusy, type Attempt } from '../lib/bookingAttempts.js';
+import type { CourierBookingRequest, CourierBookingResult } from '../couriers/types.js';
 import { pausedAggregatorIds } from '../lib/aggregatorBalance.js';
 import { invalidateMetrics } from '../lib/metrics.js';
 import { pickupPendingSql } from '../lib/metrics.js';
@@ -29,7 +31,7 @@ function principal(request: FastifyRequest) { if (!request.principal) throw Obje
 type Rate = { provider_id: string; provider_code: string; aggregator: string | null; provider_name: string; service_id: string; service_code: string; service_name: string; base_weight_g: number; base_price_paise: number; additional_weight_g: number; additional_price_paise: number; cod_fee_paise: number; fuel_surcharge_bps: number; cod_percent_bps: number; rto_base_price_paise: number | null; rto_additional_price_paise: number | null; payment_mode: 'prepaid' | 'cod'; cod_amount_paise: number; total_weight_g: number; destination_pincode: string };
 
 // Best effort: tells Shopify the order shipped (AWB + courier) once the booking has committed. Never fails the booking.
-async function pushTrackingForShipment(sellerId: string, orderId: string, awb: string) {
+export async function pushTrackingForShipment(sellerId: string, orderId: string, awb: string) {
   const row = await db.query<{ id: string; name: string }>('SELECT s.id, cp.name FROM shipments s JOIN courier_providers cp ON cp.id=s.provider_id WHERE s.awb=$1 AND s.seller_id=$2', [awb, sellerId]);
   await pushTracking(sellerId, orderId, awb, row.rows[0]?.name ?? 'NEXGO', row.rows[0]?.id);
 }
@@ -53,15 +55,17 @@ async function fundsShort(client: PoolClient, sellerId: string, amountPaise: num
 
 /**
  * A booking in three steps, so no database connection is held while the courier works (a booking is several seconds at the aggregator):
- *   1. prepareBooking  (quick, reads only)      price, courier rules, a first look at the wallet, everything the courier needs
- *   2. callCourier     (slow, NO connection)    the aggregator books the parcel
- *   3. completeBooking (quick, all the writes)  wallet lock, funds re-checked, shipment + debit + events in one transaction
- * bookDetached() runs the three; bookInTx() runs them on one caller-owned connection (kept for callers that already have one).
+ *   1. prepareBooking  (quick)                  price, courier rules, a first look at the wallet, everything the courier needs, and a durable "booking started"
+ *                                               record (booking_attempts), so a lost answer or a crash can never lose or repeat a booking
+ *   2. callCourier     (slow, NO connection)    the aggregator books the parcel; its AWB is stored at once
+ *   3. recordBooking   (quick, all the writes)  wallet lock, funds re-checked, shipment + debit + events in one transaction
+ * bookDetached() runs the three. Whatever is left open is finished by lib/bookingReconciler.ts.
  */
 export type BookingContext = { input: z.infer<typeof bookingInput>; key: string; zone: string; selection: Rate; price: ReturnType<typeof calculateRate>; details: Awaited<ReturnType<typeof loadBookingDetails>>; promisedDays: number };
 
 export async function prepareBooking(client: PoolClient, p: ReturnType<typeof principal>, input: z.infer<typeof bookingInput>, key: string): Promise<{ replay: true; shipment: Record<string, unknown> } | { replay: false; ctx: BookingContext }> {
     const previous = await client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]); if (previous.rows[0]) return { replay: true as const, shipment: previous.rows[0] };
+    if ((await client.query('SELECT 1 FROM shipments WHERE seller_id=$1 AND order_id=$2', [p.sellerId, input.orderId])).rows[0]) throw await alreadyBooked(p.sellerId, input.orderId);
     await assertOrderReady(client, p.sellerId, input.orderId); // BEFORE any quote, wallet check or courier call (ORD-004, BOOK-010)
     const lane = await client.query<{ wc: string; ws: string; cc: string; cs: string }>(`SELECT w.city AS wc, w.state AS ws, COALESCE(p.city, c.city) AS cc, COALESCE(p.state, c.state) AS cs FROM orders o JOIN warehouses w ON w.id=o.warehouse_id JOIN customers c ON c.id=o.customer_id LEFT JOIN pincodes p ON p.pincode=c.pincode WHERE o.id=$1 AND o.seller_id=$2`, [input.orderId, p.sellerId]);
     const zone = lane.rows[0] ? laneZone({ city: lane.rows[0].wc, state: lane.rows[0].ws }, { city: lane.rows[0].cc, state: lane.rows[0].cs }) : 'rest_of_india';
@@ -79,28 +83,32 @@ export async function prepareBooking(client: PoolClient, p: ReturnType<typeof pr
     return { replay: false, ctx: { input, key, zone, selection, price, details, promisedDays } };
 }
 
+export function courierRequest({ selection, details, input }: BookingContext): CourierBookingRequest {
+  return { details, reference: input.orderId, destinationPincode: selection.destination_pincode, weightG: Math.max(selection.total_weight_g, 1), paymentMode: selection.payment_mode, codAmountPaise: selection.payment_mode === 'cod' ? selection.cod_amount_paise : 0 };
+}
 export async function callCourier(ctx: BookingContext) {
-  const { selection, details, input } = ctx;
-    try {
-      return await courierAdapter(selection.aggregator, selection.provider_code).book({ details, reference: input.orderId, destinationPincode: selection.destination_pincode, weightG: Math.max(selection.total_weight_g, 1), paymentMode: selection.payment_mode, codAmountPaise: selection.payment_mode === 'cod' ? selection.cod_amount_paise : 0 });
-    } catch (e) {
+  const { selection, details } = ctx;
+  try {
+    return await courierAdapter(selection.aggregator, selection.provider_code).book(courierRequest(ctx));
+  } catch (e) {
       // The aggregator said this courier does not serve the lane: tag the error so the caller can remember it (after the rollback).
       if ((e as { laneRefusal?: boolean }).laneRefusal) Object.assign(e as object, { lane: { serviceId: selection.service_id, pickup: details.warehouse.pincode, destination: selection.destination_pincode } satisfies LaneRefusal });
       throw e;
     }
 }
 
-export async function completeBooking(client: PoolClient, p: ReturnType<typeof principal>, requestId: string, ctx: BookingContext, providerBooking: Awaited<ReturnType<typeof callCourier>>) {
+/** The courier holds a booking NEXGO must not keep: the caller undoes it at the courier once this transaction has rolled back (no lock is held meanwhile). */
+const mustUndo = (e: Error) => Object.assign(e, { undoCourier: true });
+export async function completeBooking(client: PoolClient, p: ReturnType<typeof principal>, requestId: string, ctx: BookingContext, providerBooking: CourierBookingResult, attemptId: string): Promise<{ shipment: Record<string, unknown>; replay: boolean }> {
   const { input, key, zone, selection, price, promisedDays } = ctx;
+    const order = (await client.query<{ state: string }>('SELECT state::text FROM orders WHERE id=$1 AND seller_id=$2 FOR UPDATE', [input.orderId, p.sellerId])).rows[0];
+    const existing = (await client.query('SELECT * FROM shipments WHERE order_id=$1 AND seller_id=$2', [input.orderId, p.sellerId])).rows[0];
+    if (existing && existing.awb === providerBooking.awb) { await settleAttempt(attemptId, 'recorded', undefined, client); return { shipment: existing, replay: true }; } // already recorded
+    if (existing || !order || order.state !== 'ready_to_ship') throw mustUndo(Object.assign(new Error('The order changed while the courier was booking it, so that booking is being undone. Nothing was charged.'), { statusCode: 409, code: 'ORDER_CHANGED' }));
     // The courier has answered: only now take the wallet lock, so two concurrent bookings cannot both spend the same balance.
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`wallet:${p.sellerId}`]);
     const stillShort = await fundsShort(client, p.sellerId, price.totalPaise);
-    if (stillShort) {
-      // Another booking used the money while this one was with the courier: undo the courier booking so nothing is shipped unpaid.
-      try { await courierAdapter(selection.aggregator, selection.provider_code).cancel(providerBooking.providerShipmentId ?? providerBooking.awb); }
-      catch (cancelError) { console.error(`Booking ${providerBooking.awb} could not be cancelled after a failed wallet re-check; cancel it at the courier by hand`, cancelError); }
-      throw noFunds(stillShort);
-    }
+    if (stillShort) throw mustUndo(noFunds(stillShort)); // another booking used the money while this one was with the courier: nothing may ship unpaid
     const shipment = await client.query(`INSERT INTO shipments (seller_id,order_id,provider_id,service_id,awb,chargeable_weight_g,shipping_charge_paise,quote_snapshot,idempotency_key,destination_pincode,destination_city,promised_delivery_at,pickup_deadline_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,cu.pincode,cu.city,now()+make_interval(days => $10::int),now()+interval '24 hours' FROM orders o JOIN customers cu ON cu.id=o.customer_id WHERE o.id=$2 RETURNING *`, [p.sellerId, input.orderId, selection.provider_id, selection.service_id, providerBooking.awb, Math.max(selection.total_weight_g, 1), price.totalPaise, JSON.stringify({ zone, provider: selection.provider_code, providerShipmentId: providerBooking.providerShipmentId, service: selection.service_code, destinationPincode: selection.destination_pincode, paymentMode: selection.payment_mode, price }), key, promisedDays]);
     await client.query('UPDATE shipments SET provider_shipment_id=$1, routing_code=$3 WHERE id=$2', [providerBooking.providerShipmentId, shipment.rows[0].id, providerBooking.routingCode ?? null]);
     if (providerBooking.pickupHubId) await client.query('INSERT INTO courier_pickup_hubs (warehouse_id,aggregator,seller_id,external_hub_id) SELECT o.warehouse_id,$2,$3,$4 FROM orders o WHERE o.id=$1 ON CONFLICT (warehouse_id, aggregator) DO UPDATE SET external_hub_id=EXCLUDED.external_hub_id', [input.orderId, selection.aggregator, p.sellerId, providerBooking.pickupHubId]);
@@ -108,37 +116,67 @@ export async function completeBooking(client: PoolClient, p: ReturnType<typeof p
     await client.query("INSERT INTO shipment_events (shipment_id,state,occurred_at,description,source) VALUES ($1,'booked',now(),'Shipment booked successfully','booking')", [shipment.rows[0].id]);
     await client.query(`INSERT INTO wallet_entries (seller_id,entry_type,amount_paise,reference_type,reference_id,idempotency_key,description)
       VALUES ($1,'debit',$2,'shipment',$3,$4,$5)`, [p.sellerId, price.totalPaise, shipment.rows[0].id, `shipment-booking:${key}`, `Shipping charge for ${shipment.rows[0].awb}`]);
-    await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'shipment.booked', targetType: 'shipment', targetId: shipment.rows[0].id, requestId, metadata: { orderId: input.orderId, awb: shipment.rows[0].awb, amount: paiseToAmount(price.totalPaise) } }); return { shipment: shipment.rows[0], replay: false };
+    await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'shipment.booked', targetType: 'shipment', targetId: shipment.rows[0].id, requestId, metadata: { orderId: input.orderId, awb: shipment.rows[0].awb, amount: paiseToAmount(price.totalPaise) } });
+    await settleAttempt(attemptId, 'recorded', undefined, client); // in the same transaction as the shipment and the debit
+    return { shipment: shipment.rows[0], replay: false };
 }
 
-export async function bookInTx(client: PoolClient, p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
-  const prep = await prepareBooking(client, p, input, key);
-  if (prep.replay) return { shipment: prep.shipment, replay: true as const };
-  return completeBooking(client, p, requestId, prep.ctx, await callCourier(prep.ctx));
-}
-
-/** The same booking with no connection held during the courier call, so many bookings can run at once. Safe to retry: the key makes it idempotent. */
-async function bookDetachedInner(p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string) {
-  const prep = await withSellerTransaction(p.sellerId, (client) => prepareBooking(client, p, input, key));
-  if (prep.replay) return { shipment: prep.shipment, replay: true as const };
-  const providerBooking = await callCourier(prep.ctx);
+/** Step 3: records a booking the courier accepted. If NEXGO must not keep it, it is undone at the courier (and kept on the list until the courier confirms). */
+export async function recordBooking(p: ReturnType<typeof principal>, requestId: string, ctx: BookingContext, attemptId: string, booking: CourierBookingResult) {
   try {
-    const done = await withSellerTransaction(p.sellerId, (client) => completeBooking(client, p, requestId, prep.ctx, providerBooking));
+    const done = await withSellerTransaction(p.sellerId, (client) => completeBooking(client, p, requestId, ctx, booking, attemptId));
     invalidateMetrics(p.sellerId); // the new booking shows in this seller's figures at once
     return done;
   } catch (e) {
-    if ((e as { code?: string }).code === '23505') { // a parallel request recorded this very booking first: that is the booking
-      const again = await withSellerTransaction(p.sellerId, (client) => client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]));
-      if (again.rows[0]) return { shipment: again.rows[0] as Record<string, unknown>, replay: true as const };
-    }
-    if ((e as { statusCode?: number }).statusCode !== 402) console.error(`Booking ${providerBooking.awb} succeeded at the courier but was not recorded: ${(e as Error).message}. A retry reuses it.`);
+    if ((e as { undoCourier?: boolean }).undoCourier) {
+      try { await courierAdapter(ctx.selection.aggregator, ctx.selection.provider_code).cancel(booking.providerShipmentId ?? booking.awb); await settleAttempt(attemptId, 'cancelled', (e as Error).message); }
+      catch (cancelError) { await settleAttempt(attemptId, 'cancel_needed', (e as Error).message); console.error(JSON.stringify({ evt: 'booking.undo_pending', awb: booking.awb, reason: (cancelError as Error).message })); }
+    } else console.error(JSON.stringify({ evt: 'booking.not_recorded', awb: booking.awb, reason: (e as Error).message, next: 'the reconciler records it' }));
     throw e;
   }
 }
 
+/** One booking with no connection held during the courier call, so many run at once. Safe to retry: the key makes it idempotent and one order has one open attempt. */
+async function bookDetachedInner(p: ReturnType<typeof principal>, requestId: string, input: z.infer<typeof bookingInput>, key: string, resolveOpen = true): Promise<{ shipment: Record<string, unknown>; replay: boolean }> {
+  const prep = await withSellerTransaction(p.sellerId, async (client) => {
+    const ready = await prepareBooking(client, p, input, key);
+    if (ready.replay) return ready;
+    const begun = await beginAttempt(client, { sellerId: p.sellerId, userId: p.userId, orderId: input.orderId, aggregator: ready.ctx.selection.aggregator, providerCode: input.providerCode, serviceCode: input.serviceCode, key, context: ready.ctx });
+    return { replay: false as const, ctx: ready.ctx, begun };
+  });
+  if (prep.replay) return { shipment: prep.shipment, replay: true };
+  const { ctx, begun } = prep;
+  if (begun.kind === 'busy') { // a double click, another tab or the queue is booking this order right now: wait for that answer
+    await waitWhileBusy(begun.attempt.id);
+    const won = (await db.query('SELECT * FROM shipments WHERE seller_id=$1 AND order_id=$2', [p.sellerId, input.orderId])).rows[0];
+    if (won && won.idempotency_key === key) return { shipment: won, replay: true };
+    if (won) throw await alreadyBooked(p.sellerId, input.orderId);
+    throw bookingInProgress();
+  }
+  if (begun.kind === 'open') { // an earlier booking with another courier is unresolved: ask that courier now, so the seller is not kept waiting when it can answer
+    if (!resolveOpen || begun.attempt.state === 'cancel_needed') throw bookingUnconfirmed();
+    const { resolveAttempt } = await import('../lib/bookingReconciler.js');
+    const outcome = await resolveAttempt(begun.attempt).catch(() => 'open' as const);
+    if (outcome === 'recorded') throw await alreadyBooked(p.sellerId, input.orderId);
+    if (outcome === 'open') throw bookingUnconfirmed();
+    return bookDetachedInner(p, requestId, input, key, false); // released: the order is free
+  }
+  if (begun.kind === 'resume') return recordBooking(p, requestId, begun.attempt.context as unknown as BookingContext, begun.attempt.id, attemptBooking(begun.attempt));
+  let booking: CourierBookingResult;
+  try { booking = await callCourier(ctx); }
+  catch (e) { await settleAttempt(begun.id, isAmbiguous(e) ? 'unknown' : 'refused', (e as Error).message); throw e; }
+  await markAccepted(begun.id, booking);
+  return recordBooking(p, requestId, ctx, begun.id, booking);
+}
+const attemptBooking = (a: Attempt): CourierBookingResult => ({ awb: a.awb!, providerShipmentId: a.provider_shipment_id ?? a.awb!, labelAvailable: true, routingCode: a.routing_code ?? undefined, pickupHubId: a.pickup_hub_id ?? undefined });
+async function alreadyBooked(sellerId: string, orderId: string) {
+  const won = await db.query<{ awb: string; name: string }>('SELECT s.awb, cp.name FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.seller_id = $1 AND s.order_id = $2', [sellerId, orderId]).then((r) => r.rows[0]).catch(() => undefined);
+  return Object.assign(new Error(`This order was just booked by another request${won ? ` (AWB ${won.awb}, ${won.name})` : ''}. Nothing was charged twice. Refresh Track to see it.`), { statusCode: 409, code: 'ORDER_ALREADY_BOOKED' });
+}
+
 // ready = nothing is wrong with the order itself, so a courier can be assigned (same checks as diagnose() in lib/failedOrders.js).
 // READY_SQL and assertOrderReady live in lib/orderReadiness.ts (the order routes need them too); re-exported here for the modules that import them from this file.
-export { READY_SQL, assertOrderReady };
+export { READY_SQL, assertOrderReady, assertNoOpenBooking };
 
 /** The seller's courier priority list (Settings > Courier rules) as a ranking function: lower = tried first; unlisted couriers last. */
 export type CourierRank = (name: string, code: string) => number;
@@ -150,10 +188,7 @@ export async function bookDetached(p: ReturnType<typeof principal>, requestId: s
     if (code === 'DEBIT_LIMIT_REACHED' || code === 'INSUFFICIENT_BALANCE') void notifyFunds(p.sellerId, (e as Error).message);
     // Another request booked this very order a moment earlier (two tabs, a double click with a new key, the queue and a manual booking at once): the database allows
     // one shipment per order, so this attempt loses. Say exactly that, with the AWB, instead of the generic "this record already exists" (BOOK-002).
-    if (code === '23505' && (e as { table?: string }).table === 'shipments') { // whichever unique index fired first (one per order, one per AWB, one per key)
-      const won = await db.query<{ awb: string; name: string }>('SELECT s.awb, cp.name FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.seller_id = $1 AND s.order_id = $2', [p.sellerId, input.orderId]).then((r) => r.rows[0]).catch(() => undefined);
-      throw Object.assign(new Error(won ? `This order was just booked by another request (AWB ${won.awb}, ${won.name}). Nothing was charged twice. Refresh Track to see it.` : 'This order was just booked by another request. Nothing was charged twice. Refresh Track to see it.'), { statusCode: 409, code: 'ORDER_ALREADY_BOOKED' });
-    }
+    if (code === '23505' && (e as { table?: string }).table === 'shipments') throw await alreadyBooked(p.sellerId, input.orderId); // whichever unique index fired first
     throw e;
   }
 }
@@ -392,7 +427,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
       const lane = laneRefusalOf(e); if (lane) await rememberLaneRefusals([{ lane, reason: (e as Error).message }]);
       throw e;
     });
-    if (!result.replay) await pushTrackingForShipment(p.sellerId, result.shipment.order_id, result.shipment.awb);
+    if (!result.replay) await pushTrackingForShipment(p.sellerId, result.shipment.order_id as string, result.shipment.awb as string);
     return reply.code(result.replay ? 200 : 201).send({ ...result, shipment: publicShipment(result.shipment) });
   });
   // Courier allocation by the seller's priority list (Settings > Courier rules: priority 1, 2, 3 ...). For each order the first courier

@@ -6,6 +6,7 @@ import { sellerSafeMessage } from './sellerSafeError.js';
 import { cancelShipment } from '../routes/shipments.js';
 import { notify } from './notify.js';
 import { isTemporaryError } from './transientErrors.js';
+import { assertNoOpenBooking } from './bookingAttempts.js';
 
 /**
  * Works through cancel_batch_items (cancellations queued by POST /v1/shipments/cancel-batch).
@@ -59,6 +60,7 @@ async function cancelPlainOrder(item: Claimed): Promise<number> {
     if (!row) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
     if (row.state === 'cancelled') return;
     if (Number(row.shipments) > 0 || !['draft', 'new', 'ready_to_ship'].includes(row.state)) throw Object.assign(new Error('This order already has a courier booking. Cancel its shipment instead.'), { statusCode: 409 });
+    await assertNoOpenBooking(client, item.order_id!); // a courier may already hold it: wait until that is known
     await client.query(`UPDATE orders SET state = 'cancelled', cancelled_at = now(), updated_at = now() WHERE id = $1`, [item.order_id]);
     await audit(client, { sellerId: item.seller_id, actorUserId: item.created_by ?? undefined, action: 'order.state_changed', targetType: 'order', targetId: item.order_id!, requestId: `cancel-batch-${item.batch_id.slice(0, 8)}`, metadata: { to: 'cancelled' } });
   });

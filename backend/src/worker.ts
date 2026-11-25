@@ -10,6 +10,8 @@ import { startTrackingPoll } from './lib/trackingPoll.js';
 import { scanPickupMissed } from './lib/notify.js';
 import { logLowBalances } from './lib/aggregatorBalance.js';
 import { generateDueCycles } from './lib/codCycles.js';
+import { startBookingReconciler } from './lib/bookingReconciler.js';
+import { startHeartbeat } from './lib/workerHealth.js';
 
 type Job = { id: string; seller_id: string | null; job_type: string; payload: Record<string, unknown>; attempts: number };
 
@@ -130,7 +132,9 @@ const stopAssign = startAssignProcessor({ error: (o, m) => console.error(m ?? 'a
 const codTimer = setInterval(() => { void generateDueCycles().catch((e) => console.error('cod cycles failed', e)); }, 60 * 60 * 1000); void generateDueCycles().catch((e) => console.error('cod cycles failed', e));
 const pickupTimer = setInterval(() => { void scanPickupMissed(); void logLowBalances((m) => console.error(m)); }, 10 * 60 * 1000); void scanPickupMissed(); setTimeout(() => { void logLowBalances((m) => console.error(m)); }, 30_000);
 const stopCancel = startCancelProcessor({ error: (o, m) => console.error(m ?? 'cancel queue', o), info: (m) => console.log(m) });
+const stopReconciler = startBookingReconciler({ error: (o, m) => console.error(m ?? 'booking reconciler', o) });
+const stopHeartbeat = startHeartbeat();
 console.log('NEXGO worker started');
 
-const shutdown = async () => { clearInterval(interval); stopAssign(); stopCancel(); clearInterval(pickupTimer); clearInterval(codTimer); stopCredentials(); stopPoll(); await db.end(); process.exit(0); };
+const shutdown = async () => { clearInterval(interval); stopAssign(); stopCancel(); stopReconciler(); stopHeartbeat(); clearInterval(pickupTimer); clearInterval(codTimer); stopCredentials(); stopPoll(); await db.end(); process.exit(0); };
 process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown);

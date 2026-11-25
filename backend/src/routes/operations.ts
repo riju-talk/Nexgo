@@ -1,3 +1,4 @@
+import { assertNoOpenBooking } from '../lib/bookingAttempts.js';
 import { queueCodConfirmation } from '../lib/codConfirmation.js';
 import { normalizeState, sameState } from '../lib/indiaStates.js';
 import { maskCustomerRows } from '../lib/permissions.js';
@@ -286,6 +287,7 @@ export async function operationsRoutes(app: FastifyInstance) {
       const order = (await client.query<{ state: string; total_paise: string; shipments: string }>('SELECT o.state::text, o.total_paise, (SELECT count(*) FROM shipments s WHERE s.order_id=o.id) AS shipments FROM orders o WHERE o.id=$1 AND o.seller_id=$2 FOR UPDATE', [orderId, p.sellerId])).rows[0];
       if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       if (Number(order.shipments) > 0 || !['new', 'ready_to_ship'].includes(order.state)) throw Object.assign(new Error('Only orders without a courier can be edited'), { statusCode: 409 });
+      await assertNoOpenBooking(client, orderId);
       if (input.paymentMode === 'cod' && input.codAmountPaise > Number(order.total_paise)) throw Object.assign(new Error('COD amount cannot exceed the order total'), { statusCode: 422 });
       const c = input.customer;
       await checkLocation(client, c.pincode, c.state);
@@ -332,6 +334,7 @@ export async function operationsRoutes(app: FastifyInstance) {
       if (!transitions[current.rows[0].state].includes(state)) throw Object.assign(new Error(`Cannot transition order from ${current.rows[0].state} to ${state}`), { statusCode: 409, code: 'ORDER_TRANSITION_NOT_ALLOWED' });
       if (state === 'ready_to_ship') await assertOrderReady(client, p.sellerId, orderId); // an incomplete order must not be marked ready (ORD-004)
       if (state === 'cancelled' && (await client.query('SELECT 1 FROM shipments WHERE order_id=$1 LIMIT 1', [orderId])).rows[0]) throw Object.assign(new Error('This order has a shipment. Cancel the shipment instead; the order follows it.'), { statusCode: 409, code: 'ORDER_HAS_SHIPMENT' });
+      if (state === 'cancelled') await assertNoOpenBooking(client, orderId);
       const updated = await client.query(`UPDATE orders SET state=$1::order_state,cancelled_at=CASE WHEN $1::order_state='cancelled'::order_state THEN now() ELSE cancelled_at END,updated_at=now() WHERE id=$2 RETURNING *`, [state, orderId]);
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.state_changed', targetType: 'order', targetId: orderId, requestId: request.id, metadata: { from: current.rows[0].state, to: state } });
       return updated.rows[0];
