@@ -9,7 +9,7 @@ import { startFakeAggregator } from '../support/fakeAggregator.mjs';
 const require = createRequire(new URL('../../package.json', import.meta.url));
 const pg = require('pg');
 const API = 'http://127.0.0.1:4011';
-const db = new pg.Client({ connectionString: 'postgresql://nx@127.0.0.1:5544/nxd' }); await db.connect();
+const db = new pg.Client({ connectionString: (process.env.E2E_DATABASE_URL || 'postgresql://nx@127.0.0.1:5544/nxd') }); await db.connect();
 const out = []; const T = (n, ok, d = '') => out.push((ok ? 'PASS ' : 'FAIL ') + n + (d ? ' - ' + d : ''));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

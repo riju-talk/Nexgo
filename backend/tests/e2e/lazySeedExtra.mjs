@@ -3,7 +3,7 @@
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../../package.json', import.meta.url));
 const pg = require('pg');
-const db = new pg.Client({ connectionString: 'postgresql://nx@127.0.0.1:5544/nxd' }); await db.connect();
+const db = new pg.Client({ connectionString: (process.env.E2E_DATABASE_URL || 'postgresql://nx@127.0.0.1:5544/nxd') }); await db.connect();
 const S = (await db.query(`SELECT s.id FROM sellers s JOIN seller_memberships m ON m.seller_id = s.id JOIN users u ON u.id = m.user_id WHERE u.email LIKE 'lazy%@example.com' AND u.email NOT LIKE 'lazyo%' ORDER BY u.created_at DESC LIMIT 1`)).rows[0].id;
 const type = (await db.query(`SELECT udt_name FROM information_schema.columns WHERE table_name='ndr_cases' AND column_name='ndr_reason'`)).rows[0].udt_name;
 const reason = (await db.query(`SELECT enumlabel FROM pg_enum WHERE enumtypid = $1::regtype LIMIT 1`, [type])).rows[0].enumlabel;

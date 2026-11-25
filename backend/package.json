@@ -17,7 +17,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration"
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "node tests/support/runE2e.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1152.0",

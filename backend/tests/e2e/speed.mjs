@@ -8,7 +8,7 @@ import { startFakeAggregator } from '../support/fakeAggregator.mjs';
 const require = createRequire(new URL('../../package.json', import.meta.url));
 const pg = require('pg');
 const API = 'http://127.0.0.1:4011';
-const db = new pg.Client({ connectionString: 'postgresql://nx@127.0.0.1:5544/nxd' }); await db.connect();
+const db = new pg.Client({ connectionString: (process.env.E2E_DATABASE_URL || 'postgresql://nx@127.0.0.1:5544/nxd') }); await db.connect();
 const out = []; const T = (n, ok, d = '') => out.push((ok ? 'PASS ' : 'FAIL ') + n + (d ? ' - ' + d : ''));
 
 const svc = (await db.query("SELECT cs.id, cs.external_service_id AS ext, cp.id AS pid FROM courier_services cs JOIN courier_providers cp ON cp.id = cs.provider_id WHERE cs.code = 'delhivery-250-gms'")).rows[0];
