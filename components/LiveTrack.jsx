@@ -234,7 +234,7 @@ export default function LiveTrack({ mobile }) {
   // Numbered pagination (page + items per page), like the courier console: one page of rows at a time, the choice of page size is remembered.
   const list = usePageNav({
     name: 'track', defaultSize: 25, deps: [tab, qf],
-    fetchPage: (page, size) => apiFetch(`/v1/shipments/list?${qs({ tab, page, pageSize: size })}`).then((x) => ({ items: (x.items || []).map(norm), total: x.total })),
+    fetchPage: (page, size) => apiFetch(`/v1/shipments/list?${qs({ tab, page, pageSize: size })}`).then((x) => ({ items: (x.items || []).map(norm), total: x.total, reachable: x.reachable })),
   });
   const tableTop = useRef(null);
   const [blockedDocs, setBlockedDocs] = useState(null); // a print window the browser stopped: { kind, url, count }
@@ -596,7 +596,7 @@ export default function LiveTrack({ mobile }) {
                     </tbody>}
                   </table>
                 </div>
-                <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading && !items.length} onPage={(n) => { list.setPage(n); tableTop.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }} onSize={list.setSize} noun="shipments" />
+                <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} reachable={list.reachable} loading={list.loading && !items.length} onPage={(n) => { list.setPage(n); tableTop.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }} onSize={list.setSize} noun="shipments" />
               </>
             )}
           </section>

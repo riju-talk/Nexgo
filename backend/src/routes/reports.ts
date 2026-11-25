@@ -92,7 +92,7 @@ async function build(client: PoolClient, sellerId: string, type: string, from: s
   const args: unknown[] = [sellerId, from, to];
   if (type === 'weight') where.push('s.chargeable_weight_g>o.total_weight_g');
   if (status && def.stateCol) { args.push(status); where.push(`${def.stateCol}=$${args.length}`); }
-  const r = await client.query({ text: `SELECT ${def.columns.map(([, e], i) => `${e} AS c${i}`).join(',')} FROM ${def.from} WHERE ${where.join(' AND ')} ORDER BY ${def.order} LIMIT ${MAX_ROWS}`, values: args, rowMode: 'array' });
+  const r = await client.query({ text: `SELECT ${def.columns.map(([, e], i) => `${e} AS c${i}`).join(',')} FROM ${def.from} WHERE ${where.join(' AND ')} ORDER BY ${def.order} LIMIT ${MAX_ROWS + 1}`, values: args, rowMode: 'array' });
   return { columns: def.columns.map(([h]) => h), rows: r.rows as unknown[][] };
 }
 
@@ -120,13 +120,15 @@ export async function reportRoutes(app: FastifyInstance) {
     if (input.status && input.status !== 'all' && !def.statuses.includes(input.status)) throw Object.assign(new Error(`Status "${input.status}" does not apply to this report`), { statusCode: 400 });
     const status = input.status && input.status !== 'all' ? input.status : undefined;
     const run = await withSellerTransaction(p.sellerId, async (client) => {
-      const { columns, rows } = await build(client, p.sellerId, input.type, input.from, input.to, status);
-      const fileName = `${input.type}-${input.from}-to-${input.to}.csv`;
+      const built = await build(client, p.sellerId, input.type, input.from, input.to, status);
+      // One row more than the limit is read, so "exactly 20,000" is complete and 20,001 is not. An incomplete file says so in its own name (DATA-005).
+      const truncated = built.rows.length > MAX_ROWS; const columns = built.columns; const rows = built.rows.slice(0, MAX_ROWS);
+      const fileName = `${input.type}-${input.from}-to-${input.to}${truncated ? `-PARTIAL-first-${MAX_ROWS}-rows` : ''}.csv`;
       const inserted = await client.query(
         `INSERT INTO report_runs(seller_id,report_type,range_start,range_end,status_filter,row_count,file_name,csv_content,preview,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING ${RUN_COLUMNS}`,
-        [p.sellerId, input.type, input.from, input.to, status ?? null, rows.length, fileName, toCsv(columns, rows), JSON.stringify({ columns, rows: rows.slice(0, PREVIEW_ROWS), truncated: rows.length >= MAX_ROWS }), p.userId]);
+        [p.sellerId, input.type, input.from, input.to, status ?? null, rows.length, fileName, toCsv(columns, rows), JSON.stringify({ columns, rows: rows.slice(0, PREVIEW_ROWS), truncated }), p.userId]);
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'report.generated', targetType: 'report_run', targetId: inserted.rows[0].id, requestId: request.id, metadata: { type: input.type, rows: rows.length } });
-      return { ...inserted.rows[0], preview: { columns, rows: rows.slice(0, PREVIEW_ROWS), truncated: rows.length >= MAX_ROWS } };
+      return { ...inserted.rows[0], preview: { columns, rows: rows.slice(0, PREVIEW_ROWS), truncated } };
     });
     return reply.code(201).send(run);
   });

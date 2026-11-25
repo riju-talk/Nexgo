@@ -79,7 +79,7 @@ const pageWindow = (page, pages) => {
   out.push(pages);
   return out;
 };
-export function Pagination({ page, pages, size, total, onPage, onSize, sizes = [15, 25, 50, 100], loading, noun = 'results' }) {
+export function Pagination({ page, pages, size, total, reachable, onPage, onSize, sizes = [15, 25, 50, 100], loading, noun = 'results' }) {
   if (total === undefined || total === null) return null;
   const from = total === 0 ? 0 : (page - 1) * size + 1; const to = Math.min(page * size, total);
   const btn = (label, target, { on = false, off = false, aria } = {}) => (
@@ -88,7 +88,7 @@ export function Pagination({ page, pages, size, total, onPage, onSize, sizes = [
   );
   return (
     <nav aria-label="Pagination" style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13, color: T.TEXT_SECONDARY }}>
-      <span aria-live="polite">{loading ? 'Loading…' : total === 0 ? `No ${noun}` : `Showing ${from.toLocaleString('en-IN')}-${to.toLocaleString('en-IN')} of ${Number(total).toLocaleString('en-IN')} ${noun}`}</span>
+      <span aria-live="polite">{loading ? 'Loading…' : total === 0 ? `No ${noun}` : `Showing ${from.toLocaleString('en-IN')}-${to.toLocaleString('en-IN')} of ${Number(total).toLocaleString('en-IN')} ${noun}`}{reachable !== undefined && reachable < total ? ` (the newest ${Number(reachable).toLocaleString('en-IN')} can be paged; use the filters or search for older ones)` : ''}</span>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 8 }}>Items per page
           <select value={size} onChange={(e) => onSize(Number(e.target.value))} style={{ height: 32, borderRadius: 7, border: `1px solid ${T.BORDER}`, background: T.SURFACE, color: T.TEXT, fontSize: 12.5, padding: '0 6px' }}>{sizes.map((n) => <option key={n} value={n}>{n}</option>)}</select>

@@ -132,7 +132,8 @@ export default function LiveReports({ mobile }) {
               <div style={{ padding: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <Button primary disabled={!current.row_count} onClick={() => download(current, 'csv')}>Download CSV</Button>
                 <Button primary disabled={!current.row_count} onClick={() => download(current, 'xlsx')}>Download Excel</Button>
-                {current.row_count > (preview?.rows?.length || 0) && <span style={{ color: T.TEXT_MUTED, fontSize: 12.5 }}>Showing the first {preview.rows.length} of {current.row_count} rows — the download contains every row.</span>}
+                {preview?.truncated && <span role="alert" style={{ color: T.RED, fontSize: 12.5, fontWeight: 650 }}>This report is incomplete: it holds the first {Number(current.row_count).toLocaleString('en-IN')} rows and there are more. Choose a shorter date range to get everything (the file name says PARTIAL).</span>}
+                {!preview?.truncated && current.row_count > (preview?.rows?.length || 0) && <span style={{ color: T.TEXT_MUTED, fontSize: 12.5 }}>Showing the first {preview.rows.length} of {current.row_count} rows — the download contains every row.</span>}
               </div>
             </>
           )}

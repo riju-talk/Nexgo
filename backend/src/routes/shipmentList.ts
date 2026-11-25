@@ -134,8 +134,9 @@ export async function shipmentListRoutes(app: FastifyInstance) {
       if (q.page) {
         const size = parseLimit(q.pageSize, 25, 200); const page = Math.max(1, Math.floor(Number(q.page)) || 1); const offset = (page - 1) * size;
         const total = (wantShip ? await countSource(client, p.sellerId, 'shipment', q.tab, q) : 0) + (wantOrder ? await countSource(client, p.sellerId, 'order', q.tab, q) : 0);
-        const pages = Math.max(1, Math.ceil(total / size));
-        if (offset >= MAX_DEPTH) return { items: [], total, page, pages, pageSize: size, reachablePages: Math.floor(MAX_DEPTH / size) };
+        // Only pages that can really be opened are offered; `reachable` says how many rows that is, so the screen can tell the seller to filter for older ones (DATA-003).
+        const reachable = Math.min(total, MAX_DEPTH); const pages = Math.max(1, Math.ceil(reachable / size));
+        if (offset >= MAX_DEPTH) return { items: [], total, reachable, page, pages, pageSize: size };
         const mixed = wantShip && wantOrder; // shipments and unshipped orders share one newest-first list: merge, then cut the page out of it
         const take = mixed ? offset + size : size; const skip = mixed ? 0 : offset;
         const [pShips, pOrders] = await Promise.all([
@@ -145,7 +146,7 @@ export async function shipmentListRoutes(app: FastifyInstance) {
         const rows = mixed ? mergeNewestFirst([pShips, pOrders], offset + size).slice(offset, offset + size) : mergeNewestFirst([pShips, pOrders], size);
         const shipMasked = new Map(maskCustomerRows(rows.filter((r) => r.kind === 'shipment').map((r) => publicShipment(r) as Row), p, 'shipments.view_customer').map((r) => [r.id, r]));
         const orderMasked = new Map(maskCustomerRows(rows.filter((r) => r.kind === 'order'), p, 'orders.view_customer').map((r) => [r.id, r]));
-        return { items: rows.map((r) => (r.kind === 'shipment' ? shipMasked.get(r.id) : orderMasked.get(r.id)) as Row), total, page, pages, pageSize: size };
+        return { items: rows.map((r) => (r.kind === 'shipment' ? shipMasked.get(r.id) : orderMasked.get(r.id)) as Row), total, reachable, page, pages, pageSize: size };
       }
       const [ships, orders] = await Promise.all([
         wantShip ? fetchSource(client, p.sellerId, 'shipment', q.tab, q, cursor, limit + 1, false) : Promise.resolve([]),
