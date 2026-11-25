@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { sellerSafeMessage, BOOKING_PAUSED } from '../lib/sellerSafeError.js';
 import { config } from '../config.js';
 import { aggregatorLimiter } from './aggregatorLimiterShared.js';
+import { markRefused, markWorking } from '../lib/aggregatorRefusals.js';
 import { db } from '../db/client.js';
 import type { BookingDetails, CourierAdapter, CourierBookingRequest, CourierBookingResult } from './types.js';
 
@@ -249,7 +250,14 @@ export class ShiprocketAdapter implements CourierAdapter {
     if (!ok) throw lane(`This courier cannot serve ${d.consignee.pincode} from this warehouse${request.paymentMode === 'cod' ? ' for cash on delivery' : ''}.`);
   }
 
+  /** A booking that went through also tells the rest of the system that Shiprocket accepts bookings (any earlier refusal for balance is over). */
   async book(request: CourierBookingRequest): Promise<CourierBookingResult> {
+    const out = await this.bookOnce(request);
+    markWorking('shiprocket');
+    return out;
+  }
+
+  private async bookOnce(request: CourierBookingRequest): Promise<CourierBookingResult> {
     const d = request.details; if (!d) throw new ShiprocketError('Booking details are missing.', 502);
     this.deadline = Date.now() + 22_000;
     if (!d.externalServiceId) throw invalid('This courier service is not mapped to a courier on the courier network.');
@@ -310,7 +318,8 @@ export class ShiprocketAdapter implements CourierAdapter {
 function platformDomain(): string { try { return new URL(config.FRONTEND_ORIGIN).hostname || 'mynexgo.com'; } catch { return 'mynexgo.com'; } }
 function lane(message: string): ShiprocketError { const e = new ShiprocketError(message, 422); e.laneRefusal = true; return e; }
 function outOfBalance(): ShiprocketError {
-  console.error('Shiprocket account wallet is out of balance: top it up to resume bookings.');
+  console.error('Shiprocket refused a booking for balance: top the wallet up to resume bookings.');
+  void markRefused('shiprocket'); // recorded for every process: bookings are on hold until Shiprocket accepts again
   return new ShiprocketError(BOOKING_PAUSED, 503, 402); // every courier on this aggregator shares that balance: stop at once, the queue keeps the orders and books them after a top-up
 }
 function availableCouriers(res: unknown): Json[] {

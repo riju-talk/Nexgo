@@ -16,7 +16,7 @@ import { storage, STORAGE_NOT_CONNECTED } from '../lib/storage.js';
 import { config } from '../config.js';
 import { courierAdapter } from '../couriers/registry.js';
 import { sellerSafeMessage, BOOKING_PAUSED } from '../lib/sellerSafeError.js';
-import { pausedAggregatorIds, markEmpty } from '../lib/aggregatorBalance.js';
+import { pausedAggregatorIds } from '../lib/aggregatorBalance.js';
 import { invalidateMetrics } from '../lib/metrics.js';
 import { pickupPendingSql } from '../lib/metrics.js';
 import { notifyFunds } from '../lib/notify.js';
@@ -189,10 +189,13 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
     let lastError = 'No serviceable courier for this order';
     // Failover between aggregators: a courier whose aggregator has no balance left is skipped without a single call, and one that refuses for balance
     // while being tried is skipped for the rest of this order. Only when no courier on a funded aggregator is left does the order wait (BOOKING_PAUSED).
+    // (An aggregator counts as refusing only because it really refused a booking recently, never because of its balance figure.) When EVERY courier of this
+    // order is on a refusing aggregator they are all tried anyway: that attempt is the trial that finds out whether the aggregator accepts again.
     const pausedAggs = await pausedAggregatorIds();
-    let skippedForBalance = false;
-    for (const c of planned.ordered) {
-      if (c.agg && pausedAggs.has(c.agg)) { skippedForBalance = true; continue; }
+    const funded = planned.ordered.filter((c) => !(c.agg && pausedAggs.has(c.agg)));
+    const toTry = funded.length ? funded : planned.ordered;
+    let skippedForBalance = funded.length < planned.ordered.length;
+    for (const c of toTry) {
       try {
         const booked = await bookDetached(p, requestId, { orderId, providerCode: c.pcode, serviceCode: c.scode }, `auto-assign:${orderId}:${c.pcode}:${c.scode}`);
         const awb = booked.shipment.awb as string;
@@ -204,7 +207,7 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
         lastError = sellerSafeMessage((e as Error).message || lastError);
         const lane = laneRefusalOf(e); if (lane) refusals.push({ lane, reason: lastError });
         if (status === 402) return { ok: false, error: lastError, ms: Date.now() - started }; // wallet short: no point trying other couriers
-        if (lastError === BOOKING_PAUSED) { if (c.agg) { pausedAggs.add(c.agg); markEmpty(c.agg); } skippedForBalance = true; continue; } // this aggregator is out of balance: try a courier on another one
+        if (lastError === BOOKING_PAUSED) { if (c.agg) pausedAggs.add(c.agg); skippedForBalance = true; continue; } // this aggregator is out of balance: try a courier on another one
         if (status !== 422) throw e;
       }
     }

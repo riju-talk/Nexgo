@@ -4,7 +4,7 @@ import { assignOneOrder, loadCourierRank, type CourierRank } from '../routes/shi
 import { BOOKING_PAUSED, sellerSafeMessage } from './sellerSafeError.js';
 import { notify, notifyFunds } from './notify.js';
 import { isTemporaryError } from './transientErrors.js';
-import { aggregatorBalances, allBookingPaused } from './aggregatorBalance.js';
+import { allBookingPaused } from './aggregatorBalance.js';
 
 /**
  * Works through assign_batch_items (courier assignment queued by POST /v1/shipments/assign-batch).
@@ -105,7 +105,6 @@ async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void
 /** Puts this order and every other waiting order back in the queue, marked as paused, and tells the seller once that nothing is lost. */
 async function pauseEverything(item: Claimed) {
   openUntil = 0; lastPausedAt = Date.now();
-  await aggregatorBalances(true).catch(() => []); // read the wallet again now: a minute-old reading must not keep the gate open after a refusal
   await db.query(`UPDATE assign_batch_items SET state = 'queued', error = $2, attempts = 0, started_at = NULL, retry_at = now() + ($3 || ' seconds')::interval WHERE id = $1`, [item.id, BOOKING_PAUSED, String(PAUSE_RETRY_SECONDS)]);
   // The same sweep for every other waiting order. Many in-flight orders hit the refusal at once, so it runs under one lock (also across processes), skips rows
   // another worker is touching and is not repeated within a few seconds: concurrent sweeps over the same rows used to deadlock.
