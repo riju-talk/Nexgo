@@ -152,7 +152,7 @@ Not yet inspected/executed in this pass:
 - Full test suite, lint, build, typecheck, migration tests.
 - Exact UX copy and visual states.
 
-## 9. Update 2026-11-26: confirmed findings, fixes and new findings
+## 9. Update 2026-11-25: confirmed findings, fixes and new findings
 
 - **UX-008 confirmed and fixed.** `lib/assignBatches.js` ends polling when the batch is fully paused and returns no per-order results; the importer treated every order without a result as assigned. Now `lib/bulkOutcome.js` marks a sent order with no answer as `queued` (saved, waiting), and the summary, toast, row label and a persistent banner say so. `tests/bulkOutcome.test.mjs` reproduces the paused case first (4 orders, 0 results -> 0 booked, 4 queued).
 - **UX-010 confirmed and fixed.** `window.open(url, '_blank', 'noopener')` returns `null` by specification, so a blocked pop-up was indistinguishable from an opened window. `lib/openDocs.js` opens without the feature, cuts the opener by hand, and Track shows a persistent "Open N labels" link when blocked. A storage failure is no longer reported as "too many".

@@ -2,8 +2,8 @@
 
 **Purpose:** One authoritative QA entry point for the two-day stabilization effort.  
 **Baseline:** Repository `main` as inspected on 2026-11-25.  
-**Working branch:** `qa/production-readiness-2day`  
-**Status:** Audit and test planning started; no application code has been modified by this QA branch yet.
+**Working branch:** `main`  
+**Status:** Two execution runs recorded on 2026-11-25 (DEFECT_REGISTER sections K and L, TEST_MATRIX sections 10 and 11, RELEASE_GATES sign-off).
 
 ## Primary execution specification
 

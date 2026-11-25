@@ -142,7 +142,7 @@ Do not close a defect solely because code was changed. Close only after the rele
 
 **No frontend runtime or browser tests were executed in this pass.** These are code-inspection findings only.
 
-## K. Execution log, 2026-11-26 (branch `main`, local throwaway Postgres 17 with all 75 migrations, fake Lorrigo / Shiprocket servers)
+## K. Execution log, 2026-11-25 (branch `main`, local throwaway Postgres 17 with all 75 migrations, fake Lorrigo / Shiprocket servers)
 
 Status words: **Verified** = a test that reproduces or guards the defect was executed and passed (command and result given). **Fixed** = code changed, only partly tested. **Open** = not fixed. **Not tested** = no evidence either way.
 Environment limit that applies to EVERY row: no live Lorrigo / Shiprocket / RapidShyp transaction, no production database, no real browser pop-up test, no separate worker process. Provider behaviour was checked against fakes written from observed live responses (Lorrigo) or documentation (Shiprocket).
@@ -171,7 +171,41 @@ Environment limit that applies to EVERY row: no live Lorrigo / Shiprocket / Rapi
 | OPS-001 / DEP-001 | **P0** | No worker heartbeat / queue-age alert visible to sellers; a stopped worker leaves accepted batches pending. (Admin dashboard has queue depth and p95 booking time; not a heartbeat.) | Not built. Production topology not verified. |
 | SEC-001 | **P0** | Cross-seller isolation: spot checks exist inside several suites (batch, notifications, bulk tracking, a foreign order id in `readiness.mjs`). **No complete two-seller suite across every route, export, document and job.** | Not built. |
 | BOOK-005 | P1 | Shiprocket has never run against a live account. | No API user available. Provider stays disabled until one controlled live booking passes. |
-| RapidShyp | n/a | An API key was pasted in chat. **It is not stored anywhere in the repository** (checked). There is no RapidShyp adapter. The key should be treated as exposed and rotated. | Needs the provider's API documentation and a sandbox; no capability will be invented. |
+| RapidShyp | n/a (out of scope) | An API key was pasted in chat. **It is not stored anywhere in the repository** (checked). There is no RapidShyp adapter. The key should be treated as exposed and rotated. | Needs the provider's API documentation and a sandbox; no capability will be invented. |
 | ORD-009 (new) | P2 | Customers are shared between orders with the same phone: editing one order's customer changes the others'. Found because it contaminated a test. | Needs a design decision (copy-on-write customer per order). |
 | ORD-001 | P1 | Booking is now blocked for incomplete orders, but order **creation / import** validation was not re-audited. | Not reviewed. |
 | ELG-001..007, DOC-001..004, NDR/RTO capability audit, cancellation fee/refund races, wallet/COD reconciliation, notification channel fallback, DATA-003/004/005 export completeness | P1/P2 | Not investigated in this run. | Time. They remain as listed in sections B to I. |
+
+## L. Second QA run, 2026-11-25 (same day, after section K)
+
+**Correction to section K.** Section K's Shiprocket run was not isolated: `dotenv` filled in the real Lorrigo key, so "Shiprocket only" was not. No live booking call was made (checked in the API log and the AWB prefixes), but the result was not evidence. All suites were re-run with `npm run test:e2e` (`backend/tests/support/runE2e.mjs`): a fresh database per suite, every provider / mail / storage / payment variable set explicitly, courier URLs on loopback. Section K's explanation for the `allBookingPaused` change (a stale in-use cache) was never demonstrated; the change is kept because it is safe, not because it was proven necessary.
+
+### L.1 Closed in this run (each reproduced by a failing test first, unless noted)
+
+| ID | Sev | What was wrong (reproduced) | Fix | Evidence | Status |
+|---|---|---|---|---|---|
+| BOOK-001 | P0 | After a lost courier answer, choosing another courier recorded THAT courier and ITS price (Rs 90) while the first courier (Rs 50) held the parcel; a booking our database missed was never recovered; a booking that had to be undone was only logged if the undo failed, and rebooking reused the cancelled AWB. 11 of 21 checks failed. | `booking_attempts` (migration 0076): a row before the courier is called, one open attempt per order, AWB stored at once; `lib/bookingReconciler.ts` finishes or releases it; adapters got `findBooking` (throws when it cannot read: "could not read" is never "not booked"); order cannot be edited, cancelled or booked elsewhere meanwhile | `e2e/reconcile.mjs` 21/21 | **Verified** (fake courier) |
+| OPS-001 / OPS-004 / DEP-001 | P0 | No sign when the worker is down; accepted work waited silently. | `worker_heartbeats`, `GET /health/worker` (503), `workerDelayed` / `stalled` in the batch answers, progress card and Track banner text, admin dashboard banner, System status rows, e-mail to admins at most hourly (sent by the API) | `e2e/heartbeat.mjs` 17/17 with a separate worker process, killed mid-batch | **Verified**; production topology still to be checked after deploy |
+| SEC-001 / SEC-003 | P0 | No complete isolation proof. | Test only: every registered route swept as another seller, as nobody, and admin routes as a seller; A's rows compared byte for byte | `e2e/tenancy.mjs` 16/16 (141 seller routes, all admin routes) | **Verified** |
+| ORD-010 (new) | P0 | **Wrong delivery address:** a customer was matched on phone + pincode only, so a repeat buyer's new name / address was ignored; two buyers behind one phone in one sheet both got the last address. | `lib/customers.ts`: shared only when every detail is identical (single, bulk, Shopify, corrections) | `e2e/orders.mjs` 1-4 | **Verified**. Orders already saved with a wrong consignee cannot be detected from the database: see residual risk |
+| ORD-002 | P1 | The same order number with another customer / amount was silently discarded as "already in NEXGO". | Explicit per-row conflict; a true repeat is still recognised | `e2e/orders.mjs` 5 | **Verified** |
+| ORD-009 | P2 | An NDR address correction changed the shared customer record, so every other order of that buyer. | A new consignee for that order only | `e2e/orders.mjs` 6 | **Verified** |
+| TRK-002 | P1 | Asking for RTO showed the parcel as returning and charged the return freight at once, even if the courier later delivered it. An old route (`PATCH /v1/ndr/:id`) forced parcel states. | The answer is a request; state and freight follow the courier's scan (charged once); the old route is removed; a courier without an NDR API now says so instead of looking successful | `e2e/orders.mjs` 6-7, `tracking.mjs` | **Verified** (fake courier) |
+| ELG-001 / ELG-002 / ELG-006 | P1 | Booking ignored a suspended pincode and the courier's COD flag, and could price another zone than the quote when the warehouse city was spelled differently. | Same rules in booking | `e2e/orders.mjs` 8 | **Verified** |
+| UX-011 (new, from section K) | P1 | The bulk screen promised that orders the server had REFUSED to queue would book by themselves; a paused batch was a green toast; one failed progress poll was reported as a failed batch. | `notQueued` with reasons, `lib/batchSteps.js` | `tests/batchSteps.test.mjs` 13/13, `heartbeat.mjs` 3 | **Verified** (logic); browser **Not tested** |
+| WH-001 (new, from c75667f) | P1 | The webhook fix of the same day answered 200 to damaged updates (lost without trace); a `text/plain` update was always dropped. | Only an empty request is a ping; unreadable = error; wrong token always 401 | `e2e/webhooks.mjs` 31/31 | **Verified** |
+| SEC-007 (new) | P1 | A seller could mark their own bank account "verified". | 403; KYC review decides | `e2e/orders.mjs` 7 | **Verified** |
+| DOC-001 | P1 | The server "label" was a stub PDF (no address, no barcode). | Not offered any more (`CARRIER_LABEL_UNAVAILABLE`); labels are printed from `/documents/label` | `e2e/orders.mjs` 7 | **Verified** (constrained) |
+| DATA-003 / DATA-005 | P1 | Pages beyond 10,000 rows were offered but empty (and could loop); a report cut at 20,000 rows did not say so in the file. | Only reachable pages + a note; `PARTIAL` in the file name and a warning | `e2e/limits.mjs` 9/9 (20,000 and 20,001 rows) | **Verified** |
+| REL-T07 | P1 | Migration on a database with data had not been run. | n/a | 0076 applied to a copy with 2,688 orders / 2,599 shipments, counts unchanged | **Verified** (local copy, not production) |
+
+### L.2 Still open
+
+| ID | Sev | Why |
+|---|---|---|
+| Live providers (BOOK-005, gate 5) | P0 for release | No real Lorrigo or Shiprocket booking / label / cancel has been made with this code. Shiprocket: an API-user login and wallet read were made once, wallet balance 0. Keep Shiprocket off until one controlled booking passes. The Shiprocket duplicate-order behaviour when the create answer is lost is unknown (at worst an unshipped duplicate order, never a second AWB). |
+| Browser / accessibility (UX-005, UX-006, UX-T*) | P1 | Nothing was opened in a browser in this run. |
+| SEC-002 | P0 | Credentials were pasted in chat and must be rotated (see RELEASE_GATES). Production logs and configuration were not inspected. |
+| ORD-010 residue | P1 | Unshipped production orders created before the fix may carry an old address. Compare recent bulk sheets of repeat buyers before booking. |
+| DOC-002 | P2 | `POST /v1/manifests` (stored PDF) is not used by the app; the manifest screen does not need storage. Not changed. |
+| Wallet / COD reconciliation beyond the existing suites, notification providers, DATA-006 / 008, SEC-004, backup / rollback drill, load test against a real courier | P1-P2 | Not investigated in this run. |

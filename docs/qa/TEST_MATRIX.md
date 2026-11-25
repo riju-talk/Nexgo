@@ -183,7 +183,7 @@
 | REL-T11 | Backup/rollback | Tested or owner-approved procedure |
 | REL-T12 | Smoke test | Critical user journey passes |
 
-## 10. Execution results (2026-11-26, local throwaway DB + fake providers)
+## 10. Execution results (2026-11-25, local throwaway DB + fake providers)
 
 Commands (from `backend/` unless stated): `npx tsc --noEmit`; `npx vitest run`; `node tests/e2e/<name>.mjs` against the API started as described in each file's header. From the repo root: `npm run lint`, `npm run build`, `npm test`.
 
@@ -229,3 +229,17 @@ Scenario status (IDs from sections 1 to 9). PASS = executed and passed in the en
 | REL-T01..T04 | PASS | see above |
 | REL-T06 migration clean DB | PASS | all 75 migrations applied from empty on a throwaway database |
 | REL-T07 migration existing DB, REL-T08 Docker, REL-T09, REL-T11 backup / rollback | **NOT RUN** | |
+
+## 11. Second run, 2026-11-25 (isolated runner; supersedes section 10 where they differ)
+
+Command: `cd backend && npm run test:e2e` (needs a throwaway Postgres on 127.0.0.1:5544). Each suite: fresh database, own API process, no real provider keys.
+
+| Check | Result |
+|---|---|
+| Backend typecheck / build, unit tests | PASS / PASS, **524 / 524** |
+| Frontend lint / production build, unit tests | PASS / PASS, **66 / 66** |
+| Migrations: empty database / copy with data | PASS (76) / PASS (75 -> 76) |
+| readiness 38, orders 21, concurrency 10, reconcile 21, heartbeat 17, tenancy 16, speed 33, cancel 11, actions 22, tracking 26, notifications 20, webhooks 31, shiprocket 26, failover 8, cod 20, metrics 27, manifests 20, states-otp 10, lazy 43, adminLists 32, limits 9, platform 21 | **22 / 22 suites, 482 checks, all PASS** |
+
+Newly covered: BOOK-T07, BOOK-T08, BOOK-T09 (lost answer, our database failing, crash), BOOK-T19 (undo retried), OPS-T02, OPS-T03, OPS-T05 (worker stopped, killed, restarted), SEC-T01 to SEC-T05, ORD duplicate / repeat-buyer cases, TRK NDR / RTO requests, DATA limits.
+NOT RUN: anything in a browser, live couriers, Docker images, backup / rollback, production configuration.
