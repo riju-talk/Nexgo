@@ -5,6 +5,12 @@
 **Working branch:** `qa/production-readiness-2day`  
 **Status:** Audit and test planning started; no application code has been modified by this QA branch yet.
 
+## Primary execution specification
+
+- [Master production stabilization specification — unified requirements, workflows, test strategy, two-day execution and release gates](./MASTER_PRODUCTION_STABILIZATION_SPEC.md)
+
+Use this document as the single primary instruction to Claude Code. The other QA documents are supporting defect/test/evidence registers.
+
 ## Documents
 
 - [Master problem statement and production-readiness objectives](./MASTER_PROBLEM_STATEMENT.md)
