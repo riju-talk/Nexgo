@@ -23,6 +23,7 @@ export async function manifestRoutes(app: FastifyInstance) {
   app.post('/v1/manifests/generate', { preHandler: requireSeller }, async (request, reply) => {
     const p = principal(request);
     const out = await withSellerTransaction(p.sellerId, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`manifest:${p.sellerId}`]); // two clicks at once: one numbering at a time (MF numbers never repeat)
       // Waiting for pickup, not courier-cancelled, not already on a manifest. Locked so two clicks cannot build two manifests for one parcel.
       const waiting = await client.query<{ id: string; provider_id: string; warehouse_id: string | null }>(
         `SELECT s.id, s.provider_id, o.warehouse_id

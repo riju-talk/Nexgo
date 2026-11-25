@@ -17,7 +17,7 @@ import { config } from '../config.js';
 import { courierAdapter } from '../couriers/registry.js';
 import { sellerSafeMessage, BOOKING_PAUSED } from '../lib/sellerSafeError.js';
 import { READY_SQL, assertOrderReady } from '../lib/orderReadiness.js';
-import { assertNoOpenBooking, beginAttempt, bookingInProgress, bookingUnconfirmed, isAmbiguous, markAccepted, settleAttempt, waitWhileBusy, type Attempt } from '../lib/bookingAttempts.js';
+import { assertNoOpenBooking, beginAttempt, bookingInProgress, bookingOutcomeUnknown, bookingUnconfirmed, isAmbiguous, markAccepted, settleAttempt, waitWhileBusy, type Attempt } from '../lib/bookingAttempts.js';
 import type { CourierBookingRequest, CourierBookingResult } from '../couriers/types.js';
 import { pausedAggregatorIds } from '../lib/aggregatorBalance.js';
 import { invalidateMetrics } from '../lib/metrics.js';
@@ -87,6 +87,13 @@ async function whyNotBookable(client: PoolClient, sellerId: string, input: z.inf
 
 export async function prepareBooking(client: PoolClient, p: ReturnType<typeof principal>, input: z.infer<typeof bookingInput>, key: string): Promise<{ replay: true; shipment: Record<string, unknown> } | { replay: false; ctx: BookingContext }> {
     const previous = await client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]); if (previous.rows[0]) return { replay: true as const, shipment: previous.rows[0] };
+    // The order row is locked until this transaction (which also records the booking attempt) ends: an edit or a cancel that starts now waits and then sees
+    // the attempt, so the courier can never be given details the seller is changing at that moment.
+    const locked = (await client.query<{ seller_state: string; wh_active: boolean; wh_name: string }>(
+      `SELECT sl.state::text AS seller_state, w.is_active AS wh_active, w.name AS wh_name FROM orders o JOIN sellers sl ON sl.id = o.seller_id JOIN warehouses w ON w.id = o.warehouse_id WHERE o.id = $1 AND o.seller_id = $2 FOR UPDATE OF o`, [input.orderId, p.sellerId])).rows[0];
+    if (!locked) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+    if (locked.seller_state === 'suspended') throw Object.assign(new Error('This account is suspended, so no new shipments can be booked. Please contact support.'), { statusCode: 403, code: 'SELLER_SUSPENDED' });
+    if (!locked.wh_active) throw Object.assign(new Error(`The pickup warehouse "${locked.wh_name}" is switched off. Switch it on in Settings > Warehouse, or move the order to another warehouse.`), { statusCode: 422, code: 'WAREHOUSE_INACTIVE' });
     if ((await client.query('SELECT 1 FROM shipments WHERE seller_id=$1 AND order_id=$2', [p.sellerId, input.orderId])).rows[0]) throw await alreadyBooked(p.sellerId, input.orderId);
     await assertOrderReady(client, p.sellerId, input.orderId); // BEFORE any quote, wallet check or courier call (ORD-004, BOOK-010)
     const lane = await client.query<{ wc: string; ws: string; cc: string; cs: string }>(`SELECT COALESCE(wp.city, w.city) AS wc, COALESCE(wp.state, w.state) AS ws, COALESCE(p.city, c.city) AS cc, COALESCE(p.state, c.state) AS cs FROM orders o JOIN warehouses w ON w.id=o.warehouse_id JOIN customers c ON c.id=o.customer_id LEFT JOIN pincodes p ON p.pincode=c.pincode LEFT JOIN pincodes wp ON wp.pincode=w.pincode WHERE o.id=$1 AND o.seller_id=$2`, [input.orderId, p.sellerId]);
@@ -177,6 +184,7 @@ async function bookDetachedInner(p: ReturnType<typeof principal>, requestId: str
     throw bookingInProgress();
   }
   if (begun.kind === 'open') { // an earlier booking with another courier is unresolved: ask that courier now, so the seller is not kept waiting when it can answer
+    if (begun.attempt.state === 'needs_review') { const { bookingInReview } = await import('../lib/bookingAttempts.js'); throw bookingInReview(); }
     if (!resolveOpen || begun.attempt.state === 'cancel_needed') throw bookingUnconfirmed();
     const { resolveAttempt } = await import('../lib/bookingReconciler.js');
     const outcome = await resolveAttempt(begun.attempt).catch(() => 'open' as const);
@@ -187,7 +195,12 @@ async function bookDetachedInner(p: ReturnType<typeof principal>, requestId: str
   if (begun.kind === 'resume') return recordBooking(p, requestId, begun.attempt.context as unknown as BookingContext, begun.attempt.id, attemptBooking(begun.attempt));
   let booking: CourierBookingResult;
   try { booking = await callCourier(ctx); }
-  catch (e) { await settleAttempt(begun.id, isAmbiguous(e) ? 'unknown' : 'refused', (e as Error).message); throw e; }
+  catch (e) {
+    if (!isAmbiguous(e)) { await settleAttempt(begun.id, 'refused', (e as Error).message); throw e; }
+    await settleAttempt(begun.id, 'unknown', (e as Error).message);
+    console.error(JSON.stringify({ evt: 'booking.outcome_unknown', orderId: input.orderId, reason: ((e as { detail?: string }).detail ?? (e as Error).message).slice(0, 200) }));
+    throw bookingOutcomeUnknown(); // neither failed nor booked: the reconciler finds out
+  }
   await markAccepted(begun.id, booking);
   return recordBooking(p, requestId, ctx, begun.id, booking);
 }
@@ -222,7 +235,7 @@ export async function loadCourierRank(sellerId: string): Promise<CourierRank> {
     return (name: string, code: string) => { const key = `${name}${code}`.toLowerCase().replace(/[^a-z]/g, ''); const i = priority.findIndex((x) => key.includes(x) || (x === 'xb' && key.includes('xpressbees'))); return i < 0 ? priority.length : i; };
 }
 
-export type AssignOutcome = { ok: boolean; awb?: string; courier?: string; error?: string; ms: number };
+export type AssignOutcome = { ok: boolean; awb?: string; courier?: string; error?: string; ms: number; pending?: boolean; already?: boolean };
 
 /**
  * Books ONE order: tries the seller's couriers in priority order (or only the chosen one) and stops at the first that books.
@@ -238,7 +251,10 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
     const planned = await withSellerTransaction(p.sellerId, async (client) => {
       const order = await client.query<{ state: string }>('SELECT state::text FROM orders WHERE id = $1 AND seller_id = $2 FOR UPDATE', [orderId, p.sellerId]);
       if (!order.rows[0]) return { ok: false as const, error: 'Order not found' };
-      if (order.rows[0].state === 'booked') return { ok: false as const, error: 'Already assigned to a courier' };
+      if (order.rows[0].state === 'booked') {
+        const had = (await client.query<{ awb: string; name: string }>('SELECT s.awb, cp.name FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.order_id = $1 AND s.seller_id = $2', [orderId, p.sellerId])).rows[0];
+        return had ? { ok: false as const, already: { awb: had.awb, courier: had.name } } : { ok: false as const, error: 'Already assigned to a courier' };
+      }
       if (!['new', 'ready_to_ship'].includes(order.rows[0].state)) return { ok: false as const, error: `Order is ${order.rows[0].state}` };
       // An incomplete order is refused here, BEFORE its state changes and before any courier is asked (it used to be moved to ready_to_ship first).
       try { await assertOrderReady(client, p.sellerId, orderId); } catch (e) { return { ok: false as const, error: sellerSafeMessage((e as Error).message) }; }
@@ -249,7 +265,8 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
       if (!ordered.length) return { ok: false as const, error: providerCode ? 'The courier you chose is not enabled for this account' : 'No courier is enabled for this account' };
       return { ok: true as const, ordered };
     });
-    if (!planned.ok) return { ok: false, error: planned.error, ms: Date.now() - started };
+    if (!planned.ok && 'already' in planned && planned.already) return { ok: true, already: true, awb: planned.already.awb, courier: planned.already.courier, ms: Date.now() - started }; // booked before (a retry, another tab, the reconciler): fine, nothing charged again
+    if (!planned.ok) return { ok: false, error: (planned as { error: string }).error, ms: Date.now() - started };
     // Step 2, one courier at a time: every attempt is its own booking (no connection held while the aggregator works), so a refused
     // courier leaves nothing behind and the next one is tried.
     let lastError = 'No serviceable courier for this order';
@@ -273,7 +290,10 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
         const status = (e as { statusCode?: number }).statusCode;
         lastError = sellerSafeMessage((e as Error).message || lastError);
         const lane = laneRefusalOf(e); if (lane) refusals.push({ lane, reason: lastError });
-        if (status === 402) return { ok: false, error: lastError, ms: Date.now() - started }; // wallet short: no point trying other couriers
+        if (status === 402 || status === 403) return { ok: false, error: lastError, ms: Date.now() - started }; // wallet short / account suspended: no point trying other couriers
+        if ((e as { code?: string }).code === 'WAREHOUSE_INACTIVE') return { ok: false, error: lastError, ms: Date.now() - started }; // the same for every courier
+        // The outcome with this courier is not known yet (lost answer, or an earlier attempt still being checked): never try another courier for this order now.
+        if (['BOOKING_OUTCOME_UNKNOWN', 'BOOKING_UNCONFIRMED', 'BOOKING_IN_PROGRESS', 'BOOKING_IN_REVIEW'].includes(String((e as { code?: string }).code))) return { ok: false, pending: true, error: lastError, ms: Date.now() - started };
         if (lastError === BOOKING_PAUSED) { if (c.agg) pausedAggs.add(c.agg); skippedForBalance = true; continue; } // this aggregator is out of balance: try a courier on another one
         if (status !== 422) throw e;
         if (!said.has(lastError.replace(c.pname, ''))) said.set(lastError.replace(c.pname, ''), lastError.startsWith(c.pname) ? lastError : `${c.pname}: ${lastError}`);

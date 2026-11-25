@@ -12,6 +12,7 @@ import { logLowBalances } from './lib/aggregatorBalance.js';
 import { generateDueCycles } from './lib/codCycles.js';
 import { startBookingReconciler } from './lib/bookingReconciler.js';
 import { startHeartbeat } from './lib/workerHealth.js';
+import { retryDueNdrSyncs } from './lib/ndrCourier.js';
 
 type Job = { id: string; seller_id: string | null; job_type: string; payload: Record<string, unknown>; attempts: number };
 
@@ -134,7 +135,8 @@ const pickupTimer = setInterval(() => { void scanPickupMissed(); void logLowBala
 const stopCancel = startCancelProcessor({ error: (o, m) => console.error(m ?? 'cancel queue', o), info: (m) => console.log(m) });
 const stopReconciler = startBookingReconciler({ error: (o, m) => console.error(m ?? 'booking reconciler', o) });
 const stopHeartbeat = startHeartbeat();
+const ndrTimer = setInterval(() => { void retryDueNdrSyncs().catch((e) => console.error('ndr sync retry failed', e)); }, 60_000);
 console.log('NEXGO worker started');
 
-const shutdown = async () => { clearInterval(interval); stopAssign(); stopCancel(); stopReconciler(); stopHeartbeat(); clearInterval(pickupTimer); clearInterval(codTimer); stopCredentials(); stopPoll(); await db.end(); process.exit(0); };
+const shutdown = async () => { clearInterval(interval); stopAssign(); stopCancel(); stopReconciler(); stopHeartbeat(); clearInterval(ndrTimer); clearInterval(pickupTimer); clearInterval(codTimer); stopCredentials(); stopPoll(); await db.end(); process.exit(0); };
 process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown);

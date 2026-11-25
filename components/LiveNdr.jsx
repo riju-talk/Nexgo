@@ -28,6 +28,16 @@ function Btn({ children, onClick, primary, danger, disabled, small }) {
   return <button type="button" disabled={disabled} onClick={onClick} style={{ height: small ? 32 : 38, padding: `0 ${small ? 12 : 16}px`, borderRadius: 8, border: `1px solid ${primary ? '#3877fc' : danger ? T.RED : T.BORDER}`, background: primary ? '#3877fc' : danger ? T.RED : T.SURFACE, color: primary || danger ? '#fff' : T.TEXT, fontWeight: 700, fontSize: small ? 12.5 : 13.5, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>{children}</button>;
 }
 
+// What the courier was told about the seller's answer. Saved here and confirmed by the courier are different things.
+const syncText = (c) => (c?.status === 'sent' ? 'Saved and sent to the courier.' : c?.status === 'manual' ? `Saved here, but the courier was NOT told: ${c.message || 'give this instruction in the courier\'s own portal.'}` : c?.status === 'failed' ? `Saved here. The courier could not be told yet (${c.message || 'no answer'}); it is retried automatically, or press Retry.` : 'Saved.');
+const SYNC = { sent: ['Courier informed', T.GREEN], pending: ['Sending to courier…', '#B45309'], sending: ['Sending to courier…', '#B45309'], failed: ['Courier not told yet: retrying', '#B23A2B'], manual: ['Tell the courier in its portal', '#B23A2B'] };
+function CourierSync({ row, onDone }) {
+  const { showToast } = useAppState(); const [busy, setBusy] = useState(false);
+  const s = SYNC[row.courier_sync]; if (!s) return null;
+  const retry = async () => { setBusy(true); try { const r = await apiFetch(`/v1/ndr/cases/${row.id}/courier-retry`, { method: 'POST', body: {} }); showToast(syncText(r.courier), r.courier?.status === 'sent' ? 'success' : 'error'); onDone(); } catch (e) { showToast(e.message || 'Could not retry', 'error'); } finally { setBusy(false); } };
+  return <small title={row.courier_sync_error || ''} style={{ display: 'block', marginTop: 4, color: s[1], fontSize: 11, fontWeight: 700 }}>{s[0]}{(row.courier_sync === 'failed' || row.courier_sync === 'manual') && <button type="button" disabled={busy} onClick={retry} style={{ marginLeft: 6, border: 0, background: 'transparent', color: '#3877fc', fontWeight: 750, cursor: 'pointer', fontSize: 11 }}>{busy ? 'Sending…' : 'Retry'}</button>}</small>;
+}
+
 // Take action / view details dialog for one NDR case.
 function CaseDialog({ row, initialAction, onClose, onDone }) {
   const { showToast } = useAppState();
@@ -47,8 +57,7 @@ function CaseDialog({ row, initialAction, onClose, onDone }) {
       if (action === 'delivery_rescheduled') body.scheduledDeliveryDate = new Date(`${date}T10:00:00`).toISOString();
       if (action === 'address_update') body.newAddress = { addressLine1: addr.line1.trim(), addressLine2: addr.line2.trim() || undefined, city: city.trim(), pincode: addr.pincode, landmark: addr.landmark.trim() || undefined };
       const r = await apiFetch(`/v1/ndr/cases/${row.id}/resolve`, { method: 'POST', body });
-      if (r?.courier?.status === 'failed') showToast(`Saved, but the courier was not told: ${r.courier.message}. Please tell them from their portal.`, 'error');
-      else showToast(r?.courier?.status === 'sent' ? 'NDR action sent to the courier' : 'NDR action submitted');
+      showToast(syncText(r?.courier), r?.courier?.status === 'sent' || r?.courier?.status === 'not_applicable' ? 'success' : 'error', r?.courier?.status === 'sent' ? undefined : 9000);
       onDone();
     } catch (e) { showToast(e instanceof ApiError ? (e.body?.details ? 'Check the details entered' : e.message) : 'Action failed', 'error'); setBusy(false); }
   };
@@ -143,8 +152,8 @@ export default function LiveNdr({ mobile }) {
     setBusy(true);
     try {
       const r = await apiFetch('/v1/ndr/cases/bulk-resolve', { method: 'POST', body: { caseIds: openSelected.map((x) => x.id), resolutionAction: action } });
-      const unsent = r.summary.courierNotNotified ?? 0;
-      showToast(`${label}: ${r.summary.succeeded} updated${r.summary.failed ? `, ${r.summary.failed} skipped` : ''}${unsent ? `, ${unsent} saved but the courier was not told` : ''}`, r.summary.failed || unsent ? 'error' : 'success'); refresh();
+      const unsent = r.summary.courierNotNotified ?? 0; const manual = r.summary.courierManual ?? 0;
+      showToast(`${label}: ${r.summary.succeeded} saved${r.summary.failed ? `, ${r.summary.failed} skipped (already answered or not found)` : ''}${unsent ? `, ${unsent} not sent to the courier yet (retried automatically)` : ''}${manual ? `, ${manual} must be given in the courier's portal` : ''}`, r.summary.failed || unsent || manual ? 'error' : 'success', unsent || manual ? 9000 : undefined); refresh();
     } catch (e) { showToast(e.message || 'Bulk action failed', 'error'); } finally { setBusy(false); }
   };
   const exportReport = async () => {
@@ -203,7 +212,7 @@ export default function LiveNdr({ mobile }) {
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}><b style={{ color: T.TEXT }}>{r.courier_name}</b><small style={{ display: 'block', color: T.TEXT_MUTED }}>{r.service_name}</small></td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><Pill color="#9A3412" bg="#F5822018">{REASONS[r.ndr_reason] || r.ndr_reason}</Pill><small style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 11 }}>Attempt {r.attempt_number}/{r.max_attempts}</small></td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 12.5, color: T.TEXT_SECONDARY, whiteSpace: 'nowrap' }}>{when(r.opened_at)}</td>
-                        <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><Pill color={color} bg={bg}>{label}</Pill>{r.ndr_status === 'redelivery_scheduled' && r.scheduled_delivery_at && <small style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 11 }}>{new Date(r.scheduled_delivery_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</small>}</td>
+                        <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><Pill color={color} bg={bg}>{label}</Pill><CourierSync row={r} onDone={() => list.reload()} />{r.ndr_status === 'redelivery_scheduled' && r.scheduled_delivery_at && <small style={{ display: 'block', marginTop: 3, color: T.TEXT_MUTED, fontSize: 11 }}>{new Date(r.scheduled_delivery_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</small>}</td>
                         <td style={{ padding: '12px', borderTop: `1px solid ${T.DIVIDER}` }}><Btn small primary={open} onClick={() => setDialog({ row: r })}>{open ? 'Take Action' : 'View Details'}</Btn></td>
                       </tr>
                     );

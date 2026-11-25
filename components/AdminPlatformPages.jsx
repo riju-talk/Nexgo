@@ -1,4 +1,7 @@
 'use client';
+import { apiFetch } from '@/lib/api';
+import { useAppState } from '@/lib/AppStateContext';
+import { askText } from '@/lib/dialog';
 
 import { useLiveQuery } from '@/lib/queryCache';
 import * as T from '@/lib/theme';
@@ -92,12 +95,39 @@ function Escalations({ mobile }) {
 }
 
 // Queues, failed jobs, storage and database version.
+// Courier bookings that could not be confirmed automatically: check the courier's portal, then record what it shows.
+function BookingReviews() {
+  const { showToast } = useAppState();
+  const { data, refresh } = useLiveQuery('/v1/admin/booking-reviews', { every: 30000 });
+  const items = data?.items || [];
+  const settle = async (r, kind) => {
+    const value = await askText({ title: kind === 'booked' ? 'Booked at the courier' : 'Not booked at the courier', message: kind === 'booked' ? `Enter the AWB the courier portal shows for ${r.order_number}. The seller is charged once.` : `Why are you sure ${r.order_number} is not booked? (what the courier portal shows)`, placeholder: kind === 'booked' ? 'AWB' : 'Checked in the portal: no shipment' });
+    if (!value) return;
+    try { await apiFetch(`/v1/admin/booking-reviews/${r.id}/resolve`, { method: 'POST', body: kind === 'booked' ? { kind, awb: value.trim() } : { kind, note: value.trim() } }); showToast(kind === 'booked' ? 'Recorded as booked' : 'Released: the seller can book it again'); refresh(); }
+    catch (e) { showToast(e.message || 'Could not settle this booking', 'error'); refresh(); }
+  };
+  if (!items.length) return null;
+  return (
+    <div style={{ ...CARD, padding: 16, borderLeft: `4px solid ${T.RED}` }}>
+      <b style={{ color: T.TEXT }}>Courier bookings to check by hand ({items.length})</b>
+      <div style={{ fontSize: 12.5, color: T.TEXT_SECONDARY, margin: '4px 0 10px' }}>The courier never confirmed these. The orders stay locked so they cannot be booked twice. Look each one up in the courier&apos;s portal.</div>
+      {items.map((r) => (
+        <div key={r.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '8px 0', borderTop: `1px solid ${T.DIVIDER}`, fontSize: 13 }}>
+          <span style={{ flex: '1 1 320px' }}><b>{r.order_number}</b> · {r.seller_name} · {r.provider_code} / {r.service_code}{r.aggregator ? ` via ${r.aggregator}` : ''} · since {dateTime(r.created_at)}<small style={{ display: 'block', color: T.TEXT_MUTED }}>NEXGO ID {r.nexgo_order_id}{r.awb ? ` · AWB seen: ${r.awb}` : ''} · {r.error || 'no answer'}</small></span>
+          <Btn small primary onClick={() => settle(r, 'booked')}>It is booked</Btn><Btn small onClick={() => settle(r, 'not_booked')}>Not booked</Btn>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function System({ mobile }) {
   const { data, error, loading, refresh } = useLiveQuery('/v1/admin/system-status', { every: 30000 });
   const j = data?.jobsLast7Days || {};
   const row = { display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' };
   return (
     <div style={page(mobile)}>
+      <BookingReviews />
       <Head title="System status" note="Background work, file storage and database version, read live. Nothing here is changed from this screen." />
       {error && <div style={{ color: T.RED, fontSize: 13 }}>{errText(error)}</div>}
       <div style={grid(mobile, 4)}>

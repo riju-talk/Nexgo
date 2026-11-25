@@ -295,14 +295,15 @@ export class ShiprocketAdapter implements CourierAdapter {
   }
   private async readAwb(orderId: string): Promise<string | null> { return this.readAwbStrict(orderId).catch(() => null); }
   /**
-   * Did an earlier call already book this? Only an order whose id we stored can carry an AWB (the AWB is asked for after the id is known and stored), so no stored id
-   * means nothing was shipped. Throws when Shiprocket cannot be read (never "not booked" by mistake).
+   * Did an earlier call already book this? Throws when Shiprocket cannot be read OR when the order id was never stored (the create answer may have been lost):
+   * "could not check" is never "not booked". Those end in a manual check after BOOKING_REVIEW_SECONDS.
    */
   async findBooking(request: CourierBookingRequest): Promise<CourierBookingResult | null> {
     const d = request.details; if (!d) return null;
     this.deadline = 0;
     const row = (await db.query<{ external_order_id: string }>(`SELECT external_order_id FROM aggregator_orders WHERE aggregator = 'shiprocket' AND ref = $1`, [this.orderRef(d, request)])).rows[0];
-    const orderId = row?.external_order_id.split(':')[0]; if (!orderId) return null;
+    const orderId = row?.external_order_id.split(':')[0];
+    if (!orderId) throw new ShiprocketError('No record of the Shiprocket order id for this booking, so it cannot be looked up automatically. Check the Shiprocket panel by hand.', 502); // never "not booked": the order may exist at Shiprocket
     const awb = await this.readAwbStrict(orderId);
     return awb ? { providerShipmentId: orderId, awb, labelAvailable: true } : null;
   }

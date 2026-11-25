@@ -303,6 +303,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     if (assignMode === 'one' && !courierPick) { showToast('Choose the courier to use, or pick another option.', 'error'); return; }
     setCreating(true);
     const outcome = new Map();
+    try {
     const validOrders = list;
     // Orders are created 50 per request (POST /v1/orders/bulk): one request per order would take 15+ minutes for a big sheet under the API's rate limit.
     const payloadOf = (o) => ({
@@ -337,15 +338,20 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     // Couriers are assigned in small parallel batches (lib/assignBatches.js): each order is a live booking call of several seconds,
     // and one request that runs over 60 seconds is cut off by the proxy.
     if (made.length) {
-      const results = await assignInBatches(made.map((x) => x.orderId), { courier: assignMode === 'one' && pickProvider ? chosenCourier : undefined, onProgress: (n, total) => setProgress(`Assigning couriers… ${n} of ${total}`) });
-      // Sent for booking but no answer (courier booking paused, worker busy): SAVED and waiting, never reported as booked (lib/bulkOutcome.js, UX-008).
+      let results = [];
+      try {
+        results = await assignInBatches(made.map((x) => x.orderId), { courier: assignMode === 'one' && pickProvider ? chosenCourier : undefined, onProgress: (n, total) => setProgress(`Assigning couriers… ${n} of ${total}`) });
+      } catch (error) {
+        // The orders ARE saved; only the courier step (or reading its progress) failed. Never report the upload as failed: the batch keeps running on the server.
+        results = []; showToast(`Your orders are saved. The courier step could not be followed from here (${error instanceof ApiError ? error.message : 'connection problem'}); it continues on our servers. Check Track in a minute.`, 'error', 10000);
+      }
+      // Sent for booking but no answer (courier booking paused, worker busy, progress unreadable): SAVED and waiting, never reported as booked (lib/bulkOutcome.js, UX-008).
       const merged = applyAssignmentResults(outcome, made.map((x) => x.orderId), results);
       outcome.clear(); for (const [k, v] of merged) outcome.set(k, v);
     }
-    setProgress('');
+    } finally { setProgress(''); setCreating(false); } // whatever happened above, the page never stays stuck on "Creating…"
     const next = all.map((o) => (outcome.has(o.orderNumber) ? { ...o, ...outcome.get(o.orderNumber) } : o));
     setOrders(next);
-    setCreating(false);
     const summary = summarizeBulk(next);
     const { created, queued, booked } = summary;
     const failed = next.filter(isFailed).length;

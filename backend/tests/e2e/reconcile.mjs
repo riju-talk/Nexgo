@@ -88,7 +88,7 @@ T('2. The courier was asked to ship exactly once', (fake.stats.calls['POST /ship
 // 3. the booking really failed at the courier (502, nothing booked): found out, released, and the seller can use another courier
 id = await newOrder(); fake.mode.dropShip = true; fake.mode.readsDown = true;
 r = await book(id, A); f = await facts(id);
-T('3. Courier 502: not booked, not charged', r.s >= 500 && f.n === 0, `${r.s}`);
+T('3. Courier 502: reported as being checked (not failed, not booked), nothing charged', r.s === 409 && r.j?.code === 'BOOKING_OUTCOME_UNKNOWN' && f.n === 0, `${r.s} ${r.j?.code}`);
 fake.mode.dropShip = false; fake.mode.readsDown = false;
 r = await until(async () => { const x = await book(id, B); return x.s < 300 ? x : null; }, 25000) || { s: 0 };
 f = await facts(id);
@@ -130,7 +130,48 @@ await db.query('DROP TRIGGER e2e_block ON shipments');
 f = await until(async () => { const x = await facts(id); return x.n ? x : null; }) || await facts(id);
 T('6. A booking interrupted by a crash is found at the courier and recorded once', good(f, A, 5000, (await liveAtCourier(id))[0]?.shipment?.awb), JSON.stringify(f));
 
-const left = table ? (await one("SELECT count(*)::int AS n FROM booking_attempts WHERE state IN ('started','accepted','unknown','cancel_needed')")).n : -1;
+// 7. delayed visibility: the courier booked, the answer was lost, and its records do not show the order for a while. One empty lookup must not free the order.
+id = await newOrder(); fake.mode.loseAnswer = true; fake.mode.hideMs = 6000;
+r = await book(id, A); fake.mode.loseAnswer = false;
+T('7. Lost answer: the seller is told the outcome is being checked (not failed, not booked)', r.s === 409 && r.j?.code === 'BOOKING_OUTCOME_UNKNOWN', `${r.s} ${r.j?.code}`);
+r = await book(id, B);
+T('7. While the courier\'s records lag (order invisible), another courier is refused', r.s === 409 && (await liveAtCourier(id)).length === 1, `${r.s} ${r.j?.code}`);
+f = await until(async () => { const x = await facts(id); return x.n ? x : null; }) || await facts(id); fake.mode.hideMs = 0;
+T('7. When the booking becomes visible it is recorded under the first courier, never released in between', good(f, A, 5000, (await liveAtCourier(id))[0]?.shipment?.awb), JSON.stringify(f));
+const st7 = (await one('SELECT state, misses FROM booking_attempts WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1', [id]));
+T('7. ...and the attempt went straight to recorded (an unreadable or empty lookup never released it)', st7?.state === 'recorded' && (await one("SELECT count(*)::int n FROM booking_attempts WHERE order_id = $1 AND state = 'refused'", [id])).n === 0, JSON.stringify(st7));
+
+// 8. our record of the courier's order id is missing (it was never stored): the courier is searched instead
+id = await newOrder(); fake.mode.loseAnswer = true; fake.mode.readsDown = true;
+await book(id, A); fake.mode.loseAnswer = false;
+await db.query('DELETE FROM aggregator_orders WHERE order_id = $1', [id]); fake.mode.readsDown = false;
+f = await until(async () => { const x = await facts(id); return x.n ? x : null; }) || await facts(id);
+T('8. Missing order-id record: found by searching the courier, recorded once under courier A', good(f, A, 5000, (await liveAtCourier(id))[0]?.shipment?.awb), JSON.stringify(f));
+
+// 9. the courier can never be asked: after BOOKING_REVIEW_SECONDS a person checks it. Locked until then; settled by hand with what the portal shows.
+id = await newOrder(); fake.mode.loseAnswer = true; fake.mode.readsDown = true;
+await book(id, A); fake.mode.loseAnswer = false;
+const inReview = await until(async () => (await one('SELECT state FROM booking_attempts WHERE order_id = $1', [id]))?.state === 'needs_review', 70000);
+T('9. Never confirmed: handed to a person (needs_review) instead of being released or retried for ever', !!inReview);
+r = await book(id, B); T('9. Meanwhile another courier is refused with a clear reason', r.s === 409 && r.j?.code === 'BOOKING_IN_REVIEW', `${r.s} ${r.j?.code}`);
+r = await call('PATCH', `/v1/orders/${id}/state`, { state: 'cancelled' }); T('9. ...and the order cannot be cancelled', r.s === 409);
+const adm = await (async () => { let aj = ''; let ac = ''; const c = async (m, p, b) => { const x = await fetch(API + p, { method: m, headers: { 'content-type': 'application/json', ...(aj ? { cookie: aj } : {}), ...(m !== 'GET' && ac ? { 'x-csrf-token': ac } : {}) }, body: b ? JSON.stringify(b) : undefined }); for (const k of x.headers.getSetCookie?.() ?? []) { const [n, v] = k.split(';')[0].split(/=(.*)/s); aj = (aj ? aj + '; ' : '') + `${n}=${v}`; if (n === 'nx_csrf') ac = decodeURIComponent(v); } let j = null; try { j = await x.json(); } catch { /* */ } return { s: x.status, j }; };
+  await db.query('DELETE FROM admin_email_otps'); const a = await c('POST', '/v1/admin/auth/login', { email: 'admin@nexgo.in', password: 'Admin@456' }); if (a.j?.requiresEmailOtp) await c('POST', '/v1/admin/auth/verify-otp', { otpToken: a.j.otpToken, code: a.j.devCode }); return c; })();
+const list9 = await adm('GET', '/v1/admin/booking-reviews'); const row9 = list9.j?.items?.find((x) => x.order_number.startsWith('RC'));
+T('9. The admin sees it on the list to check by hand', list9.s === 200 && !!row9, `${list9.s} ${list9.j?.items?.length}`);
+fake.mode.readsDown = true; const portalAwb = (await liveAtCourier(id))[0]?.shipment?.awb;
+r = await adm('POST', `/v1/admin/booking-reviews/${row9?.id}/resolve`, { kind: 'booked', awb: portalAwb }); f = await facts(id); fake.mode.readsDown = false;
+T('9. Settled by hand as booked with the AWB from the portal: one shipment, one debit, courier A', r.s === 200 && good(f, A, 5000, portalAwb), `${r.s} ${JSON.stringify(r.j)} ${JSON.stringify(f)}`);
+id = await newOrder(); fake.mode.dropShip = true; fake.mode.readsDown = true; await book(id, A); fake.mode.dropShip = false;
+await until(async () => (await one('SELECT state FROM booking_attempts WHERE order_id = $1', [id]))?.state === 'needs_review', 70000);
+const row9b = (await adm('GET', '/v1/admin/booking-reviews')).j.items[0];
+r = await adm('POST', `/v1/admin/booking-reviews/${row9b.id}/resolve`, { kind: 'not_booked', note: 'Portal shows no shipment' }); fake.mode.readsDown = false;
+const rb = await book(id, B);
+T('9. Settled by hand as not booked: the order is free and can be booked with another courier', r.s === 200 && rb.s === 201 && (await facts(id)).code === B.code, `${r.s} ${rb.s}`);
+const audit9 = (await one("SELECT count(*)::int n FROM audit_events WHERE action IN ('booking.verified_booked','booking.verified_not_booked')")).n;
+T('9. Both decisions are in the audit trail', audit9 === 2, String(audit9));
+
+const left = table ? (await one("SELECT count(*)::int AS n FROM booking_attempts WHERE state IN ('started','accepted','unknown','cancel_needed','needs_review')")).n : -1;
 T('No unfinished booking record is left behind, and finished ones keep no customer data', left === 0 && (await one('SELECT count(*)::int AS n FROM booking_attempts WHERE context IS NOT NULL')).n === 0, `open=${left}`);
 const wallet = Number((await one(`SELECT COALESCE(SUM(amount_paise),0)::bigint AS b FROM wallet_entries WHERE seller_id = $1 AND entry_type='debit' AND reference_type='shipment'`, [sellerId])).b);
 const charged = Number((await one('SELECT COALESCE(sum(shipping_charge_paise),0)::bigint AS c FROM shipments WHERE seller_id = $1', [sellerId])).c);

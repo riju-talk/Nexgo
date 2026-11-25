@@ -36,6 +36,10 @@ const schema = z.object({
   // booking can take) was interrupted by a crash.
   RECONCILE_AFTER_SECONDS: z.coerce.number().int().min(1).max(600).default(20),
   BOOKING_STALE_SECONDS: z.coerce.number().int().min(5).max(3600).default(120),
+  // An unconfirmed booking is released only when the courier has shown NO booking for it on 3 separate lookups AND at least this long has passed (its records can lag).
+  BOOKING_RELEASE_SECONDS: z.coerce.number().int().min(1).max(86400).default(900),
+  // Still unconfirmed after this long: handed to a person (Admin > System status), and the order stays locked until they settle it.
+  BOOKING_REVIEW_SECONDS: z.coerce.number().int().min(5).max(604800).default(3600),
   // Whether the API process also works the queues. Default: yes outside production, no in production (the worker container does it).
   QUEUES_IN_API: bool(!production),
   // Calls to the courier aggregator in flight at once from this process; it backs off by itself when the aggregator answers 429 (couriers/aggregatorLimiter.ts).

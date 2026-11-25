@@ -9,6 +9,7 @@ import { scanPickupMissed } from './lib/notify.js';
 import { generateDueCycles } from './lib/codCycles.js';
 import { startBookingReconciler } from './lib/bookingReconciler.js';
 import { startHeartbeat, startWorkerWatch } from './lib/workerHealth.js';
+import { retryDueNdrSyncs } from './lib/ndrCourier.js';
 
 const app = await buildApp();
 const close = async () => { await app.close(); await db.end(); };
@@ -16,7 +17,7 @@ process.on('SIGTERM', close); process.on('SIGINT', close);
 await app.listen({ port: config.PORT, host: '0.0.0.0' });
 
 // In production the worker container runs the queues. Elsewhere (local development, tests) there is no worker, so the API runs them.
-if (config.QUEUES_IN_API) { startHeartbeat(); startBookingReconciler({ error: (o, m) => app.log.error(o as object, m) }); setInterval(() => { void scanPickupMissed(); void generateDueCycles().catch(() => 0); }, 10 * 60 * 1000); void scanPickupMissed(); startAssignProcessor({ error: (o, m) => app.log.error(o as object, m), info: (m) => app.log.info(m) }); startCancelProcessor({ error: (o, m) => app.log.error(o as object, m), info: (m) => app.log.info(m) }); }
+if (config.QUEUES_IN_API) { setInterval(() => { void retryDueNdrSyncs().catch(() => 0); }, 20_000); startHeartbeat(); startBookingReconciler({ error: (o, m) => app.log.error(o as object, m) }); setInterval(() => { void scanPickupMissed(); void generateDueCycles().catch(() => 0); }, 10 * 60 * 1000); void scanPickupMissed(); startAssignProcessor({ error: (o, m) => app.log.error(o as object, m), info: (m) => app.log.info(m) }); startCancelProcessor({ error: (o, m) => app.log.error(o as object, m), info: (m) => app.log.info(m) }); }
 
 startWorkerWatch((m) => app.log.error(m)); // the worker cannot report its own death: the API watches for it
 

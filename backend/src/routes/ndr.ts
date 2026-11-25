@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
-import { pushNdrToCourier } from '../lib/ndrCourier.js';
+import { markNdrSyncPending, pushNdrToCourier, syncNdrCase } from '../lib/ndrCourier.js';
 import { requireSeller } from './seller.js';
 import { IST, optWindowSql, pct } from '../lib/metrics.js';
 
@@ -74,7 +74,7 @@ export async function ndrRoutes(app: FastifyInstance) {
         JOIN courier_providers cp ON cp.id = s.provider_id JOIN courier_services cs ON cs.id = s.service_id WHERE ${where.join(' AND ')}`;
       const total = Number((await client.query<{ n: string }>(`SELECT count(*) AS n ${from}`, params)).rows[0].n);
       const rows = await client.query(
-        `SELECT nc.id, nc.shipment_id, nc.state, nc.ndr_reason, nc.reason_detail, nc.attempt_number, nc.max_attempts, nc.opened_at, nc.sla_deadline_at, nc.resolution_action, nc.resolution_notes, nc.resolved_at,
+        `SELECT nc.id, nc.shipment_id, nc.state, nc.ndr_reason, nc.reason_detail, nc.attempt_number, nc.max_attempts, nc.opened_at, nc.sla_deadline_at, nc.resolution_action, nc.resolution_notes, nc.courier_sync, nc.courier_sync_error, nc.courier_synced_at, nc.resolved_at,
                 (${STATUS_SQL}) AS ndr_status, s.awb, s.tags, s.state AS shipment_state, o.id AS order_id, o.order_number, o.payment_mode, o.cod_amount_paise,
                 c.full_name AS customer_name, c.phone AS customer_phone, c.city AS customer_city, c.pincode AS customer_pincode,
                 cp.code AS courier_code, cp.name AS courier_name, cs.display_name AS service_name,
@@ -218,11 +218,23 @@ export async function ndrRoutes(app: FastifyInstance) {
         metadata: { action: input.resolutionAction },
       });
 
+      const address = input.newAddress ? ` New address: ${[input.newAddress.addressLine1, input.newAddress.addressLine2, input.newAddress.city, input.newAddress.pincode].filter(Boolean).join(', ')}.` : '';
+      await markNdrSyncPending(client, caseId, input.resolutionAction, `${input.resolutionNotes ?? `Seller requested ${input.resolutionAction}`}${address}`); // durable: retried if the courier cannot be told now
       return { row: result.rows[0], shipmentId: current.rows[0].shipment_id };
     });
-    const address = input.newAddress ? ` New address: ${[input.newAddress.addressLine1, input.newAddress.addressLine2, input.newAddress.city, input.newAddress.pincode].filter(Boolean).join(', ')}.` : '';
-    const courier = await pushNdrToCourier({ sellerId: p.sellerId, userId: p.userId, shipmentId: saved.shipmentId, caseId, resolution: input.resolutionAction, comment: `${input.resolutionNotes ?? `Seller requested ${input.resolutionAction}`}${address}`, requestId: request.id });
+    const courier = await pushNdrToCourier({ sellerId: p.sellerId, userId: p.userId, caseId, requestId: request.id });
     return { ...saved.row, courier };
+  });
+
+  // Retry telling the courier (a failed send, or one the seller wants to send again after giving it in the portal is not wanted).
+  app.post('/v1/ndr/cases/:caseId/courier-retry', { preHandler: requireSeller }, async (request, reply) => {
+    const p = principal(request); const caseId = uuid.parse((request.params as { caseId: string }).caseId);
+    const found = await withSellerTransaction(p.sellerId, async (client) => (await client.query<{ s: string | null }>('SELECT courier_sync AS s FROM ndr_cases WHERE id=$1 AND seller_id=$2', [caseId, p.sellerId])).rows[0]);
+    if (!found) return reply.code(404).send({ error: 'NDR case not found' });
+    if (found.s === 'sent') return { courier: { status: 'sent' } };
+    if (found.s === 'sending') return { courier: { status: 'failed', message: 'Being sent to the courier right now.' } };
+    if (!found.s) return reply.code(409).send({ error: 'There is nothing to send to the courier for this case.' });
+    return { courier: await syncNdrCase(p.sellerId, caseId, p.userId, request.id, true) };
   });
 
   // Bulk resolve NDR cases
@@ -265,6 +277,7 @@ export async function ndrRoutes(app: FastifyInstance) {
           `, [nextState, input.resolutionAction, input.resolutionNotes || null, p.userId, caseId]);
 
           await client.query(`INSERT INTO shipment_events (shipment_id, state, occurred_at, description, source) SELECT id, state, now(), $2, 'manual' FROM shipments WHERE id = $1`, [current.rows[0].shipment_id, input.resolutionNotes || `Seller requested ${input.resolutionAction}`]); // a request: the parcel moves only with the courier's own scan
+          await markNdrSyncPending(client, caseId, input.resolutionAction, input.resolutionNotes ?? `Seller requested ${input.resolutionAction}`);
           shipmentOf.set(caseId, current.rows[0].shipment_id);
           results.push({ caseId, success: true });
         } catch (error) {
@@ -286,12 +299,12 @@ export async function ndrRoutes(app: FastifyInstance) {
     });
     // Tell the courier after everything is saved, one case at a time (a slow courier must not hold the database transaction open).
     // Batches of 10 in parallel inside a 20 s budget (the function is capped at 30 s); cases left over are reported, not dropped.
-    const comment = input.resolutionNotes ?? `Seller requested ${input.resolutionAction}`; const started = Date.now();
+    const started = Date.now();
     const todo = outcome.filter((r) => r.success && shipmentOf.has(r.caseId));
     for (let i = 0; i < todo.length; i += 10) {
       const batch = todo.slice(i, i + 10);
-      if (Date.now() - started > 20_000) { for (const r of batch) r.courier = { status: 'failed', message: 'Not sent in time. Saved here; tell the courier from its own portal.' }; continue; }
-      await Promise.all(batch.map(async (r) => { r.courier = await pushNdrToCourier({ sellerId: p.sellerId, userId: p.userId, shipmentId: shipmentOf.get(r.caseId)!, caseId: r.caseId, resolution: input.resolutionAction, comment, requestId: request.id }); }));
+      if (Date.now() - started > 20_000) { for (const r of batch) r.courier = { status: 'failed', message: 'Saved. Not sent yet; it is sent automatically in the next few minutes.' }; continue; } // still pending: the worker sends it
+      await Promise.all(batch.map(async (r) => { r.courier = await pushNdrToCourier({ sellerId: p.sellerId, userId: p.userId, caseId: r.caseId, requestId: request.id }); }));
     }
     return {
       results: outcome,
@@ -300,6 +313,7 @@ export async function ndrRoutes(app: FastifyInstance) {
         succeeded: outcome.filter((r) => r.success).length,
         failed: outcome.filter((r) => !r.success).length,
         courierNotNotified: outcome.filter((r) => (r.courier as { status?: string } | undefined)?.status === 'failed').length,
+        courierManual: outcome.filter((r) => (r.courier as { status?: string } | undefined)?.status === 'manual').length,
       },
     };
   });

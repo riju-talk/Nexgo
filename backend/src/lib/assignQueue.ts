@@ -16,6 +16,7 @@ import { allBookingPaused } from './aggregatorBalance.js';
  * Booking itself is assignOneOrder(): the same code the page's own request used, so wallet checks, idempotency and refusals behave the same.
  */
 type Claimed = { id: string; batch_id: string; seller_id: string; order_id: string; attempts: number; created_by: string | null; provider_code: string | null; service_code: string | null };
+export const CONFIRMING = 'Waiting for the courier to confirm this booking';
 const FUNDS = /^(debit limit reached|insufficient wallet balance)/i;
 const MAX_ATTEMPTS = 4;
 const STALE_MINUTES = 5;
@@ -82,6 +83,12 @@ async function run(item: Claimed, log: { error: (o: unknown, m?: string) => void
     if (!out.ok && out.error && isTemporaryError(out.error) && item.attempts < MAX_ATTEMPTS) {
       await db.query(`UPDATE assign_batch_items SET state = 'queued', retry_at = now() + (($2::int * 5) || ' seconds')::interval, error = $3 WHERE id = $1`, [item.id, item.attempts, sellerSafeMessage(out.error).slice(0, 500)]);
       return;
+    }
+    // The courier did not confirm yet: the order is neither failed nor booked. Keep it queued and look again later (the reconciler settles it meanwhile).
+    if (!out.ok && out.pending) {
+      if (item.attempts < 40) { await db.query(`UPDATE assign_batch_items SET state = 'queued', retry_at = now() + make_interval(secs => $2), error = $3 WHERE id = $1`, [item.id, Math.max(15, config.RECONCILE_AFTER_SECONDS), CONFIRMING]); return; }
+      await db.query(`UPDATE assign_batch_items SET state = 'failed', error = $2, finished_at = now() WHERE id = $1`, [item.id, 'The courier has not confirmed this booking yet. NEXGO support is checking it; the order is locked meanwhile so it is not booked twice.']);
+      await finishBatchIfDone(item.batch_id); return;
     }
     // The courier network cannot book for anyone (its balance is used up): nothing is failed, every waiting order is kept and booked automatically later.
     if (!out.ok && out.error === BOOKING_PAUSED) { await pauseEverything(item); return; }

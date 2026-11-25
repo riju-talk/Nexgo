@@ -8,20 +8,24 @@ import { BOOKING_PAUSED, sellerSafeMessage } from './sellerSafeError.js';
  * The durable record of a courier booking in progress (table booking_attempts, BOOK-001). It is written before the courier is called, so whatever happens
  * afterwards (lost answer, database failure, crash) there is always a row that says "a courier may hold this order" and everything needed to finish the job.
  */
-export type AttemptState = 'started' | 'unknown' | 'accepted' | 'cancel_needed' | 'recorded' | 'refused' | 'cancelled';
-export type Attempt = { id: string; seller_id: string; order_id: string; actor_user_id: string | null; aggregator: string | null; provider_code: string; service_code: string; idempotency_key: string; state: AttemptState; awb: string | null; provider_shipment_id: string | null; routing_code: string | null; pickup_hub_id: string | null; context: Record<string, unknown> | null; error: string | null; checks: number; updated_at: Date; created_at: Date };
-export const OPEN_SQL = `state IN ('started', 'unknown', 'accepted', 'cancel_needed')`;
+export type AttemptState = 'started' | 'unknown' | 'accepted' | 'cancel_needed' | 'needs_review' | 'recorded' | 'refused' | 'cancelled';
+export type Attempt = { id: string; seller_id: string; order_id: string; actor_user_id: string | null; aggregator: string | null; provider_code: string; service_code: string; idempotency_key: string; state: AttemptState; awb: string | null; provider_shipment_id: string | null; routing_code: string | null; pickup_hub_id: string | null; context: Record<string, unknown> | null; error: string | null; checks: number; misses: number; review_from: string | null; updated_at: Date; created_at: Date };
+export const OPEN_SQL = `state IN ('started', 'unknown', 'accepted', 'cancel_needed', 'needs_review')`; // the same list as the unique index booking_attempts_one_open
 
 const conflict = (message: string, code: string) => Object.assign(new Error(message), { statusCode: 409, code });
 /** Another request is booking this order at this very moment. ("try again in a minute" also makes the queues retry instead of failing the order.) */
 export const bookingInProgress = () => conflict('This order is being booked with a courier right now. Nothing was charged twice. Refresh Track, or try again in a minute.', 'BOOKING_IN_PROGRESS');
+/** The courier did not answer clearly. The order is NOT failed and NOT booked: it is being checked, and must not be booked again meanwhile. */
+export const bookingOutcomeUnknown = () => Object.assign(new Error('The courier did not confirm this booking in time, so we are checking with them. Within a few minutes the order shows as booked (charged once) or free to book again. Do not book it with another courier meanwhile.'), { statusCode: 409, code: 'BOOKING_OUTCOME_UNKNOWN' });
+/** Checked many times without an answer: NEXGO support verifies it with the courier. */
+export const bookingInReview = () => conflict('NEXGO support is checking an earlier booking of this order with the courier, so it cannot be booked, changed or cancelled yet. You will be notified, or contact support.', 'BOOKING_IN_REVIEW');
 /** An earlier booking has no confirmed outcome yet. */
 export const bookingUnconfirmed = () => conflict('An earlier booking of this order is still being confirmed with the courier. It resolves by itself, so nothing is booked or charged twice. Please try again in a minute.', 'BOOKING_UNCONFIRMED');
 
 /** Refuses to change or cancel an order a courier may already hold. */
 export async function assertNoOpenBooking(client: PoolClient, orderId: string): Promise<void> {
-  const open = await client.query(`SELECT 1 FROM booking_attempts WHERE order_id = $1 AND ${OPEN_SQL} LIMIT 1`, [orderId]);
-  if (open.rows[0]) throw bookingUnconfirmed();
+  const open = await client.query<{ state: string }>(`SELECT state FROM booking_attempts WHERE order_id = $1 AND ${OPEN_SQL} LIMIT 1`, [orderId]);
+  if (open.rows[0]) throw open.rows[0].state === 'needs_review' ? bookingInReview() : bookingUnconfirmed();
 }
 
 type Begin = { sellerId: string; userId: string; orderId: string; aggregator: string | null; providerCode: string; serviceCode: string; key: string; context: unknown };
@@ -43,6 +47,7 @@ export async function beginAttempt(client: PoolClient, b: Begin): Promise<{ kind
     const open = (await client.query<Attempt>(`SELECT * FROM booking_attempts WHERE order_id = $1 AND ${OPEN_SQL} FOR UPDATE`, [b.orderId])).rows[0];
     if (!open) continue; // it was closed between the two statements
     const same = open.provider_code === b.providerCode && open.service_code === b.serviceCode;
+    if (open.state === 'needs_review') return { kind: 'open', attempt: open };
     if (open.state === 'started' && Date.now() - open.updated_at.getTime() < config.BOOKING_STALE_SECONDS * 1000) return { kind: 'busy', attempt: open };
     if (open.state === 'accepted' && same) return { kind: 'resume', attempt: open };
     if ((open.state === 'unknown' || open.state === 'started') && same) {

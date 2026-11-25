@@ -8,12 +8,14 @@
 //   mode.readsDown    every order / list read answers HTTP 500 (the caller cannot find out either)
 //   mode.dropShip     POST /shipments answers HTTP 502 and books nothing
 //   mode.cancelDown   cancel answers HTTP 500
+//   mode.hideMs       an order is invisible to every read for this long after it was created (the courier's records lag behind its own booking)
+//   mode.ndrDown      POST /ndr/action answers HTTP 500
 // Every call is counted in `stats`, so a test can prove how many calls a booking really made.
 import http from 'node:http';
 
 const RUN = Date.now().toString(36).toUpperCase();
 export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds = [] } = {}) {
-  const mode = { balance: 1000, nobalance: false, maxInflight: 0, postAwb: true, listCap: 0, fail502Once: false, loseAnswer: false, readsDown: false, dropShip: false, cancelDown: false, latencyMs };
+  const mode = { balance: 1000, nobalance: false, maxInflight: 0, postAwb: true, listCap: 0, fail502Once: false, loseAnswer: false, readsDown: false, dropShip: false, cancelDown: false, hideMs: 0, ndrDown: false, latencyMs };
   const failedOnce = new Set(); // keys already answered with a 502
   const stats = { calls: {}, peak: 0, tooMany: 0, ordersCreated: 0, shipmentsBooked: 0, cancels: 0, duplicateOrderRefusals: 0, repeatShips: 0 };
   const orders = new Map(); // id -> { id, ref, shipment: null | { id, awb }, cancelled }
@@ -42,7 +44,7 @@ export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds =
       if (method === 'POST' && path === '/orders') {
         count('POST /orders');
         if (byRef.has(body.orderId)) { stats.duplicateOrderRefusals += 1; return send(res, 400, { message: 'Order Id already exists. Please try with another Order Id.' }); }
-        const id = `ord_${++seq}`; const o = { id, ref: body.orderId, shipment: null, cancelled: false }; orders.set(id, o); byRef.set(o.ref, o); stats.ordersCreated += 1;
+        const id = `ord_${++seq}`; const o = { id, ref: body.orderId, shipment: null, cancelled: false, at: Date.now() }; orders.set(id, o); byRef.set(o.ref, o); stats.ordersCreated += 1;
         return send(res, 200, { id });
       }
       if (mode.readsDown && method === 'GET' && /^\/orders(\/|$)/.test(path)) { count('500 reads'); return send(res, 500, { message: 'Internal error' }); }
@@ -50,11 +52,11 @@ export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds =
         count('GET /orders');
         // Like the real list: newest first, a page size that may be capped, and hasMore that is NOT reliable (always false); totalPages / total are.
         const size = Math.min(Number(url.searchParams.get('limit')) || 10, mode.listCap || 100); const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
-        const all = [...orders.values()].reverse().map((o) => ({ id: o.id, orderNumber: o.ref, shipment: o.shipment }));
+        const all = [...orders.values()].filter((o) => Date.now() - o.at >= mode.hideMs).reverse().map((o) => ({ id: o.id, orderNumber: o.ref, shipment: o.shipment }));
         return send(res, 200, { orders: all.slice((page - 1) * size, page * size), total: all.length, page, limit: size, totalPages: Math.max(1, Math.ceil(all.length / size)), hasMore: false, nextCursor: null });
       }
       const one = path.match(/^\/orders\/([^/]+)$/);
-      if (method === 'GET' && one) { count('GET /orders/:id'); const o = orders.get(one[1]); return o ? send(res, 200, { id: o.id, orderNumber: o.ref, shipment: o.shipment }) : send(res, 404, { message: 'Not found' }); }
+      if (method === 'GET' && one) { count('GET /orders/:id'); const o = orders.get(one[1]); return o && Date.now() - o.at >= mode.hideMs ? send(res, 200, { id: o.id, orderNumber: o.ref, shipment: o.shipment }) : send(res, 404, { message: 'Not found' }); }
       const rates = path.match(/^\/shipments\/([^/]+)\/rates$/);
       if (method === 'GET' && rates && mode.fail502Once && !failedOnce.has('rates:' + rates[1])) { failedOnce.add('rates:' + rates[1]); count('502 rates'); return send(res, 502, { message: 'Bad gateway' }); }
       if (method === 'GET' && rates) { count('GET /shipments/:id/rates'); return send(res, 200, { rates: courierIds.map((id) => ({ id, total_price: 50 })) }); }
@@ -69,6 +71,7 @@ export function startFakeAggregator({ port = 4555, latencyMs = 300, courierIds =
         if (mode.loseAnswer) { count('lost answers'); req.socket.destroy(); return; }
         return send(res, 200, mode.postAwb ? { success: true, shipment: o.shipment } : { success: true });
       }
+      if (method === 'POST' && path === '/ndr/action') { count('POST /ndr/action'); if (mode.ndrDown) return send(res, 500, { message: 'Internal error' }); stats.ndrActions = (stats.ndrActions || 0) + 1; return send(res, 200, { success: true }); }
       const cancel = path.match(/^\/shipments\/([^/]+)\/cancel$/);
       if (method === 'POST' && cancel) { count('POST /shipments/:id/cancel'); if (mode.cancelDown) return send(res, 500, { message: 'Internal error' }); stats.cancels += 1; for (const o of orders.values()) if (o.shipment?.id === cancel[1]) o.cancelled = true; return send(res, 200, { success: true }); }
       send(res, 404, { message: 'Unknown endpoint ' + method + ' ' + path });

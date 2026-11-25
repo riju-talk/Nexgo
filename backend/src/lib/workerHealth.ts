@@ -15,24 +15,25 @@ export function startHeartbeat(name = 'worker') {
   return () => clearInterval(timer);
 }
 
-export type WorkerHealth = { alive: boolean; lastBeatAt: string | null; ageSeconds: number | null; waiting: number; oldestWaitingSeconds: number; unconfirmedBookings: number; oldestUnconfirmedSeconds: number };
+export type WorkerHealth = { alive: boolean; lastBeatAt: string | null; ageSeconds: number | null; waiting: number; oldestWaitingSeconds: number; unconfirmedBookings: number; bookingsToReview: number; oldestUnconfirmedSeconds: number };
 let cache: { at: number; value: WorkerHealth } | null = null;
 /** Read at most every 3 s per process. If the check itself fails the worker is reported alive: a broken health check must not stop bookings. */
 export async function workerHealth(): Promise<WorkerHealth> {
   if (cache && Date.now() - cache.at < 3000) return cache.value;
   try {
-    const r = (await db.query<{ beat: Date | null; age: number | null; waiting: number; oldest: number; open: number; open_age: number }>(
+    const r = (await db.query<{ beat: Date | null; age: number | null; waiting: number; oldest: number; open: number; review: number; open_age: number }>(
       `SELECT (SELECT max(beat_at) FROM worker_heartbeats) AS beat, (SELECT extract(epoch FROM now() - max(beat_at))::int FROM worker_heartbeats) AS age,
               (SELECT count(*)::int FROM assign_batch_items WHERE state IN ('queued','running')) + (SELECT count(*)::int FROM cancel_batch_items WHERE state IN ('queued','running')) AS waiting,
               COALESCE((SELECT extract(epoch FROM now() - min(b.created_at))::int FROM assign_batches b WHERE b.finished_at IS NULL), 0) AS oldest,
-              (SELECT count(*)::int FROM booking_attempts WHERE state IN ('unknown','accepted','cancel_needed')) AS open,
-              COALESCE((SELECT extract(epoch FROM now() - min(created_at))::int FROM booking_attempts WHERE state IN ('unknown','accepted','cancel_needed')), 0) AS open_age`)).rows[0];
-    const value: WorkerHealth = { alive: r.age !== null && r.age <= DEAD_AFTER_SECONDS, lastBeatAt: r.beat ? r.beat.toISOString() : null, ageSeconds: r.age, waiting: r.waiting, oldestWaitingSeconds: r.oldest, unconfirmedBookings: r.open, oldestUnconfirmedSeconds: r.open_age };
+              (SELECT count(*)::int FROM booking_attempts WHERE state IN ('unknown','accepted','cancel_needed','needs_review')) AS open,
+              (SELECT count(*)::int FROM booking_attempts WHERE state = 'needs_review') AS review,
+              COALESCE((SELECT extract(epoch FROM now() - min(created_at))::int FROM booking_attempts WHERE state IN ('unknown','accepted','cancel_needed','needs_review')), 0) AS open_age`)).rows[0];
+    const value: WorkerHealth = { alive: r.age !== null && r.age <= DEAD_AFTER_SECONDS, lastBeatAt: r.beat ? r.beat.toISOString() : null, ageSeconds: r.age, waiting: r.waiting, oldestWaitingSeconds: r.oldest, unconfirmedBookings: r.open, bookingsToReview: r.review, oldestUnconfirmedSeconds: r.open_age };
     cache = { at: Date.now(), value };
     return value;
   } catch (e) {
     console.error('worker health could not be read', (e as Error).message);
-    return { alive: true, lastBeatAt: null, ageSeconds: null, waiting: 0, oldestWaitingSeconds: 0, unconfirmedBookings: 0, oldestUnconfirmedSeconds: 0 };
+    return { alive: true, lastBeatAt: null, ageSeconds: null, waiting: 0, oldestWaitingSeconds: 0, unconfirmedBookings: 0, bookingsToReview: 0, oldestUnconfirmedSeconds: 0 };
   }
 }
 

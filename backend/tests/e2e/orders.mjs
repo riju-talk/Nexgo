@@ -82,6 +82,22 @@ await hook(sh3.awb, 'PICKED_UP', t(90)); await hook(sh3.awb, 'NDR', t(50), 'Refu
 T('6. Bulk RTO behaves the same (request only)', (await ship(sh3.id)).state === 'ndr' && await rtoDebits(sh3.id) === 0, JSON.stringify(await ship(sh3.id)));
 await hook(sh3.awb, 'OUT_FOR_DELIVERY', t(20)); await hook(sh3.awb, 'DELIVERED', t(5));
 T('6. If the courier delivers it after all it is Delivered, no return freight is ever charged and the case is closed', (await ship(sh3.id)).state === 'delivered' && await rtoDebits(sh3.id) === 0 && (await caseOf(sh3.id)).state === 'resolved', JSON.stringify({ ...(await ship(sh3.id)), c: (await caseOf(sh3.id)).state }));
+// 6c. the courier cannot be told about the seller's answer: saved, shown as not sent, retried, sent exactly once
+const o15 = (await call('POST', '/v1/orders', body('15', { phone: '9822200015' }))).j.id; await call('PATCH', `/v1/orders/${o15}/state`, { state: 'ready_to_ship' }); await call('POST', '/v1/shipments/book', { orderId: o15, providerCode: svc.pcode, serviceCode: svc.code }, key());
+const sh4 = await one('SELECT id, awb FROM shipments WHERE order_id = $1', [o15]); await hook(sh4.awb, 'PICKED_UP', t(90)); await hook(sh4.awb, 'NDR', t(50), 'Customer not available');
+const c4 = (await caseOf(sh4.id)).id; fake.mode.ndrDown = true; const sent0 = fake.stats.ndrActions || 0;
+r = await call('POST', `/v1/ndr/cases/${c4}/resolve`, { resolutionAction: 'reattempt' });
+let sync = await one('SELECT courier_sync, courier_sync_error FROM ndr_cases WHERE id = $1', [c4]);
+T('6c. Courier down: the answer is saved and the board says the courier was not told (failed, retrying)', r.s === 200 && r.j?.courier?.status === 'failed' && sync.courier_sync === 'failed' && (await caseOf(sh4.id)).state === 'reattempt_requested', JSON.stringify({ s: r.s, c: r.j?.courier, sync }));
+let list = await call('GET', '/v1/ndr/cases?tab=action_requested&page=1&pageSize=50'); const row4 = list.j?.items?.find((x) => x.id === c4);
+T('6c. The NDR list carries the courier status so the seller sees it', row4?.courier_sync === 'failed', JSON.stringify(row4?.courier_sync));
+fake.mode.ndrDown = false;
+const [ra, rb2] = await Promise.all([call('POST', `/v1/ndr/cases/${c4}/courier-retry`, {}), call('POST', `/v1/ndr/cases/${c4}/courier-retry`, {})]);
+sync = await one('SELECT courier_sync FROM ndr_cases WHERE id = $1', [c4]);
+T('6c. Retry (pressed twice at once): sent, and the courier received the instruction exactly once', sync.courier_sync === 'sent' && (fake.stats.ndrActions || 0) - sent0 === 1 && [ra, rb2].every((x) => x.s === 200), JSON.stringify({ sync, calls: (fake.stats.ndrActions || 0) - sent0, a: ra.j, b: rb2.j }));
+r = await call('POST', `/v1/ndr/cases/${c4}/courier-retry`, {});
+T('6c. Retrying a sent case sends nothing again', r.j?.courier?.status === 'sent' && (fake.stats.ndrActions || 0) - sent0 === 1);
+
 // 7. things only NEXGO (or the courier) may decide
 r = await call('PATCH', `/v1/ndr/${(await caseOf(sh2.id)).id}`, { action: 'rto' }); T('7. The old NDR shortcut that forced parcel states is gone', r.s === 404, `${r.s}`);
 const acc = await call('POST', '/v1/bank-accounts', { accountHolderName: 'Ord Person', accountNumber: '123456789012', ifscCode: 'HDFC0001234', bankName: 'HDFC Bank', accountType: 'current' });
@@ -109,6 +125,34 @@ const o14 = (await call('POST', '/v1/orders', body('14', { phone: '9822200014' }
 r = await call('POST', '/v1/shipments/book', { orderId: o14, providerCode: svc.pcode, serviceCode: svc.code }, key());
 const charged = (await one('SELECT shipping_charge_paise::int AS c FROM shipments WHERE order_id = $1', [o14]))?.c;
 T('8. The price charged at booking is the price quoted (a city spelled differently on the warehouse changes nothing)', Math.round(qz.j.quotes[0]?.price.total * 100) === charged, `quoted ${qz.j.quotes[0]?.price.total} charged ${charged}`);
+
+// 10. edge cases that hurt operations
+// a. the pickup warehouse was switched off after the order was made
+const wh2 = (await call('POST', '/v1/warehouses', { name: 'Side', warehouseType: 'secondary', contactName: 'Owner', phone: '9876543210', addressLine1: '7 Side Lane', city: 'Mumbai', state: 'Maharashtra', pincode: '400001' })).j.id;
+const o20 = (await call('POST', '/v1/orders', { ...body('20', { phone: '9822200020' }), warehouseId: wh2 })).j.id; await call('PATCH', `/v1/orders/${o20}/state`, { state: 'ready_to_ship' });
+await db.query('UPDATE warehouses SET is_active = false WHERE id = $1', [wh2]); const calls20 = fake.stats.calls['POST /orders'] || 0;
+r = await call('POST', '/v1/shipments/book', { orderId: o20, providerCode: svc.pcode, serviceCode: svc.code }, key());
+T('10a. Warehouse switched off: booking refused with the reason, the courier is not asked', r.s === 422 && r.j?.code === 'WAREHOUSE_INACTIVE' && (fake.stats.calls['POST /orders'] || 0) === calls20, `${r.s} ${r.j?.code}`);
+r = await call('POST', '/v1/shipments/auto-assign', { orderIds: [o20] });
+T('10a. ...auto-assign stops at the first courier with the same reason (does not try every courier)', r.j?.results?.[0]?.ok === false && /switched off/.test(r.j?.results?.[0]?.error || ''), JSON.stringify(r.j?.results?.[0]));
+// b. two "Generate manifests" at once
+for (const n of ['21', '22', '23']) { const id = (await call('POST', '/v1/orders', body(n, { phone: `98222000${n}` }))).j.id; await call('PATCH', `/v1/orders/${id}/state`, { state: 'ready_to_ship' }); await call('POST', '/v1/shipments/book', { orderId: id, providerCode: svc.pcode, serviceCode: svc.code }, key()); }
+await Promise.all([call('POST', '/v1/manifests/generate', {}), call('POST', '/v1/manifests/generate', {}), call('POST', '/v1/manifests/generate', {})]);
+const mf = await one('SELECT count(*)::int m, count(DISTINCT manifest_no)::int u FROM pickup_manifests WHERE seller_id = $1', [sellerId]); const dup = await one('SELECT count(*)::int n FROM (SELECT shipment_id FROM pickup_manifest_items GROUP BY 1 HAVING count(*) > 1) x');
+T('10b. Three manifest clicks at once: every manifest number is different and no parcel is on two manifests', mf.m === mf.u && mf.m >= 1 && dup.n === 0, JSON.stringify({ mf, dup }));
+// c. the seller answered an NDR, the courier could not be told, then the parcel was delivered: the old instruction is never sent late
+const o24 = (await call('POST', '/v1/orders', body('24', { phone: '9822200024' }))).j.id; await call('PATCH', `/v1/orders/${o24}/state`, { state: 'ready_to_ship' }); await call('POST', '/v1/shipments/book', { orderId: o24, providerCode: svc.pcode, serviceCode: svc.code }, key());
+const sh5 = await one('SELECT id, awb FROM shipments WHERE order_id = $1', [o24]); await hook(sh5.awb, 'PICKED_UP', t(90)); await hook(sh5.awb, 'NDR', t(50), 'Customer not available');
+fake.mode.ndrDown = true; await call('POST', `/v1/ndr/cases/${(await caseOf(sh5.id)).id}/resolve`, { resolutionAction: 'rto' }); fake.mode.ndrDown = false;
+await hook(sh5.awb, 'OUT_FOR_DELIVERY', t(20)); await hook(sh5.awb, 'DELIVERED', t(5)); const before5 = fake.stats.ndrActions || 0;
+r = await call('POST', `/v1/ndr/cases/${(await caseOf(sh5.id)).id}/courier-retry`, {});
+T('10c. Parcel delivered before the courier could be told "return it": nothing is sent late', (fake.stats.ndrActions || 0) === before5 && (await ship(sh5.id)).state === 'delivered' && await rtoDebits(sh5.id) === 0, `${r.s} ${JSON.stringify(r.j)}`);
+// d. account suspended while orders wait in the queue
+const qIds = []; for (const n of ['25', '26']) { const id = (await call('POST', '/v1/orders', body(n, { phone: `98222000${n}` }))).j.id; await call('PATCH', `/v1/orders/${id}/state`, { state: 'ready_to_ship' }); qIds.push(id); }
+await db.query("UPDATE sellers SET state = 'suspended' WHERE id = $1", [sellerId]);
+r = await call('POST', '/v1/shipments/book', { orderId: qIds[0], providerCode: svc.pcode, serviceCode: svc.code }, key());
+const booked25 = await one('SELECT count(*)::int n FROM shipments WHERE order_id = ANY($1::uuid[])', [qIds]); await db.query("UPDATE sellers SET state = 'active' WHERE id = $1", [sellerId]);
+T('10d. Suspended account: nothing is booked (refused, or no session at all)', [401, 403].includes(r.s) && booked25.n === 0, `${r.s} ${r.j?.code}`);
 
 console.log(out.join('\n')); console.log(`\n${out.filter((x) => x.startsWith('PASS')).length}/${out.length} passed`);
 await db.end(); fake.close(); process.exit(0);

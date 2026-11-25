@@ -47,3 +47,8 @@ test('an order that was already booked is not a failure: it comes back with its 
   assert.match(rows[1].failure, /^Order saved, but no courier yet: /);
   assert.match(assignSentence({ assigned: 0, failed: 0, waiting: 0, already: 3 }).text, /3 orders already had a courier\. Nothing was booked or charged again/);
 });
+
+test('orders whose courier answer was lost: stop waiting (saved, being confirmed), never "failed"', () => {
+  assert.equal(nextStep(b({ queued: 3, confirming: 3 })), 'confirming');
+  assert.equal(nextStep(b({ queued: 3, confirming: 2, running: 1 })), 'wait');
+});

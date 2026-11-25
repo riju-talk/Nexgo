@@ -3,6 +3,8 @@ import { db } from '../db/client.js';
 import { requirePlatformAdmin } from '../lib/adminAuth.js';
 import { checkStorage } from '../lib/storage.js';
 import { workerHealth } from '../lib/workerHealth.js';
+import { z } from 'zod';
+import { settleByHand } from '../lib/bookingReconciler.js';
 
 // What each platform role may do. Mirrors the guards in lib/adminAuth.ts, shown read-only on the Role permissions screen.
 export const ROLE_MATRIX = [
@@ -49,6 +51,20 @@ export default async function adminPlatformRoutes(app: FastifyInstance) {
         WHERE t.state IN ('open','in_progress') AND (t.priority IN ('urgent','high') OR t.created_at < now() - interval '48 hours')
         ORDER BY CASE t.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 ELSE 3 END, t.created_at LIMIT 5000`);
     return { items: r.rows };
+  });
+
+  // Courier bookings no automatic check could settle. A person checks the courier's portal and records what they saw.
+  app.get('/v1/admin/booking-reviews', { preHandler: requirePlatformAdmin }, async () => ({
+    items: (await db.query(`SELECT b.id, b.created_at, b.review_from, b.awb, b.error, b.checks, b.misses, b.provider_code, b.service_code, b.aggregator, s.legal_name AS seller_name, o.order_number, o.nexgo_order_id
+      FROM booking_attempts b JOIN sellers s ON s.id = b.seller_id JOIN orders o ON o.id = b.order_id WHERE b.state = 'needs_review' ORDER BY b.created_at LIMIT 500`)).rows,
+  }));
+  app.post('/v1/admin/booking-reviews/:id/resolve', { preHandler: requirePlatformAdmin }, async (request) => {
+    const id = z.string().uuid().parse((request.params as { id: string }).id);
+    const input = z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('booked'), awb: z.string().trim().min(4).max(64), providerShipmentId: z.string().trim().max(120).optional() }),
+      z.object({ kind: z.literal('not_booked'), note: z.string().trim().min(3).max(300) }),
+    ]).parse(request.body);
+    return { outcome: await settleByHand(id, request.adminPrincipal!.userId, request.id, input) };
   });
 
   // System status: queues, failed jobs, storage and the migration level, all read from the database.
