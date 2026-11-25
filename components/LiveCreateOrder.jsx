@@ -208,7 +208,7 @@ export default function LiveCreateOrder({ mobile, flow = 'forward', embedded = f
     if (!q || !placed) return;
     setBooking(true);
     try {
-      await apiFetch(`/v1/orders/${placed.id}/state`, { method: 'PATCH', body: { state: 'ready_to_ship' } }).catch(() => {}); // already ready is fine
+      await apiFetch(`/v1/orders/${placed.id}/state`, { method: 'PATCH', body: { state: 'ready_to_ship' } }).catch((e) => { if (!(e instanceof ApiError && e.status === 409)) throw e; }); // already ready (409) is fine; anything else is shown
       await apiFetch('/v1/shipments/book', { method: 'POST', headers: { 'Idempotency-Key': `book-${placed.id}-${q.provider.code}-${q.service.code}` }, body: { orderId: placed.id, providerCode: q.provider.code, serviceCode: q.service.code } });
       showToast(`Booked with ${q.provider.name}. Find it in Track.`);
       nav('shipments');

@@ -1,6 +1,7 @@
 'use client';
 
 import { assignInBatches } from '@/lib/assignBatches';
+import { applyAssignmentResults, bookingSentence, summarizeBulk } from '@/lib/bulkOutcome';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { apiFetch, ApiError, isFundsMessage } from '@/lib/api';
@@ -328,18 +329,23 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     // and one request that runs over 60 seconds is cut off by the proxy.
     if (made.length) {
       const results = await assignInBatches(made.map((x) => x.orderId), { courier: assignMode === 'one' && pickProvider ? chosenCourier : undefined, onProgress: (n, total) => setProgress(`Assigning couriers… ${n} of ${total}`) });
-      const by = new Map(results.map((x) => [x.orderId, x]));
-      for (const [num, x] of outcome) { const a = x.orderId && by.get(x.orderId); if (a) outcome.set(num, a.ok ? { ...x, courier: a.courier, awb: a.awb } : { ...x, unassigned: true, failure: `Order created, but no courier assigned: ${a.error}` }); }
+      // Sent for booking but no answer (courier booking paused, worker busy): SAVED and waiting, never reported as booked (lib/bulkOutcome.js, UX-008).
+      const merged = applyAssignmentResults(outcome, made.map((x) => x.orderId), results);
+      outcome.clear(); for (const [k, v] of merged) outcome.set(k, v);
     }
     setProgress('');
     const next = all.map((o) => (outcome.has(o.orderNumber) ? { ...o, ...outcome.get(o.orderNumber) } : o));
     setOrders(next);
     setCreating(false);
-    const created = next.filter((o) => o.created && !o.unassigned).length;
+    const summary = summarizeBulk(next);
+    const { created, queued, booked } = summary;
     const failed = next.filter((o) => o.errors.length || o.failure).length;
-    setResult({ total: next.length, created, failed, existing });
+    setResult({ total: next.length, created, failed, existing, queued, booked });
     if (existing) showToast(`${Math.max(created - existing, 0)} unique order${created - existing === 1 ? '' : 's'} added. ${existing} duplicate${existing === 1 ? '' : 's'} discarded (already in NEXGO).`);
-    if (created && !existing) showToast(assignMode === 'none' ? `${created} order${created === 1 ? '' : 's'} created. Choose couriers in Track > Ready to ship.` : `${created} order${created === 1 ? '' : 's'} created and assigned to a courier.`);
+    if (created && !existing) {
+      if (assignMode === 'none') showToast(`${created} order${created === 1 ? '' : 's'} created. Choose couriers in Track > Ready to ship.`);
+      else showToast(bookingSentence(summary), queued ? 'error' : 'success', queued ? 9000 : undefined);
+    }
     const fundsStop = next.find((o) => isFundsMessage(o.failure));
     if (fundsStop) showToast(fundsStop.failure, 'error', 8000); // debit limit reached or wallet empty: said plainly and left on screen longer
     else if (failed) showToast(`${failed} order${failed === 1 ? '' : 's'} failed or not assigned — download the failed orders file.`, 'error');
@@ -378,6 +384,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
         </div>
 
         {!!orders.length && validOrders.length > 0 && !creating && !loading && <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 9, background: `${T.GREEN}12`, color: T.TEXT, fontSize: 13, lineHeight: 1.5 }}><b>{validOrders.length} order{validOrders.length === 1 ? ' was' : 's were'} not created.</b> Click “Create {validOrders.length} order{validOrders.length === 1 ? '' : 's'}” to try again.</div>}
+        {(result?.queued || 0) > 0 && <div role="status" style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: '#FFF7E0', border: '1px solid #E0B24A', color: '#6B4A00', fontSize: 12.5, lineHeight: 1.6 }}><b>{result.queued} order{result.queued === 1 ? ' is' : 's are'} saved but NOT booked yet.</b> Courier booking is paused or still running. They stay in the queue and book automatically; you do not need to upload again. {result.booked} of {result.created} created order{result.created === 1 ? ' is' : 's are'} booked so far. Check Track for the AWBs.</div>}
         {failedCount > 0 && <div style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: `${T.RED}0D`, fontSize: 12.5, lineHeight: 1.6 }}><b style={{ color: T.RED }}>Why {failedCount} order{failedCount === 1 ? '' : 's'} failed</b>{reasons.map(([text, n]) => <div key={text} style={{ color: T.TEXT_SECONDARY }}><b style={{ color: T.TEXT }}>{n}</b> × {text}</div>)}</div>}
         {warehouses && !warehouses.length && <div style={{ marginTop: 18 }}><Action onClick={() => nav('warehouse')}>Add a pickup warehouse first</Action></div>}
         {warehouses?.length > 0 && <div style={{ marginTop: 16, fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.7 }}><b style={{ color: T.TEXT }}>Your warehouse IDs</b> (use in the Warehouse ID column): {warehouses.filter((w) => w.is_active !== false).map((w) => <span key={w.id} style={{ display: 'inline-block', margin: '0 8px 0 0' }}><code style={{ fontFamily: T.MONO, fontWeight: 700, color: T.TEXT }}>{w.warehouse_code}</code> {w.name}</span>)}</div>}
@@ -448,7 +455,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ color: T.TEXT_LABEL, fontSize: 13, fontWeight: 750 }}>{o.paymentMode === 'cod' ? `COD ${inr(o.codAmountPaise)}` : `Prepaid ${inr(o.subtotal)}`}</div>
-                      {o.created && !o.unassigned && !bad && <div style={{ marginTop: 3, color: o.awb ? T.GREEN : T.TEXT_MUTED, fontSize: 11.5 }}>{o.awb ? `Booked · ${o.courier} · ${o.awb}` : 'In Track > Ready to ship'}</div>}
+                      {o.created && !o.unassigned && !bad && <div style={{ marginTop: 3, color: o.awb ? T.GREEN : o.queued ? '#8A5A00' : T.TEXT_MUTED, fontSize: 11.5 }}>{o.awb ? `Booked · ${o.courier} · ${o.awb}` : o.queued ? 'Saved · waiting for courier booking (books automatically)' : 'In Track > Ready to ship'}</div>}
                     </div>
                   </div>
                   {bad && <div style={{ marginTop: 10, padding: '9px 11px', borderRadius: 9, background: `${T.RED}0D`, color: T.RED, fontSize: 12.5, lineHeight: 1.5 }}>{o.failure || o.errors.join(' · ')}</div>}

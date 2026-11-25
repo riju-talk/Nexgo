@@ -82,7 +82,7 @@ function SingleOrder({ order, onClose, onDone }) {
     if (!chosen) return;
     setBusy(true);
     try {
-      await apiFetch(`/v1/orders/${order.id}/state`, { method: 'PATCH', body: { state: 'ready_to_ship' } }).catch(() => {}); // already ready is fine
+      await apiFetch(`/v1/orders/${order.id}/state`, { method: 'PATCH', body: { state: 'ready_to_ship' } }).catch((e) => { if (!(e instanceof ApiError && e.status === 409)) throw e; }); // already ready (409) is fine; anything else (an incomplete order, no session) is shown
       const r = await apiFetch('/v1/shipments/book', { method: 'POST', headers: { 'Idempotency-Key': `book-${order.id}-${chosen.provider.code}-${chosen.service.code}` }, body: { orderId: order.id, providerCode: chosen.provider.code, serviceCode: chosen.service.code } });
       showToast(`Booked with ${chosen.provider.name}${r?.shipment?.awb ? ` · AWB ${r.shipment.awb}` : ''}`);
       onDone();

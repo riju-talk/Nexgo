@@ -10,6 +10,7 @@ import * as T from '@/lib/theme';
 import { FORMATS, saveRows } from '@/lib/exportFile';
 import { diagnose, failedSheet, readCorrections, toPatch } from '@/lib/failedOrders';
 import { Pagination, Spinner, TableSkeleton } from './Kit';
+import { openDocuments, openDocumentsMessage } from '@/lib/openDocs';
 import { usePageNav } from '@/lib/usePageNav';
 import { cancelInBackground } from '@/lib/cancelBatches';
 import { ActiveCancelBanner, BatchProgressDialog } from './BatchProgress';
@@ -94,14 +95,13 @@ function Progress({ state }) {
   );
 }
 
-// Labels / invoices open in their own tab. A few ids travel in the address; a big selection (the address would be too long) goes through browser
-// storage, which the new tab reads once, and the page loads the documents 100 at a time (components/documents/DocumentViewer.jsx).
-const MAX_PRINT = 5000;
-const openDocs = (kind, ids) => {
-  if (ids.length <= 60) return window.open(`/documents/${kind}?ids=${ids.join(',')}`, '_blank', 'noopener');
-  const key = `nx-doc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-  try { localStorage.setItem(key, JSON.stringify(ids)); } catch { return false; }
-  return window.open(`/documents/${kind}?batch=${key}`, '_blank');
+// Labels / invoices open in their own tab (lib/openDocs.js says honestly whether a tab opened, the browser blocked it, or storage failed).
+// The single-parcel buttons call this too; the toast helper is passed in because that component has its own.
+const openDocs = (kind, ids, toast) => {
+  const r = openDocuments(kind, ids);
+  const msg = openDocumentsMessage(r, kind);
+  if (msg && toast) toast(msg, 'error');
+  return r;
 };
 const copyText = (text, showToast, done) => { navigator.clipboard?.writeText(text).then(() => showToast(done)).catch(() => showToast('Copy is not available in this browser', 'error')); };
 
@@ -166,7 +166,7 @@ function Detail({ shipment, mobile, onClose, reload, onChoose }) {
         ))}
       </div>
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
-        {failedOrder ? <Btn primary onClick={() => onChoose([shipment])}>Choose courier</Btn> : <><Btn primary onClick={() => openDocs('label', [shipment.id])}>Print label</Btn><Btn onClick={() => openDocs('invoice', [shipment.id])}>Invoice</Btn><Btn onClick={() => copyText(shipment.awb, showToast, 'AWB copied')}>Copy AWB</Btn></>}
+        {failedOrder ? <Btn primary onClick={() => onChoose([shipment])}>Choose courier</Btn> : <><Btn primary onClick={() => openDocs('label', [shipment.id], showToast)}>Print label</Btn><Btn onClick={() => openDocs('invoice', [shipment.id], showToast)}>Invoice</Btn><Btn onClick={() => copyText(shipment.awb, showToast, 'AWB copied')}>Copy AWB</Btn></>}
         {cancellable && <Btn danger loading={cancelling} onClick={cancelShipment}>Cancel shipment</Btn>}
         {shipment.state === 'ndr' && <Btn onClick={() => nav('ndr')}>Resolve NDR</Btn>}
         {RTO.includes(shipment.state) && <Btn onClick={() => nav('rto')}>View RTO</Btn>}
@@ -237,6 +237,7 @@ export default function LiveTrack({ mobile }) {
     fetchPage: (page, size) => apiFetch(`/v1/shipments/list?${qs({ tab, page, pageSize: size })}`).then((x) => ({ items: (x.items || []).map(norm), total: x.total })),
   });
   const tableTop = useRef(null);
+  const [blockedDocs, setBlockedDocs] = useState(null); // a print window the browser stopped: { kind, url, count }
   const listRef = useRef(list);
   useEffect(() => { listRef.current = list; });
   const items = list.items;
@@ -439,9 +440,9 @@ export default function LiveTrack({ mobile }) {
   };
   const printSelected = (kind) => {
     const ids = pickedList.filter((r) => !isUnassigned(r) && r.kind !== 'order').map((r) => r.id);
-    if (!ids.length) return showToast('Select shipments that have an AWB first.', 'error');
-    if (ids.length > MAX_PRINT) return showToast(`Select up to ${MAX_PRINT.toLocaleString('en-IN')} shipments for one print job (your browser has to draw every page).`, 'error');
-    if (openDocs(kind, ids) === false) showToast('This selection is too big for the browser to hand over. Select fewer shipments.', 'error');
+    const r = openDocs(kind, ids, showToast);
+    // A blocked pop-up leaves a persistent link: a real click on a link is never blocked, and the ids are already waiting in browser storage.
+    setBlockedDocs(r.status === 'blocked' ? { kind, url: r.url, count: r.count } : null);
   };
   // Only shipments the courier has not picked up can be cancelled; the rest are left alone and counted so nothing is silently skipped.
   const cancelSelected = async () => {
@@ -470,6 +471,11 @@ export default function LiveTrack({ mobile }) {
 
   return (
     <div style={{ padding: pad, position: 'relative' }}>
+      {blockedDocs && <div role="alert" style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, background: '#FFF7E0', border: '1px solid #E0B24A', color: '#6B4A00', fontSize: 13, lineHeight: 1.5, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span><b>Your browser blocked the {blockedDocs.kind} window.</b> Nothing is lost: your selection is ready.</span>
+        <a href={blockedDocs.url} target="_blank" rel="noopener noreferrer" onClick={() => setBlockedDocs(null)} style={{ fontWeight: 750, color: T.ACCENT }}>Open {blockedDocs.count} {blockedDocs.kind}{blockedDocs.count === 1 ? '' : 's'}</a>
+        <button type="button" onClick={() => setBlockedDocs(null)} style={{ border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer', textDecoration: 'underline', fontSize: 12.5 }}>Dismiss</button>
+      </div>}
       {bookingPaused && <div role="status" style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, background: '#FFF7E0', border: '1px solid #E0B24A', color: '#6B4A00', fontSize: 13, lineHeight: 1.5 }}><b>Courier booking is paused right now.</b> You can still push or assign orders: they are saved and booked automatically as soon as booking resumes. Nothing is charged until an AWB is created.</div>}
       <ActiveAssignBanner onFinished={load} />
       {working && <div role="status" style={{ marginBottom: 10, fontSize: 12.5, color: T.TEXT_SECONDARY, display: 'flex', gap: 8, alignItems: 'center' }}><Spinner />{working}</div>}
@@ -583,7 +589,7 @@ export default function LiveTrack({ mobile }) {
                             <td style={CELL}>{r.awb ? <b style={{ fontFamily: T.MONO }}>{r.awb}</b> : <span style={{ color: T.TEXT_MUTED }}>—</span>}</td>
                             <td style={CELL}><span style={{ color: waTone(r.whatsapp_status), fontWeight: 650 }}>{WHATSAPP[r.whatsapp_status] || 'Not sent'}</span></td>
                             <td style={CELL}><Pill state={r.state} />{late && <small style={{ ...SUB, color: T.RED }}>Delayed · due {day(r.promised_delivery_at)}</small>}{(() => { const n = courierNote(r); return n ? <small style={{ ...SUB, color: n.tone, maxWidth: 190, whiteSpace: 'normal' }}>{n.text}</small> : null; })()}</td>
-                            <td style={CELL} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}>{r.state === 'ready' && <Btn small primary onClick={() => setChooser([r])}>Book now</Btn>}<Btn small onClick={() => setSelectedId(r.id)}>{isUnassigned(r) ? 'Details' : 'Track'}</Btn>{r.awb && <Btn small onClick={() => openDocs('label', [r.id])}>Label</Btn>}</div></td>
+                            <td style={CELL} onClick={(e) => e.stopPropagation()}><div style={{ display: 'flex', gap: 6 }}>{r.state === 'ready' && <Btn small primary onClick={() => setChooser([r])}>Book now</Btn>}<Btn small onClick={() => setSelectedId(r.id)}>{isUnassigned(r) ? 'Details' : 'Track'}</Btn>{r.awb && <Btn small onClick={() => openDocs('label', [r.id], showToast)}>Label</Btn>}</div></td>
                           </tr>
                         );
                       })}
