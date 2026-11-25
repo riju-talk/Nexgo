@@ -12,6 +12,7 @@
 - [Two-day execution plan](./TWO_DAY_EXECUTION.md)
 - [Regression and acceptance test matrix](./TEST_MATRIX.md)
 - [Release gates and sign-off](./RELEASE_GATES.md)
+- [Frontend order-flow audit](./FRONTEND_ORDER_FLOW_AUDIT.md)
 
 ## Working principles
 
