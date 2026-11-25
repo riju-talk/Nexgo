@@ -18,8 +18,13 @@ export async function aggregatorWebhookRoutes(app: FastifyInstance) {
     const credentials = credentialsFor(id);
     if (!plugin.webhook.configured(credentials)) return reply.code(503).send({ error: `${id.toUpperCase()}_WEBHOOKS_NOT_CONFIGURED` });
     const raw = request.rawBody ? request.rawBody.toString() : JSON.stringify(request.body);
-    if (!plugin.webhook.verify(request.headers, credentials, raw)) return reply.code(401).send({ error: 'INVALID_WEBHOOK_TOKEN' });
     const updates = plugin.webhook.parse(request.body);
+    // A dashboard's "test" button may send no token or a bare body. Anything that carries no shipment is only a ping: answer 200 and record nothing.
+    // A payload that carries an AWB still needs the right token.
+    if (!plugin.webhook.verify(request.headers, credentials, raw)) {
+      if (updates.length) return reply.code(401).send({ error: 'INVALID_WEBHOOK_TOKEN' });
+      return { ok: true, ping: true };
+    }
     if (!updates.length) return { accepted: true, ignored: 'no awb' }; // also answers a "Test webhook" button
     const outcomes: IngestOutcome[] = [];
     for (const update of updates) outcomes.push(await ingestUpdate(id, update, raw, request.log)); // a database error throws -> 500 -> the aggregator retries; replays are idempotent
@@ -27,9 +32,19 @@ export async function aggregatorWebhookRoutes(app: FastifyInstance) {
     return { accepted: true, result: outcomes.length === 1 ? outcomes[0] : outcomes.includes('processed') ? 'processed' : outcomes[0] };
   };
   // A long shipment history is large (a sample is ~12 KB) and a batch can hold several, so the default 1 MB limit is raised.
+  // A "test webhook" button may send an empty body, no content type, or a GET: those are pings, not errors (a 4xx here makes the dashboard refuse to save the URL).
+  const PING_ERRORS = new Set(['FST_ERR_CTP_EMPTY_JSON_BODY', 'FST_ERR_CTP_INVALID_MEDIA_TYPE', 'FST_ERR_CTP_INVALID_JSON_BODY']);
+  app.setErrorHandler((error, request, reply) => {
+    const code = (error as { code?: string }).code;
+    if (code && PING_ERRORS.has(code)) return reply.code(200).send({ ok: true, ping: true });
+    return reply.send(error);
+  });
   const options = { bodyLimit: 5_000_000, config: { rawBody: true, rateLimit: { max: 1200, timeWindow: '1 minute' } } };
   app.post('/v1/webhooks/aggregators/:id', options, handle());
   for (const path of ['/v2/webhooks/lorrigo', '/v1/webhooks/lorrigo']) app.post(path, options, handle('lorrigo'));
   // An aggregator that needs its own URL path (see AggregatorWebhook.path) gets it as well.
-  for (const plugin of PLUGINS) if (plugin.webhook?.path) app.post(plugin.webhook.path, options, handle(plugin.id));
+  for (const plugin of PLUGINS) if (plugin.webhook?.path) {
+    app.post(plugin.webhook.path, options, handle(plugin.id));
+    app.get(plugin.webhook.path, async () => ({ ok: true, ping: true })); // reachability check from a browser or a dashboard; reveals nothing
+  }
 }
