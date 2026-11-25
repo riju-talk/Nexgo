@@ -1,3 +1,4 @@
+import { customerIdFor } from './customers.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { config } from '../config.js';
@@ -172,8 +173,7 @@ export async function importOrder(ch: Channel, node: Node): Promise<ImportResult
     // Missing/odd consignee data still imports (placeholder values) so the order lands in Track > Failed where the seller can correct it.
     const name = String(ship.name || node.customer?.displayName || 'Customer').trim().slice(0, 120).padEnd(2, ' '); const phone = tenDigits(String(ship.phone || node.phone || node.customer?.phone || ''));
     const zip = String(ship.zip ?? '').replace(/\s/g, ''); const pin = /^\d{6}$/.test(zip) ? zip : '000000';
-    let customer = (await c.query<{ id: string }>('SELECT id FROM customers WHERE seller_id=$1 AND phone=$2 AND pincode=$3 AND full_name=$4 LIMIT 1', [ch.seller_id, phone, pin, name])).rows[0];
-    if (!customer) customer = (await c.query<{ id: string }>('INSERT INTO customers (seller_id,full_name,email,phone,address_line_1,address_line_2,city,state,pincode,company_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id', [ch.seller_id, name, node.email || node.customer?.email || null, phone, String(ship.address1 || 'Address missing').slice(0, 200), ship.address2 || null, String(ship.city || 'Unknown').slice(0, 80), String(ship.province || 'Unknown').slice(0, 80), pin, ship.company || null])).rows[0];
+    const customer = { id: await customerIdFor(c, ch.seller_id, { fullName: name, email: node.email || node.customer?.email || null, phone, addressLine1: String(ship.address1 || 'Address missing').slice(0, 200), addressLine2: ship.address2 || null, city: String(ship.city || 'Unknown').slice(0, 80), state: String(ship.province || 'Unknown').slice(0, 80), pincode: pin, companyName: ship.company || null }) };
 
     const clash = await c.query('SELECT 1 FROM orders WHERE seller_id=$1 AND order_number=$2', [ch.seller_id, node.name]);
     const orderNumber = String(clash.rowCount ? `${node.name}-${ext}` : node.name).slice(0, 100);

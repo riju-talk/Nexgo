@@ -1,10 +1,10 @@
+import { customerIdFor } from '../lib/customers.js';
 import { applyShipmentFilters, shipmentFilterFields } from '../lib/shipmentFilters.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
 import { pushNdrToCourier } from '../lib/ndrCourier.js';
-import { chargeRtoOnce } from '../lib/shipmentEffects.js';
 import { requireSeller } from './seller.js';
 import { IST, optWindowSql, pct } from '../lib/metrics.js';
 
@@ -37,10 +37,10 @@ function principal(request: FastifyRequest) {
 export async function ndrRoutes(app: FastifyInstance) {
   // Board status shown to sellers, derived from the case state and age:
   // new (open < 48h) -> action_pending (open, older) -> redelivery_scheduled | rto | resolved.
-  const STATUS_SQL = `CASE WHEN nc.state = 'resolved' THEN 'resolved' WHEN nc.state = 'rto_requested' THEN 'rto' WHEN nc.state = 'reattempt_requested' THEN 'redelivery_scheduled' WHEN nc.opened_at > now() - interval '48 hours' THEN 'new' ELSE 'action_pending' END`;
-  const TABS = ['all', 'new', 'action_pending', 'redelivery_scheduled', 'resolved', 'rto', 'action_required', 'action_requested', 'delivered'] as const;
+  const STATUS_SQL = `CASE WHEN nc.state = 'resolved' THEN 'resolved' WHEN nc.state = 'rto_requested' THEN (CASE WHEN s.state = 'rto' THEN 'rto' ELSE 'rto_requested' END) WHEN nc.state = 'reattempt_requested' THEN 'redelivery_scheduled' WHEN nc.opened_at > now() - interval '48 hours' THEN 'new' ELSE 'action_pending' END`;
+  const TABS = ['all', 'new', 'action_pending', 'redelivery_scheduled', 'rto_requested', 'resolved', 'rto', 'action_required', 'action_requested', 'delivered'] as const;
   // The four tabs sellers work from: what needs an answer, what was answered and is waiting, what ended delivered, what went back.
-  const TAB_GROUPS: Record<string, string[]> = { action_required: ['new', 'action_pending'], action_requested: ['redelivery_scheduled'], delivered: ['resolved'], rto: ['rto'] };
+  const TAB_GROUPS: Record<string, string[]> = { action_required: ['new', 'action_pending'], action_requested: ['redelivery_scheduled', 'rto_requested'], delivered: ['resolved'], rto: ['rto'] };
 
   // NDR cases for the seller: tabs, search, reason/courier/date filters, pagination.
   app.get('/v1/ndr/cases', { preHandler: requireSeller }, async (request) => {
@@ -162,45 +162,18 @@ export async function ndrRoutes(app: FastifyInstance) {
         throw Object.assign(new Error('This NDR case has already been actioned'), { statusCode: 409 });
       }
 
-      // Update customer address if provided
+      // A corrected address belongs to THIS order only: the customer record is shared with the buyer's other orders, so a new one is made for it (ORD-009).
       if (input.newAddress && input.resolutionAction === 'address_update') {
-        await client.query(`
-          UPDATE customers c
-          SET 
-            address_line_1 = $1,
-            address_line_2 = $2,
-            city = $3,
-            pincode = $4,
-            landmark = $5,
-            updated_at = now()
-          FROM orders o
-          JOIN shipments s ON s.order_id = o.id
-          WHERE c.id = o.customer_id 
-            AND s.id = $6
-        `, [
-          input.newAddress.addressLine1,
-          input.newAddress.addressLine2 || null,
-          input.newAddress.city,
-          input.newAddress.pincode,
-          input.newAddress.landmark || null,
-          current.rows[0].shipment_id,
-        ]);
+        const cur = (await client.query<{ order_id: string; full_name: string; email: string | null; phone: string; state: string; company_name: string | null; alternate_phone: string | null }>(
+          'SELECT o.id AS order_id, c.full_name, c.email::text AS email, c.phone, c.state, c.company_name, c.alternate_phone FROM shipments s JOIN orders o ON o.id = s.order_id JOIN customers c ON c.id = o.customer_id WHERE s.id = $1 AND s.seller_id = $2', [current.rows[0].shipment_id, p.sellerId])).rows[0];
+        const a = input.newAddress; const pin = (await client.query<{ state: string }>('SELECT state FROM pincodes WHERE pincode = $1', [a.pincode])).rows[0];
+        const customerId = await customerIdFor(client, p.sellerId, { fullName: cur.full_name, email: cur.email, phone: cur.phone, addressLine1: a.addressLine1, addressLine2: a.addressLine2 || null, city: a.city, state: pin?.state ?? cur.state, pincode: a.pincode, companyName: cur.company_name, alternatePhone: cur.alternate_phone, landmark: a.landmark || null });
+        await client.query('UPDATE orders SET customer_id = $2, updated_at = now() WHERE id = $1 AND seller_id = $3', [cur.order_id, customerId, p.sellerId]);
       }
 
-      // Determine next state
-      let nextState: string;
-      let shipmentState: string;
-
-      if (input.resolutionAction === 'reattempt' || input.resolutionAction === 'delivery_rescheduled') {
-        nextState = 'reattempt_requested';
-        shipmentState = 'ndr'; // the courier has not moved: the parcel stays NDR (as the courier shows it) until the courier's next scan
-      } else if (input.resolutionAction === 'rto') {
-        nextState = 'rto_requested';
-        shipmentState = 'rto';
-      } else {
-        nextState = 'resolved';
-        shipmentState = 'ndr'; // address updated: the courier's next scan (out for delivery) moves it on, not our click
-      }
+      // The seller's answer is a REQUEST: the parcel stays where the courier says it is (also for RTO: no "returning" status and no return freight until the
+      // courier's own RTO scan; it may still deliver). Only the case moves on.
+      const nextState = input.resolutionAction === 'reattempt' || input.resolutionAction === 'delivery_rescheduled' ? 'reattempt_requested' : input.resolutionAction === 'rto' ? 'rto_requested' : 'resolved';
 
       // Update NDR case
       const result = await client.query(`
@@ -216,24 +189,7 @@ export async function ndrRoutes(app: FastifyInstance) {
         RETURNING *
       `, [nextState, input.resolutionAction, input.resolutionNotes || null, p.userId, caseId]);
 
-      // Update shipment state
-      await client.query(`
-        UPDATE shipments 
-        SET state = $1::shipment_state, updated_at = now(),
-            rto_initiated_at = CASE WHEN $1 = 'rto' THEN COALESCE(rto_initiated_at, now()) ELSE rto_initiated_at END
-        WHERE id = $2
-      `, [shipmentState, current.rows[0].shipment_id]);
-      if (shipmentState === 'rto') await chargeRtoOnce(client, p.sellerId, current.rows[0].shipment_id); // return freight, once
-
-      // Add shipment event
-      await client.query(`
-        INSERT INTO shipment_events (shipment_id, state, occurred_at, description, source)
-        VALUES ($1, $2::shipment_state, now(), $3, 'manual')
-      `, [
-        current.rows[0].shipment_id,
-        shipmentState,
-        input.resolutionNotes || `Seller requested ${input.resolutionAction}`,
-      ]);
+      await client.query(`INSERT INTO shipment_events (shipment_id, state, occurred_at, description, source) SELECT id, state, now(), $2, 'manual' FROM shipments WHERE id = $1`, [current.rows[0].shipment_id, input.resolutionNotes || `Seller requested ${input.resolutionAction}`]);
 
       // Record in attempt history
       await client.query(`
@@ -296,8 +252,6 @@ export async function ndrRoutes(app: FastifyInstance) {
           }
 
           const nextState = input.resolutionAction === 'reattempt' ? 'reattempt_requested' : 'rto_requested';
-          const shipmentState = input.resolutionAction === 'reattempt' ? 'ndr' : 'rto'; // a reattempt request changes nothing at the courier yet: the parcel stays NDR
-
           await client.query(`
             UPDATE ndr_cases 
             SET 
@@ -310,14 +264,7 @@ export async function ndrRoutes(app: FastifyInstance) {
             WHERE id = $5
           `, [nextState, input.resolutionAction, input.resolutionNotes || null, p.userId, caseId]);
 
-          await client.query(`
-            UPDATE shipments 
-            SET state = $1::shipment_state, updated_at = now(),
-                rto_initiated_at = CASE WHEN $1 = 'rto' THEN COALESCE(rto_initiated_at, now()) ELSE rto_initiated_at END
-            WHERE id = $2
-          `, [shipmentState, current.rows[0].shipment_id]);
-          if (shipmentState === 'rto') await chargeRtoOnce(client, p.sellerId, current.rows[0].shipment_id);
-
+          await client.query(`INSERT INTO shipment_events (shipment_id, state, occurred_at, description, source) SELECT id, state, now(), $2, 'manual' FROM shipments WHERE id = $1`, [current.rows[0].shipment_id, input.resolutionNotes || `Seller requested ${input.resolutionAction}`]); // a request: the parcel moves only with the courier's own scan
           shipmentOf.set(caseId, current.rows[0].shipment_id);
           results.push({ caseId, success: true });
         } catch (error) {
@@ -379,7 +326,7 @@ export async function ndrRoutes(app: FastifyInstance) {
       const total = Object.values(by).reduce((a, b) => a + b, 0);
       return {
         total, shipped: cohort.rows[0].shipped, shareOfShipmentsPct: pct(cohort.rows[0].hit, cohort.rows[0].shipped),
-        counts: { action_required: (by.new ?? 0) + (by.action_pending ?? 0), action_requested: by.redelivery_scheduled ?? 0, delivered: by.resolved ?? 0, new: by.new ?? 0, action_pending: by.action_pending ?? 0, redelivery_scheduled: by.redelivery_scheduled ?? 0, resolved: by.resolved ?? 0, rto: by.rto ?? 0 },
+        counts: { action_required: (by.new ?? 0) + (by.action_pending ?? 0), action_requested: (by.redelivery_scheduled ?? 0) + (by.rto_requested ?? 0), delivered: by.resolved ?? 0, new: by.new ?? 0, action_pending: by.action_pending ?? 0, redelivery_scheduled: by.redelivery_scheduled ?? 0, resolved: by.resolved ?? 0, rto: by.rto ?? 0 },
         codAtRiskPaise: Number(cod.rows[0].v),
         reasons: reasons.rows.map((r) => ({ reason: r.reason, count: Number(r.n), pct: pct(Number(r.n), total) })),
         couriers: couriers.rows.map((r) => ({ code: r.code, name: r.name, count: Number(r.n) })),

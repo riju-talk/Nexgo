@@ -1,3 +1,4 @@
+import { consigneeKey, customerIdFor, customerIdsFor } from '../lib/customers.js';
 import { assertNoOpenBooking } from '../lib/bookingAttempts.js';
 import { queueCodConfirmation } from '../lib/codConfirmation.js';
 import { normalizeState, sameState } from '../lib/indiaStates.js';
@@ -158,19 +159,22 @@ export async function operationsRoutes(app: FastifyInstance) {
     const p = getPrincipal(request); const orderId = uuid.parse((request.params as { orderId: string }).orderId);
     return withSellerTransaction(p.sellerId, async (client) => { const order = await client.query('SELECT * FROM orders WHERE id=$1 AND seller_id=$2', [orderId, p.sellerId]); if (!order.rows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 }); const items = await client.query('SELECT * FROM order_items WHERE order_id=$1 ORDER BY created_at', [orderId]); return { ...order.rows[0], items: items.rows }; });
   });
+  // Is the order being sent the one that already has this number? Same reference, buyer's phone, payment mode and amount. Anything else under the same number is a
+  // conflict the seller must see: it used to be discarded silently as "already in NEXGO" (ORD-002).
+  type Existing = { id: string; order_number: string; external_reference: string | null; payment_mode: string; total_paise: string; phone: string };
+  const sameOrder = (i: z.infer<typeof orderInput>, e: Existing) => e.order_number === i.orderNumber && (i.externalReference ?? i.orderNumber) === (e.external_reference ?? e.order_number)
+    && e.phone.replace(/\D/g, '').slice(-10) === i.customer.phone.replace(/\D/g, '').slice(-10) && e.payment_mode === i.paymentMode && Number(e.total_paise) === orderTotals(i).total;
   // One order in its own transaction. Shared by POST /v1/orders and POST /v1/orders/bulk, so both create orders exactly the same way.
   const createOrder = (p: ReturnType<typeof getPrincipal>, requestId: string, input: z.infer<typeof orderInput>) => withSellerTransaction(p.sellerId, async (client) => {
       const warehouse = await client.query('SELECT id FROM warehouses WHERE id=$1 AND seller_id=$2 AND is_active', [input.warehouseId, p.sellerId]); if (!warehouse.rows[0]) throw Object.assign(new Error('Active warehouse not found'), { statusCode: 422 });
       await checkLocation(client, input.customer.pincode, input.customer.state); // a pincode that belongs to another state is a typo, caught before any courier is asked
-      let customer = await client.query<{ id: string }>('SELECT id FROM customers WHERE seller_id=$1 AND phone=$2 AND pincode=$3 LIMIT 1', [p.sellerId, input.customer.phone, input.customer.pincode]);
-      const c = input.customer;
-      if (!customer.rows[0]) customer = await client.query<{ id: string }>(`INSERT INTO customers (seller_id,full_name,email,phone,address_line_1,address_line_2,city,state,pincode,company_name,alternate_phone,landmark) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`, [p.sellerId, c.fullName, c.email ?? null, c.phone, c.addressLine1, c.addressLine2 ?? null, c.city, c.state, c.pincode, c.companyName ?? null, c.alternatePhone ?? null, c.landmark ?? null]);
+      const c = input.customer; const customerId = await customerIdFor(client, p.sellerId, c);
       const t = orderTotals(input); const ch = input.charges; const pk = input.package;
       // A cancelled order must not block its own number: shipments are one per order for good, so the cancelled record is kept (with its history)
       // under a "-CXL" suffix and the fresh order takes the number. Without this a re-upload of cancelled orders was answered "already exists".
       await client.query(`UPDATE orders SET order_number = order_number || '-CXL-' || left(id::text, 6), external_reference = CASE WHEN external_reference IN ($2, $3) THEN external_reference || '-CXL-' || left(id::text, 6) ELSE external_reference END, updated_at = now()
         WHERE seller_id = $1 AND state = 'cancelled' AND (order_number = $2 OR external_reference = $3)`, [p.sellerId, input.orderNumber, input.externalReference ?? input.orderNumber]);
-      const result = await client.query(`INSERT INTO orders (seller_id,warehouse_id,customer_id,order_number,external_reference,order_flow,payment_mode,cod_amount_paise,subtotal_paise,total_weight_g,notes,state,package_length_mm,package_width_mm,package_height_mm,volumetric_weight_g,shipping_charges_paise,gift_wrap_paise,transaction_charges_paise,other_charges_paise,discount_paise,tax_rate_bps,tax_paise,total_paise) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'new',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`, [p.sellerId, input.warehouseId, customer.rows[0].id, input.orderNumber, input.externalReference ?? input.orderNumber, input.orderFlow, input.paymentMode, input.codAmountPaise, t.subtotal, t.deadWeight, input.notes ?? null, pk.lengthMm ?? null, pk.widthMm ?? null, pk.heightMm ?? null, t.volumetric, ch.shippingPaise, ch.giftWrapPaise, ch.transactionPaise, ch.otherPaise, ch.discountPaise, ch.taxRateBps, t.tax, t.total]);
+      const result = await client.query(`INSERT INTO orders (seller_id,warehouse_id,customer_id,order_number,external_reference,order_flow,payment_mode,cod_amount_paise,subtotal_paise,total_weight_g,notes,state,package_length_mm,package_width_mm,package_height_mm,volumetric_weight_g,shipping_charges_paise,gift_wrap_paise,transaction_charges_paise,other_charges_paise,discount_paise,tax_rate_bps,tax_paise,total_paise) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'new',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`, [p.sellerId, input.warehouseId, customerId, input.orderNumber, input.externalReference ?? input.orderNumber, input.orderFlow, input.paymentMode, input.codAmountPaise, t.subtotal, t.deadWeight, input.notes ?? null, pk.lengthMm ?? null, pk.widthMm ?? null, pk.heightMm ?? null, t.volumetric, ch.shippingPaise, ch.giftWrapPaise, ch.transactionPaise, ch.otherPaise, ch.discountPaise, ch.taxRateBps, t.tax, t.total]);
       if (input.channel !== 'single') { await client.query('UPDATE orders SET channel=$1 WHERE id=$2', [input.channel, result.rows[0].id]); result.rows[0].channel = input.channel; }
       await queueCodConfirmation(client, { sellerId: p.sellerId, orderId: result.rows[0].id, paymentMode: input.paymentMode, channel: input.channel, customerName: c.fullName, orderNumber: input.orderNumber });
       for (const item of input.items) await client.query('INSERT INTO order_items (order_id,product_id,sku,name,quantity,unit_price_paise,weight_g,hsn_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [result.rows[0].id, item.productId ?? null, item.sku, item.name, item.quantity, item.unitPricePaise, item.weightG, item.hsnCode ?? null]);
@@ -187,11 +191,11 @@ export async function operationsRoutes(app: FastifyInstance) {
     const whIds = [...new Set(inputs.map((i) => i.warehouseId))];
     const wh = await client.query('SELECT id FROM warehouses WHERE seller_id=$1 AND is_active AND id = ANY($2::uuid[])', [p.sellerId, whIds]);
     if (wh.rowCount !== whIds.length) throw FALLBACK;
-    const clash = await client.query<{ id: string; order_number: string; external_reference: string | null; state: string }>('SELECT id, order_number, external_reference, state FROM orders WHERE seller_id=$1 AND (order_number = ANY($2::text[]) OR external_reference = ANY($3::text[]))', [p.sellerId, numbers, refs]);
+    const clash = await client.query<Existing & { state: string }>('SELECT o.id, o.order_number, o.external_reference, o.state, o.payment_mode::text AS payment_mode, o.total_paise::text AS total_paise, c.phone FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.seller_id=$1 AND (o.order_number = ANY($2::text[]) OR o.external_reference = ANY($3::text[]))', [p.sellerId, numbers, refs]);
     const existingByNumber = new Map<string, string>(); const cancelled: string[] = [];
     for (const r of clash.rows) {
       if (r.state === 'cancelled') cancelled.push(r.id);
-      else if (numbers.includes(r.order_number) && refs[numbers.indexOf(r.order_number)] === (r.external_reference ?? r.order_number)) existingByNumber.set(r.order_number, r.id);
+      else if (numbers.includes(r.order_number) && sameOrder(inputs[numbers.indexOf(r.order_number)], r)) existingByNumber.set(r.order_number, r.id);
       else throw FALLBACK;
     }
     if (cancelled.length) await client.query(`UPDATE orders SET order_number = order_number || '-CXL-' || left(id::text, 6), external_reference = CASE WHEN external_reference IS NULL THEN NULL ELSE external_reference || '-CXL-' || left(id::text, 6) END, updated_at = now() WHERE id = ANY($1::uuid[])`, [cancelled]);
@@ -203,21 +207,10 @@ export async function operationsRoutes(app: FastifyInstance) {
     const out = new Map<string, { id: string; existing: boolean }>();
     for (const [n, id] of existingByNumber) out.set(n, { id, existing: true });
     if (fresh.length) {
-      const key = (phone: string, pin: string) => `${phone}|${pin}`;
-      const distinct = new Map(fresh.map((i) => [key(i.customer.phone, i.customer.pincode), i.customer]));
-      const customerIds = new Map<string, string>();
-      const have = await client.query<{ id: string; phone: string; pincode: string }>('SELECT c.id, c.phone, c.pincode FROM customers c JOIN unnest($2::text[], $3::text[]) AS k(phone, pincode) ON c.phone = k.phone AND c.pincode = k.pincode WHERE c.seller_id = $1 ORDER BY c.created_at', [p.sellerId, [...distinct.values()].map((c) => c.phone), [...distinct.values()].map((c) => c.pincode)]);
-      for (const r of have.rows) if (!customerIds.has(key(r.phone, r.pincode))) customerIds.set(key(r.phone, r.pincode), r.id);
-      const missing = [...distinct.entries()].filter(([k]) => !customerIds.has(k)).map(([, c]) => ({ full_name: c.fullName, email: c.email ?? null, phone: c.phone, address_line_1: c.addressLine1, address_line_2: c.addressLine2 ?? null, city: c.city, state: c.state, pincode: c.pincode, company_name: c.companyName ?? null, alternate_phone: c.alternatePhone ?? null, landmark: c.landmark ?? null }));
-      if (missing.length) {
-        const made = await client.query<{ id: string; phone: string; pincode: string }>(`INSERT INTO customers (seller_id,full_name,email,phone,address_line_1,address_line_2,city,state,pincode,company_name,alternate_phone,landmark)
-          SELECT $1, x.full_name, x.email, x.phone, x.address_line_1, x.address_line_2, x.city, x.state, x.pincode, x.company_name, x.alternate_phone, x.landmark
-          FROM jsonb_to_recordset($2::jsonb) AS x(full_name text, email text, phone text, address_line_1 text, address_line_2 text, city text, state text, pincode text, company_name text, alternate_phone text, landmark text) RETURNING id, phone, pincode`, [p.sellerId, JSON.stringify(missing)]);
-        for (const r of made.rows) customerIds.set(key(r.phone, r.pincode), r.id);
-      }
+      const customerIds = await customerIdsFor(client, p.sellerId, fresh.map((i) => i.customer));
       const rows = fresh.map((i) => {
         const t = orderTotals(i); const ch = i.charges; const pk = i.package;
-        return { warehouse_id: i.warehouseId, customer_id: customerIds.get(key(i.customer.phone, i.customer.pincode)), order_number: i.orderNumber, external_reference: i.externalReference ?? i.orderNumber, order_flow: i.orderFlow, payment_mode: i.paymentMode, cod_amount_paise: i.codAmountPaise, subtotal_paise: t.subtotal, total_weight_g: t.deadWeight, notes: i.notes ?? null, channel: i.channel, pl: pk.lengthMm ?? null, pw: pk.widthMm ?? null, ph: pk.heightMm ?? null, vol: t.volumetric, ship: ch.shippingPaise, gift: ch.giftWrapPaise, txn: ch.transactionPaise, other: ch.otherPaise, disc: ch.discountPaise, tax_bps: ch.taxRateBps, tax: t.tax, total: t.total };
+        return { warehouse_id: i.warehouseId, customer_id: customerIds.get(consigneeKey(i.customer)), order_number: i.orderNumber, external_reference: i.externalReference ?? i.orderNumber, order_flow: i.orderFlow, payment_mode: i.paymentMode, cod_amount_paise: i.codAmountPaise, subtotal_paise: t.subtotal, total_weight_g: t.deadWeight, notes: i.notes ?? null, channel: i.channel, pl: pk.lengthMm ?? null, pw: pk.widthMm ?? null, ph: pk.heightMm ?? null, vol: t.volumetric, ship: ch.shippingPaise, gift: ch.giftWrapPaise, txn: ch.transactionPaise, other: ch.otherPaise, disc: ch.discountPaise, tax_bps: ch.taxRateBps, tax: t.tax, total: t.total };
       });
       const created = await client.query<{ id: string; order_number: string }>(`INSERT INTO orders (seller_id,warehouse_id,customer_id,order_number,external_reference,order_flow,payment_mode,cod_amount_paise,subtotal_paise,total_weight_g,notes,state,channel,package_length_mm,package_width_mm,package_height_mm,volumetric_weight_g,shipping_charges_paise,gift_wrap_paise,transaction_charges_paise,other_charges_paise,discount_paise,tax_rate_bps,tax_paise,total_paise)
         SELECT $1, x.warehouse_id, x.customer_id, x.order_number, x.external_reference, x.order_flow, x.payment_mode::payment_mode, x.cod_amount_paise, x.subtotal_paise, x.total_weight_g, x.notes, 'new'::order_state, x.channel, x.pl, x.pw, x.ph, x.vol, x.ship, x.gift, x.txn, x.other, x.disc, x.tax_bps, x.tax, x.total
@@ -263,8 +256,12 @@ export async function operationsRoutes(app: FastifyInstance) {
         const e = error as { code?: string; statusCode?: number; message?: string };
         // Re-uploading a sheet that was only partly created is safe: an order number that already exists is reported as such (with its id), not as a failure.
         if (e.code === '23505') {
-          const existing = await withSellerTransaction(p.sellerId, (client) => client.query<{ id: string }>('SELECT id FROM orders WHERE seller_id=$1 AND order_number=$2 LIMIT 1', [p.sellerId, parsed.data.orderNumber])).catch(() => null);
-          if (existing?.rows[0]) results.push({ index, ok: true, existing: true, id: existing.rows[0].id });
+          const ref = parsed.data.externalReference ?? parsed.data.orderNumber;
+          const found = await withSellerTransaction(p.sellerId, (client) => client.query<Existing>('SELECT o.id, o.order_number, o.external_reference, o.payment_mode::text AS payment_mode, o.total_paise::text AS total_paise, c.phone FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.seller_id=$1 AND (o.order_number=$2 OR o.external_reference=$3) ORDER BY (o.order_number=$2) DESC LIMIT 1', [p.sellerId, parsed.data.orderNumber, ref])).catch(() => null);
+          const e0 = found?.rows[0];
+          if (e0 && sameOrder(parsed.data, e0)) results.push({ index, ok: true, existing: true, id: e0.id });
+          else if (e0 && e0.order_number === parsed.data.orderNumber) results.push({ index, ok: false, error: `Order number ${parsed.data.orderNumber} already exists with different details (customer, amount, payment or reference). Nothing was changed: use a new order number, or correct the existing order in Track.` });
+          else if (e0) results.push({ index, ok: false, error: `Reference ${ref} is already used by order ${e0.order_number}, which has different details. Use a new reference.` });
           else results.push({ index, ok: false, error: 'This order number already exists' });
         }
         else if (e.code === '23514' || (e.statusCode && e.statusCode < 500)) results.push({ index, ok: false, error: e.message || 'The order could not be created' });
@@ -291,11 +288,10 @@ export async function operationsRoutes(app: FastifyInstance) {
       if (input.paymentMode === 'cod' && input.codAmountPaise > Number(order.total_paise)) throw Object.assign(new Error('COD amount cannot exceed the order total'), { statusCode: 422 });
       const c = input.customer;
       await checkLocation(client, c.pincode, c.state);
-      let customer = await client.query<{ id: string }>('SELECT id FROM customers WHERE seller_id=$1 AND phone=$2 AND pincode=$3 AND full_name=$4 AND address_line_1=$5 LIMIT 1', [p.sellerId, c.phone, c.pincode, c.fullName, c.addressLine1]);
-      if (!customer.rows[0]) customer = await client.query<{ id: string }>(`INSERT INTO customers (seller_id,full_name,email,phone,address_line_1,address_line_2,city,state,pincode,company_name,alternate_phone,landmark) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`, [p.sellerId, c.fullName, c.email ?? null, c.phone, c.addressLine1, c.addressLine2 ?? null, c.city, c.state, c.pincode, c.companyName ?? null, c.alternatePhone ?? null, c.landmark ?? null]);
+      const customerId = await customerIdFor(client, p.sellerId, c);
       const pk = input.package;
       const updated = await client.query('UPDATE orders SET customer_id=$3, payment_mode=$4, cod_amount_paise=$5, total_weight_g=$6, package_length_mm=$7, package_width_mm=$8, package_height_mm=$9, volumetric_weight_g=$10, updated_at=now() WHERE id=$1 AND seller_id=$2 RETURNING *',
-        [orderId, p.sellerId, customer.rows[0].id, input.paymentMode, input.codAmountPaise, pk.weightG, pk.lengthMm, pk.widthMm, pk.heightMm, volumetricWeightG(pk.lengthMm, pk.widthMm, pk.heightMm)]);
+        [orderId, p.sellerId, customerId, input.paymentMode, input.codAmountPaise, pk.weightG, pk.lengthMm, pk.widthMm, pk.heightMm, volumetricWeightG(pk.lengthMm, pk.widthMm, pk.heightMm)]);
       await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.corrected', targetType: 'order', targetId: orderId, requestId: request.id });
       return updated.rows[0];
     });

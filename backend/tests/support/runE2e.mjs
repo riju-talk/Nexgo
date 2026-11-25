@@ -24,10 +24,10 @@ const LORRIGO = { LORRIGO_API_KEY: 'test', LORRIGO_BASE_URL: 'http://127.0.0.1:4
 const SHIPROCKET = { SHIPROCKET_EMAIL: 'api@test.example', SHIPROCKET_PASSWORD: 'pw', SHIPROCKET_BASE_URL: 'http://127.0.0.1:4666' };
 // Each suite: which aggregators are configured, and (for suites that need volume) which suite must run first in the same database.
 const SUITES = {
-  readiness: { env: LORRIGO }, concurrency: { env: LORRIGO }, reconcile: { env: { ...LORRIGO, RECONCILE_AFTER_SECONDS: '2', BOOKING_STALE_SECONDS: '10' } }, heartbeat: { env: { ...LORRIGO, QUEUES_IN_API: 'false', RECONCILE_AFTER_SECONDS: '2', BOOKING_STALE_SECONDS: '10' } }, tenancy: { env: LORRIGO },
+  readiness: { env: LORRIGO }, orders: { env: LORRIGO }, concurrency: { env: LORRIGO }, reconcile: { env: { ...LORRIGO, RECONCILE_AFTER_SECONDS: '2', BOOKING_STALE_SECONDS: '10' } }, heartbeat: { env: { ...LORRIGO, QUEUES_IN_API: 'false', RECONCILE_AFTER_SECONDS: '2', BOOKING_STALE_SECONDS: '10' } }, tenancy: { env: { ...LORRIGO, TRUST_PROXY: 'true', STORAGE_ENABLED: 'true', AWS_ENDPOINT_URL_S3: 'http://127.0.0.1:9', AWS_REGION: 'auto', AWS_ACCESS_KEY_ID: 'x', AWS_SECRET_ACCESS_KEY: 'x' } },
   speed: { env: LORRIGO }, cancel: { env: LORRIGO }, actions: { env: LORRIGO }, tracking: { env: LORRIGO }, notifications: { env: LORRIGO }, webhooks: { env: { ...LORRIGO, ...SHIPROCKET } },
   shiprocket: { env: SHIPROCKET }, failover: { env: { ...LORRIGO, ...SHIPROCKET } },
-  cod: { env: LORRIGO }, metrics: { env: LORRIGO }, manifests: { env: LORRIGO }, 'states-otp': { env: LORRIGO }, lazy: { env: LORRIGO }, adminLists: { env: LORRIGO, after: 'lazy' }, platform: { env: LORRIGO, after: 'lazy' },
+  cod: { env: LORRIGO }, metrics: { env: LORRIGO }, manifests: { env: LORRIGO }, 'states-otp': { env: LORRIGO }, lazy: { env: LORRIGO }, adminLists: { env: LORRIGO, after: 'lazy' }, limits: { env: LORRIGO }, platform: { env: LORRIGO, after: 'cancel' },
 };
 const BASE = {
   NODE_ENV: 'development', PORT: '4011', FRONTEND_ORIGIN: 'http://localhost:3021', COOKIE_SECURE: 'false',
@@ -79,7 +79,7 @@ for (const name of names) {
     const crashed = run.status !== 0 && !fail.length; const ok = pass > 0 && !fail.length && !crashed;
     if (!ok) bad += 1;
     console.log(`${ok ? 'ok  ' : 'BAD '} ${name.padEnd(14)} ${pass} passed, ${fail.length} failed${crashed ? `, CRASHED (${run.status ?? run.error?.code})` : ''}  ${Math.round((Date.now() - t0) / 1000)}s`);
-    if (!ok) console.log(text.split('\n').filter((l) => l.startsWith('FAIL ')).slice(0, 12).map((l) => '       ' + l.slice(0, 400)).join('\n') || ('       ' + text.trim().slice(-900)));
+    if (!ok) console.log(text.split('\n').filter((l) => l.startsWith('FAIL ')).slice(0, 12).map((l) => '       ' + l.slice(0, 1600)).join('\n') || ('       ' + text.trim().slice(-900)));
   } catch (e) { bad += 1; console.log(`BAD  ${name.padEnd(14)} ${String(e.message).slice(0, 700)}`); }
   finally { await stop(api); }
 }

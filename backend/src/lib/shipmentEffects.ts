@@ -32,7 +32,7 @@ export async function chargeRtoOnce(client: PoolClient, sellerId: string, shipme
  * back it moves to the RTO column. Cases a seller already actioned are left alone.
  */
 export async function closeNdrForState(client: PoolClient, shipmentId: string, state: string): Promise<void> {
-  if (state === 'delivered') await client.query("UPDATE ndr_cases SET state = 'resolved', resolved_at = COALESCE(resolved_at, now()), updated_at = now() WHERE shipment_id = $1 AND state IN ('open', 'reattempt_requested')", [shipmentId]);
+  if (state === 'delivered') await client.query("UPDATE ndr_cases SET state = 'resolved', resolved_at = COALESCE(resolved_at, now()), updated_at = now() WHERE shipment_id = $1 AND state IN ('open', 'reattempt_requested', 'rto_requested')", [shipmentId]);
   else if (state === 'rto') await client.query("UPDATE ndr_cases SET state = 'rto_requested', updated_at = now() WHERE shipment_id = $1 AND state IN ('open', 'reattempt_requested')", [shipmentId]);
 }
 

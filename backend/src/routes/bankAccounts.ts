@@ -18,11 +18,6 @@ const bankAccountInput = z.object({
   isPrimary: z.boolean().default(false),
 });
 
-const verifyAccountInput = z.object({
-  verificationMethod: z.enum(['penny_drop', 'manual', 'document']),
-  verificationReference: z.string().trim().max(200).optional(),
-});
-
 function principal(request: FastifyRequest) {
   if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
   return request.principal;
@@ -310,52 +305,8 @@ export async function bankAccountRoutes(app: FastifyInstance) {
   });
 
   // Verify bank account (typically done via penny drop or manual verification)
-  app.post('/v1/bank-accounts/:accountId/verify', { preHandler: requireSeller }, async (request) => {
-    const p = principal(request);
-    const accountId = uuid.parse((request.params as { accountId: string }).accountId);
-    const input = verifyAccountInput.parse(request.body);
-
-    return withSellerTransaction(p.sellerId, async (client) => {
-      const current = await client.query<{ verification_status: string }>(`
-        SELECT verification_status
-        FROM bank_accounts
-        WHERE id = $1 AND seller_id = $2
-        FOR UPDATE
-      `, [accountId, p.sellerId]);
-
-      if (!current.rows[0]) {
-        throw Object.assign(new Error('Bank account not found'), { statusCode: 404 });
-      }
-
-      if (current.rows[0].verification_status === 'verified') {
-        throw Object.assign(new Error('Account already verified'), { statusCode: 409 });
-      }
-
-      const result = await client.query(`
-        UPDATE bank_accounts 
-        SET 
-          verification_status = 'verified',
-          verified_at = now(),
-          verification_method = $1,
-          verification_reference = $2,
-          updated_at = now()
-        WHERE id = $3
-        RETURNING id, verification_status, verified_at, verification_method
-      `, [input.verificationMethod, input.verificationReference || null, accountId]);
-
-      await audit(client, {
-        sellerId: p.sellerId,
-        actorUserId: p.userId,
-        action: 'bank_account.verified',
-        targetType: 'bank_account',
-        targetId: accountId,
-        requestId: request.id,
-        metadata: { method: input.verificationMethod },
-      });
-
-      return result.rows[0];
-    });
-  });
+  // Verifying the account COD money is paid to is NEXGO's decision (KYC review), never the seller's own click.
+  app.post('/v1/bank-accounts/:accountId/verify', { preHandler: requireSeller }, async (_request, reply) => reply.code(403).send({ error: 'Bank accounts are verified by NEXGO during KYC review.', code: 'BANK_VERIFIED_BY_NEXGO' }));
 
   // Delete bank account
   app.delete('/v1/bank-accounts/:accountId', { preHandler: requireSeller }, async (request, reply) => {

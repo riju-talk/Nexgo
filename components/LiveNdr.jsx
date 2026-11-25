@@ -15,7 +15,7 @@ const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`,
 const FIELD = { height: 38, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
 const REASONS = { customer_unavailable: 'Customer Not Available', address_incomplete: 'Incomplete Address', address_incorrect: 'Wrong Address', refused_delivery: 'Customer Refused', payment_not_ready: 'Payment Not Ready', customer_requested_reschedule: 'Reschedule Requested', premises_closed: 'Premises Closed', customer_not_contactable: 'Not Contactable', incorrect_product: 'Incorrect Product', damaged_product: 'Damaged Product', other: 'Other' };
 const STATUS = {
-  new: ['New NDR', '#C2410C', '#F5822018'], action_pending: ['Action Pending', '#B45309', '#F5B30018'], redelivery_scheduled: ['Redelivery Scheduled', '#3877fc', '#3877fc14'], resolved: ['Resolved', T.GREEN, `${T.GREEN}18`], rto: ['RTO', T.RED, `${T.RED}16`],
+  new: ['New NDR', '#C2410C', '#F5822018'], action_pending: ['Action Pending', '#B45309', '#F5B30018'], rto_requested: ['RTO requested', '#B45309', '#F5B30018'], redelivery_scheduled: ['Redelivery Scheduled', '#3877fc', '#3877fc14'], resolved: ['Resolved', T.GREEN, `${T.GREEN}18`], rto: ['RTO', T.RED, `${T.RED}16`],
 };
 // Same four tabs as the courier-network consoles sellers know: what needs an answer, what was answered, what ended delivered, what went back.
 const TABS = [['all', 'All NDR'], ['action_required', 'Action Required'], ['action_requested', 'Action Requested'], ['delivered', 'Delivered'], ['rto', 'RTO']];
