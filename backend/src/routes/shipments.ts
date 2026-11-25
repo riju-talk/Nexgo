@@ -16,6 +16,7 @@ import { storage, STORAGE_NOT_CONNECTED } from '../lib/storage.js';
 import { config } from '../config.js';
 import { courierAdapter } from '../couriers/registry.js';
 import { sellerSafeMessage, BOOKING_PAUSED } from '../lib/sellerSafeError.js';
+import { READY_SQL, assertOrderReady } from '../lib/orderReadiness.js';
 import { pausedAggregatorIds } from '../lib/aggregatorBalance.js';
 import { invalidateMetrics } from '../lib/metrics.js';
 import { pickupPendingSql } from '../lib/metrics.js';
@@ -61,6 +62,7 @@ export type BookingContext = { input: z.infer<typeof bookingInput>; key: string;
 
 export async function prepareBooking(client: PoolClient, p: ReturnType<typeof principal>, input: z.infer<typeof bookingInput>, key: string): Promise<{ replay: true; shipment: Record<string, unknown> } | { replay: false; ctx: BookingContext }> {
     const previous = await client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]); if (previous.rows[0]) return { replay: true as const, shipment: previous.rows[0] };
+    await assertOrderReady(client, p.sellerId, input.orderId); // BEFORE any quote, wallet check or courier call (ORD-004, BOOK-010)
     const lane = await client.query<{ wc: string; ws: string; cc: string; cs: string }>(`SELECT w.city AS wc, w.state AS ws, COALESCE(p.city, c.city) AS cc, COALESCE(p.state, c.state) AS cs FROM orders o JOIN warehouses w ON w.id=o.warehouse_id JOIN customers c ON c.id=o.customer_id LEFT JOIN pincodes p ON p.pincode=c.pincode WHERE o.id=$1 AND o.seller_id=$2`, [input.orderId, p.sellerId]);
     const zone = lane.rows[0] ? laneZone({ city: lane.rows[0].wc, state: lane.rows[0].ws }, { city: lane.rows[0].cc, state: lane.rows[0].cs }) : 'rest_of_india';
     const rate = await client.query<Rate>(`SELECT cp.id AS provider_id,cp.code AS provider_code,cp.aggregator,cp.name AS provider_name,cs.id AS service_id,cs.code AS service_code,cs.display_name AS service_name,rcr.base_weight_g,rcr.base_price_paise,rcr.additional_weight_g,rcr.additional_price_paise,rcr.cod_fee_paise,rcr.fuel_surcharge_bps,rcr.cod_percent_bps,rcr.rto_base_price_paise,rcr.rto_additional_price_paise,o.payment_mode,o.cod_amount_paise,GREATEST(o.total_weight_g,o.volumetric_weight_g) AS total_weight_g,c.pincode AS destination_pincode FROM orders o JOIN customers c ON c.id=o.customer_id JOIN seller_courier_access sca ON sca.seller_id=o.seller_id AND sca.state='enabled' JOIN courier_services cs ON cs.id=sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id=cs.provider_id AND cp.integration_state='live' JOIN LATERAL (SELECT id FROM rate_cards WHERE seller_id=o.seller_id AND state='active' AND effective_from<=now() AND (effective_to IS NULL OR effective_to>now()) ORDER BY effective_from DESC LIMIT 1) card ON true JOIN rate_card_rates rcr ON rcr.rate_card_id=card.id AND rcr.service_id=cs.id AND rcr.zone_code IN ($5,'national') AND rcr.min_weight_g<=GREATEST(o.total_weight_g,o.volumetric_weight_g) WHERE o.id=$1 AND o.seller_id=$2 AND o.state='ready_to_ship' AND cp.code=$3 AND cs.code=$4 AND (o.payment_mode='prepaid' OR sca.cod_enabled=true) AND NOT EXISTS (SELECT 1 FROM seller_pincode_blocks sb WHERE sb.seller_id=o.seller_id AND (sb.service_id IS NULL OR sb.service_id=cs.id) AND sb.pincode=c.pincode) AND NOT EXISTS (SELECT 1 FROM platform_pincode_blocks pb WHERE pb.pincode=c.pincode) AND NOT EXISTS (SELECT 1 FROM courier_pincode_rules blocked WHERE blocked.service_id=cs.id AND blocked.rule_type='blocked' AND c.pincode LIKE blocked.destination_prefix || '%') AND (NOT EXISTS (SELECT 1 FROM courier_pincode_rules allowed WHERE allowed.service_id=cs.id AND allowed.rule_type='allowed') OR EXISTS (SELECT 1 FROM courier_pincode_rules allowed WHERE allowed.service_id=cs.id AND allowed.rule_type='allowed' AND c.pincode LIKE allowed.destination_prefix || '%')) ORDER BY (rcr.zone_code=$5) DESC, rcr.min_weight_g DESC LIMIT 1`, [input.orderId, p.sellerId, input.providerCode, input.serviceCode, zone]);
@@ -135,10 +137,8 @@ async function bookDetachedInner(p: ReturnType<typeof principal>, requestId: str
 }
 
 // ready = nothing is wrong with the order itself, so a courier can be assigned (same checks as diagnose() in lib/failedOrders.js).
-export const READY_SQL = `(char_length(btrim(c.full_name)) >= 2 AND right(regexp_replace(c.phone, '\\D', '', 'g'), 10) ~ '^[6-9][0-9]{9}$' AND char_length(btrim(COALESCE(c.address_line_1, ''))) >= 3
-                AND c.pincode ~ '^[0-9]{6}$' AND COALESCE(c.city, '') <> '' AND COALESCE(c.state, '') <> '' AND o.total_weight_g > 0
-                AND o.package_length_mm IS NOT NULL AND o.package_width_mm IS NOT NULL AND o.package_height_mm IS NOT NULL
-                AND (o.payment_mode <> 'cod' OR o.cod_amount_paise > 0))`;
+// READY_SQL and assertOrderReady live in lib/orderReadiness.ts (the order routes need them too); re-exported here for the modules that import them from this file.
+export { READY_SQL, assertOrderReady };
 
 /** The seller's courier priority list (Settings > Courier rules) as a ranking function: lower = tried first; unlisted couriers last. */
 export type CourierRank = (name: string, code: string) => number;
@@ -148,6 +148,12 @@ export async function bookDetached(p: ReturnType<typeof principal>, requestId: s
   catch (e) {
     const code = (e as { code?: string }).code;
     if (code === 'DEBIT_LIMIT_REACHED' || code === 'INSUFFICIENT_BALANCE') void notifyFunds(p.sellerId, (e as Error).message);
+    // Another request booked this very order a moment earlier (two tabs, a double click with a new key, the queue and a manual booking at once): the database allows
+    // one shipment per order, so this attempt loses. Say exactly that, with the AWB, instead of the generic "this record already exists" (BOOK-002).
+    if (code === '23505' && (e as { table?: string }).table === 'shipments') { // whichever unique index fired first (one per order, one per AWB, one per key)
+      const won = await db.query<{ awb: string; name: string }>('SELECT s.awb, cp.name FROM shipments s JOIN courier_providers cp ON cp.id = s.provider_id WHERE s.seller_id = $1 AND s.order_id = $2', [p.sellerId, input.orderId]).then((r) => r.rows[0]).catch(() => undefined);
+      throw Object.assign(new Error(won ? `This order was just booked by another request (AWB ${won.awb}, ${won.name}). Nothing was charged twice. Refresh Track to see it.` : 'This order was just booked by another request. Nothing was charged twice. Refresh Track to see it.'), { statusCode: 409, code: 'ORDER_ALREADY_BOOKED' });
+    }
     throw e;
   }
 }
@@ -176,6 +182,8 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
       if (!order.rows[0]) return { ok: false as const, error: 'Order not found' };
       if (order.rows[0].state === 'booked') return { ok: false as const, error: 'Already assigned to a courier' };
       if (!['new', 'ready_to_ship'].includes(order.rows[0].state)) return { ok: false as const, error: `Order is ${order.rows[0].state}` };
+      // An incomplete order is refused here, BEFORE its state changes and before any courier is asked (it used to be moved to ready_to_ship first).
+      try { await assertOrderReady(client, p.sellerId, orderId); } catch (e) { return { ok: false as const, error: sellerSafeMessage((e as Error).message) }; }
       if (order.rows[0].state === 'new') await client.query(`UPDATE orders SET state = 'ready_to_ship', updated_at = now() WHERE id = $1`, [orderId]);
       const services = await client.query<{ pcode: string; pname: string; scode: string; agg: string | null }>(
         `SELECT cp.code AS pcode, cp.name AS pname, cs.code AS scode, cp.aggregator AS agg FROM seller_courier_access sca JOIN courier_services cs ON cs.id = sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id = cs.provider_id AND cp.integration_state = 'live' WHERE sca.seller_id = $1 ORDER BY cp.name, cs.display_name`, [p.sellerId]);

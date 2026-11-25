@@ -105,7 +105,8 @@ app.setErrorHandler((error, request, reply) => {
     const errCode = (error as { code?: unknown }).code;
     // Outside the admin panel nothing may name the courier aggregator, whatever raised the error.
     const text = request.url.startsWith('/v1/admin') ? (error as Error).message : sellerSafeMessage((error as Error).message);
-    return reply.code((error as { statusCode: number }).statusCode).send({ error: text, ...(typeof errCode === 'string' && /^[A-Z_]+$/.test(errCode) ? { code: errCode } : {}) });
+    const issues = (error as { issues?: unknown }).issues; // field-level problems with the request, e.g. an incomplete order (lib/orderReadiness.ts)
+    return reply.code((error as { statusCode: number }).statusCode).send({ error: text, ...(typeof errCode === 'string' && /^[A-Z_]+$/.test(errCode) ? { code: errCode } : {}), ...(Array.isArray(issues) && issues.length ? { issues } : {}) });
   }
   request.log.error(error);
   return reply.code((error as { statusCode?: number }).statusCode || 500).send({ error: 'INTERNAL_ERROR' });

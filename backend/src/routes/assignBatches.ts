@@ -5,6 +5,7 @@ import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
 import { requireOnboarded } from '../lib/onboarding.js';
 import { requireSeller } from './seller.js';
+import { READY_SQL } from './shipments.js';
 
 /**
  * Queue courier assignment instead of doing it inside the request:
@@ -35,11 +36,15 @@ export async function assignBatchRoutes(app: FastifyInstance) {
     const input = z.object({ orderIds: z.array(uuid).min(1).max(MAX_ORDERS), providerCode: code.optional(), serviceCode: code.optional() }).parse(request.body);
     const p = principal(request);
     const ids = [...new Set(input.orderIds)];
+    let notReady: string[] = [];
     const created = await withSellerTransaction(p.sellerId, async (client) => {
       // Only this seller's orders that still have no courier.
-      const eligible = await client.query<{ id: string }>(
-        `SELECT o.id FROM orders o WHERE o.seller_id = $1 AND o.id = ANY($2::uuid[]) AND o.state IN ('new', 'ready_to_ship')
+      const eligible = await client.query<{ id: string; ready: boolean }>(
+        `SELECT o.id, ${READY_SQL} AS ready FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.seller_id = $1 AND o.id = ANY($2::uuid[]) AND o.state IN ('new', 'ready_to_ship')
            AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id = o.id)`, [p.sellerId, ids]);
+      // Incomplete orders are NOT queued (the booking would refuse them anyway): they come back as `notReady` so the seller can fix them (ORD-004).
+      notReady = eligible.rows.filter((r) => !r.ready).map((r) => r.id);
+      eligible.rows = eligible.rows.filter((r) => r.ready);
       if (!eligible.rows.length) return { batchId: null as string | null, queued: 0 };
       const batch = await client.query<{ id: string }>(
         `INSERT INTO assign_batches (seller_id, created_by, provider_code, service_code, total) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
@@ -56,7 +61,7 @@ export async function assignBatchRoutes(app: FastifyInstance) {
       return { batchId, queued };
     });
     const skipped = ids.length - created.queued;
-    return reply.code(created.batchId ? 202 : 200).send({ id: created.batchId, queued: created.queued, skipped });
+    return reply.code(created.batchId ? 202 : 200).send({ id: created.batchId, queued: created.queued, skipped, notReady: notReady.length, notReadyIds: notReady.slice(0, 200) });
   });
 
   app.get('/v1/shipments/assign-batch/active', { preHandler: requireSeller }, async (request) => {

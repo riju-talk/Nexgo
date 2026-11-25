@@ -9,6 +9,7 @@ import { audit } from '../lib/audit.js';
 import { volumetricWeightG } from '../lib/money.js';
 import { requireSeller } from './seller.js';
 import { requireOnboarded } from '../lib/onboarding.js';
+import { assertOrderReady } from '../lib/orderReadiness.js';
 
 const uuid = z.string().uuid();
 const pincode = z.string().regex(/^\d{6}$/);
@@ -66,6 +67,8 @@ function orderTotals(input: z.infer<typeof orderInput>) {
   const volumetric = lengthMm && widthMm && heightMm ? volumetricWeightG(lengthMm, widthMm, heightMm) : 0;
   return { subtotal, tax, total, deadWeight: input.package.weightG ?? itemWeight, volumetric };
 }
+// The states a SELLER may set by hand. The others (booked, returned) are set by the system as a courier acts.
+const SELLER_SETTABLE = new Set(['draft', 'new', 'ready_to_ship', 'cancelled']);
 const transitions: Record<string, readonly string[]> = { draft: ['new', 'cancelled'], new: ['ready_to_ship', 'cancelled'], ready_to_ship: ['booked', 'cancelled'], booked: ['returned'], cancelled: [], returned: [] };
 
 function getPrincipal(request: FastifyRequest) { if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 }); return request.principal; }
@@ -320,6 +323,18 @@ export async function operationsRoutes(app: FastifyInstance) {
   });
   app.patch('/v1/orders/:orderId/state',{ preHandler: requireSeller }, async (request) => {
     const p = getPrincipal(request); const orderId = uuid.parse((request.params as { orderId: string }).orderId); const { state } = z.object({ state: z.enum(['draft', 'new', 'ready_to_ship', 'booked', 'cancelled', 'returned']) }).parse(request.body);
-    return withSellerTransaction(p.sellerId, async (client) => { const current = await client.query<{ state: string }>('SELECT state FROM orders WHERE id=$1 AND seller_id=$2 FOR UPDATE', [orderId, p.sellerId]); if (!current.rows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 }); if (!transitions[current.rows[0].state].includes(state)) throw Object.assign(new Error(`Cannot transition order from ${current.rows[0].state} to ${state}`), { statusCode: 409 }); const updated = await client.query(`UPDATE orders SET state=$1::order_state,cancelled_at=CASE WHEN $1::order_state='cancelled'::order_state THEN now() ELSE cancelled_at END,updated_at=now() WHERE id=$2 RETURNING *`, [state, orderId]); await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.state_changed', targetType: 'order', targetId: orderId, requestId: request.id, metadata: { from: current.rows[0].state, to: state } }); return updated.rows[0]; });
+    return withSellerTransaction(p.sellerId, async (client) => {
+      const current = await client.query<{ state: string }>('SELECT state FROM orders WHERE id=$1 AND seller_id=$2 FOR UPDATE', [orderId, p.sellerId]);
+      if (!current.rows[0]) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      // `booked` and `returned` belong to the system: an order is booked only when a courier has booked it (a shipment with an AWB exists) and returned only from
+      // tracking. A seller used to be able to set them directly: the order then had no courier, no AWB and no debit, and vanished from every list.
+      if (!SELLER_SETTABLE.has(state)) throw Object.assign(new Error('An order becomes "booked" only when a courier books it. Use Book now or Assign courier instead.'), { statusCode: 409, code: 'ORDER_STATE_SYSTEM_ONLY' });
+      if (!transitions[current.rows[0].state].includes(state)) throw Object.assign(new Error(`Cannot transition order from ${current.rows[0].state} to ${state}`), { statusCode: 409, code: 'ORDER_TRANSITION_NOT_ALLOWED' });
+      if (state === 'ready_to_ship') await assertOrderReady(client, p.sellerId, orderId); // an incomplete order must not be marked ready (ORD-004)
+      if (state === 'cancelled' && (await client.query('SELECT 1 FROM shipments WHERE order_id=$1 LIMIT 1', [orderId])).rows[0]) throw Object.assign(new Error('This order has a shipment. Cancel the shipment instead; the order follows it.'), { statusCode: 409, code: 'ORDER_HAS_SHIPMENT' });
+      const updated = await client.query(`UPDATE orders SET state=$1::order_state,cancelled_at=CASE WHEN $1::order_state='cancelled'::order_state THEN now() ELSE cancelled_at END,updated_at=now() WHERE id=$2 RETURNING *`, [state, orderId]);
+      await audit(client, { sellerId: p.sellerId, actorUserId: p.userId, action: 'order.state_changed', targetType: 'order', targetId: orderId, requestId: request.id, metadata: { from: current.rows[0].state, to: state } });
+      return updated.rows[0];
+    });
   });
 }
