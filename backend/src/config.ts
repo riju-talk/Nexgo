@@ -26,6 +26,7 @@ const schema = z.object({
   ASSIGN_PROBE_SECONDS: z.coerce.number().int().min(1).max(3600).default(60), // while every aggregator refuses bookings, ONE order is tried this often (it finds out when they accept again)
   AGGREGATOR_LOW_BALANCE: z.coerce.number().min(0).default(3000), // rupees: below this an admin is warned that the courier network wallet needs a top-up
   TRACKING_POLL_MINUTES: z.coerce.number().int().min(0).max(240).default(10),
+  TRACKING_POLL_BATCH: z.coerce.number().int().min(10).max(5000).default(200), // aggregators that can only be asked per AWB (Shiprocket): parcels asked per round; a bigger fleet is covered over several rounds
   // Background courier assignment (lib/assignQueue.ts): bookings in flight per process, and per seller.
   ASSIGN_WORKERS: z.coerce.number().int().min(1).max(128).default(64),
   ASSIGN_PER_SELLER: z.coerce.number().int().min(1).max(64).default(32),

@@ -156,6 +156,20 @@ fake.mode.nobalance = false; fake.mode.balance = 5000; // the admin topped the w
 const r9 = await until(b9, (b) => !!b.finished_at, 90000);
 T('After the top-up all 15 book by themselves (no click) and nobody was charged twice', r9 && r9.assigned === 15 && r9.failed === 0, JSON.stringify(r9 && { assigned: r9.assigned, failed: r9.failed, paused: r9.paused }));
 
+// ---------------- 10. THE 2026-11-25 INCIDENT: the wallet reads NEGATIVE (-19,105 rupees) but the aggregator keeps booking on its credit limit.
+// A negative balance is information only. Nothing may be held back: every order must book, none paused, no trial-booking wait.
+fake.mode.nobalance = false; fake.mode.balance = -19105;
+await db.query("UPDATE courier_aggregators SET last_refused_at = NULL, last_ok_at = NULL WHERE code = 'lorrigo'"); await sleep(11000); // the shared state is re-read at most every 10 s
+orders = await makeOrders(20);
+const b10 = await queueBatch(orders);
+const r10 = await until(b10, (b) => !!b.finished_at, 60000);
+T('Negative wallet (-19,105) but the aggregator accepts: all 20 orders BOOK, none paused, none failed', r10 && r10.assigned === 20 && r10.failed === 0 && r10.paused === 0, JSON.stringify(r10 && { assigned: r10.assigned, failed: r10.failed, paused: r10.paused }));
+const sum10 = (await call('GET', '/v1/shipments/summary')).j;
+T('...and Track does NOT tell the seller booking is paused', sum10.bookingPaused === false, JSON.stringify({ bookingPaused: sum10.bookingPaused }));
+const refusedRow = (await db.query("SELECT last_refused_at FROM courier_aggregators WHERE code = 'lorrigo'")).rows[0];
+T('...and no refusal was recorded for the aggregator', refusedRow.last_refused_at === null, String(refusedRow.last_refused_at));
+
+
 console.log(out.join('\n'));
 console.log(`\n${out.filter((x) => x.startsWith('PASS')).length}/${out.length} passed`);
 fake.close(); await db.end();

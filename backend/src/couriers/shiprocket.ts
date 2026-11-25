@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { sellerSafeMessage, BOOKING_PAUSED } from '../lib/sellerSafeError.js';
 import { config } from '../config.js';
 import { aggregatorLimiter } from './aggregatorLimiterShared.js';
-import { markRefused, markWorking } from '../lib/aggregatorRefusals.js';
+import { isBalanceRefusal, markRefused, markWorking } from '../lib/aggregatorRefusals.js';
 import { db } from '../db/client.js';
 import type { BookingDetails, CourierAdapter, CourierBookingRequest, CourierBookingResult } from './types.js';
 
@@ -72,8 +72,6 @@ function validateWarehouse(w: BookingDetails['warehouse']) {
   if (w.contactName.trim().length < 2) throw invalid(`The pickup warehouse "${w.name}" needs a contact person.`);
 }
 
-/** The platform's prepaid wallet is empty: every booking is refused for every seller (same handling as the other aggregator, see lib/assignQueue.ts). */
-const OUT_OF_BALANCE = /insufficient|low (wallet )?balance|balance (is )?low|recharge|wallet/i;
 
 // One login per credentials, shared by every booking: Shiprocket tokens last days, logging in for each call would be slow and could be rate limited.
 const TOKEN_TTL_MS = 20 * 3_600_000; // the documentation says 240 h in one place and 24 h in another: refreshed well inside the shorter one (and on any 401)
@@ -273,14 +271,14 @@ export class ShiprocketAdapter implements CourierAdapter {
     try { assigned = await this.call('POST', '/courier/assign/awb', { shipment_id: order.shipmentId, courier_id: d.externalServiceId }); }
     catch (e) {
       if (e instanceof ShiprocketError && e.statusCode === 502) { const after = await this.readAwb(order.orderId); if (after) return result(after); } // timeout / 5xx: Shiprocket may have booked anyway
-      if (e instanceof ShiprocketError && OUT_OF_BALANCE.test(e.detail)) throw outOfBalance();
+      if (e instanceof ShiprocketError && isBalanceRefusal(e.detail)) throw await outOfBalance();
       throw e;
     }
     // A 200 can still be a refusal: { awb_assign_status: 0, message: "..." }.
     const awb = firstString(assigned, ['response.data.awb_code', 'data.awb_code', 'awb_code']) ?? findByKey(assigned, /^awb(_?code)?$/i);
     if (!awb) {
       const message = isObj(assigned) ? errorText(assigned, 200) : '';
-      if (OUT_OF_BALANCE.test(message)) throw outOfBalance();
+      if (isBalanceRefusal(message)) throw await outOfBalance();
       const again = await this.readAwb(order.orderId); if (again) return result(again); // "already assigned"
       if (/not serviceable|serviceab|pincode/i.test(message)) throw lane(`This courier cannot take this parcel. ${message}`.slice(0, 200));
       throw new ShiprocketError(`Shiprocket did not assign an AWB${message ? `: ${message}` : ''}.`, message ? 422 : 502);
@@ -317,9 +315,9 @@ export class ShiprocketAdapter implements CourierAdapter {
 
 function platformDomain(): string { try { return new URL(config.FRONTEND_ORIGIN).hostname || 'mynexgo.com'; } catch { return 'mynexgo.com'; } }
 function lane(message: string): ShiprocketError { const e = new ShiprocketError(message, 422); e.laneRefusal = true; return e; }
-function outOfBalance(): ShiprocketError {
+async function outOfBalance(): Promise<ShiprocketError> {
   console.error('Shiprocket refused a booking for balance: top the wallet up to resume bookings.');
-  void markRefused('shiprocket'); // recorded for every process: bookings are on hold until Shiprocket accepts again
+  await markRefused('shiprocket'); // awaited: the hold is recorded for every process BEFORE this booking reports its failure (no race with the next attempt)
   return new ShiprocketError(BOOKING_PAUSED, 503, 402); // every courier on this aggregator shares that balance: stop at once, the queue keeps the orders and books them after a top-up
 }
 function availableCouriers(res: unknown): Json[] {

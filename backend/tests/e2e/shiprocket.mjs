@@ -107,7 +107,7 @@ T('Cancelling again refunds nothing more', (await wallet()) === w0 + Number(s5.s
 // ---- 5. the tracking poll (safety net) updates a parcel without any webhook
 const a6 = ships[5].awb;
 fake.mode.tracking = { track_status: 1, shipment_status: 7, shipment_track: [{ current_status: 'Delivered' }], shipment_track_activities: scans(['2026-11-20 10:00:00', 6, 'SHIPPED', 'Picked up'], ['2026-11-23 12:00:00', 7, 'DELIVERED', 'Delivered to customer']) };
-const env = { ...process.env, DATABASE_URL: 'postgresql://nx@127.0.0.1:5544/nxd', SHIPROCKET_EMAIL: 'api@test.example', SHIPROCKET_PASSWORD: 'pw', SHIPROCKET_BASE_URL: 'http://127.0.0.1:4666', SHIPROCKET_WEBHOOK_TOKEN: HOOK, NODE_ENV: 'development' };
+const env = { ...process.env, TRACKING_POLL_BATCH: '5000', /* this throwaway database holds hundreds of live parcels from earlier runs: ask about all of them in one round */ DATABASE_URL: 'postgresql://nx@127.0.0.1:5544/nxd', SHIPROCKET_EMAIL: 'api@test.example', SHIPROCKET_PASSWORD: 'pw', SHIPROCKET_BASE_URL: 'http://127.0.0.1:4666', SHIPROCKET_WEBHOOK_TOKEN: HOOK, NODE_ENV: 'development' };
 const polled = (await run(`npx tsx -e "import('./src/lib/trackingPoll.ts').then((m) => m.pollOnce({ error: console.error, warn: () => {}, info: () => {} })).then((n) => { console.log('POLLED ' + n); process.exit(0); })"`, { cwd: new URL('../..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), encoding: 'utf8', env })).stdout;
 T('The tracking poll asked Shiprocket per AWB and delivered the parcel', /POLLED \d+/.test(polled) && (await shipRow(a6)).state === 'delivered' && (fake.stats.calls['GET /courier/track/awb'] || 0) >= 1, (polled.match(/POLLED \d+/) || [''])[0]);
 fake.mode.tracking = null;

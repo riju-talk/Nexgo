@@ -92,10 +92,11 @@ export async function pausedAggregatorIds(): Promise<Set<string>> {
 /** True only when EVERY aggregator that has a live courier is refusing: then nothing can be booked anywhere. One aggregator that accepts keeps bookings going. */
 export async function allBookingPaused(): Promise<boolean> {
   // Only aggregators that actually have a live courier count: credentials saved for one nobody uses must not keep the others' pause from closing.
-  const inUse = await aggregatorsInUse();
-  const configured = allPlugins().filter((p) => isConfigured(p.id) && inUse.has(p.id));
+  // An aggregator that is refusing right now is in use by definition, so it counts even if the (cached) list of live couriers does not know about it yet:
+  // a courier added within the last minute used to be ignored, and the seller was not told that booking was paused.
+  const [inUse, refusing] = await Promise.all([aggregatorsInUse(), refusingAggregators()]);
+  const configured = allPlugins().filter((p) => isConfigured(p.id) && (inUse.has(p.id) || refusing.has(p.id)));
   if (!configured.length) return false;
-  const refusing = await refusingAggregators();
   return configured.every((p) => refusing.has(p.id));
 }
 

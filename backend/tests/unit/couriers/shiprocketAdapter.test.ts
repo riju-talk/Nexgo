@@ -89,6 +89,25 @@ describe('Shiprocket adapter: booking', () => {
     fakeShiprocket(happy({ 'POST /courier/assign/awb': () => json({ message: 'Insufficient wallet balance. Please recharge your wallet.' }, 422) }));
     await expect(new ShiprocketAdapter('api-e@example.com', 'pw', 'https://sr-e.test').book(request())).rejects.toMatchObject({ statusCode: 503, message: BOOKING_PAUSED });
   });
+  // BOOK-004: the hold must be on record (for the API AND the worker) before this booking reports its failure.
+  it('records the aggregator refusal BEFORE the booking fails (awaited, not fire-and-forget)', async () => {
+    fakeShiprocket(happy({ 'POST /courier/assign/awb': () => json({ message: 'Insufficient wallet balance. Please recharge your wallet.' }, 422) }));
+    dbQuery.mockClear();
+    const err = await new ShiprocketAdapter('api-w@example.com', 'pw', 'https://sr-w.test').book(request({ details: details({ pickupHubId: 'NX-hub' }) })).catch((e) => e);
+    expect(err.statusCode).toBe(503);
+    expect(dbQuery.mock.calls.some((c) => /UPDATE courier_aggregators SET last_refused_at/.test(String(c[0])) && (c[1] as string[])[0] === 'shiprocket')).toBe(true);
+  });
+
+  // Over-broad matching used to pause every seller's bookings on a provider because of an unrelated message.
+  it('an unrelated refusal ("Insufficient address") is a normal 422 for that order and does NOT pause the provider', async () => {
+    fakeShiprocket(happy({ 'POST /courier/assign/awb': () => json({ message: 'Insufficient address details for this pincode' }, 422) }));
+    dbQuery.mockClear();
+    const err = await new ShiprocketAdapter('api-x@example.com', 'pw', 'https://sr-x.test').book(request({ details: details({ pickupHubId: 'NX-hub' }) })).catch((e) => e);
+    expect(err.statusCode).toBe(422);
+    expect(err.message).not.toBe(BOOKING_PAUSED);
+    expect(dbQuery.mock.calls.some((c) => /last_refused_at/.test(String(c[0])))).toBe(false);
+  });
+
   it('the same refusal inside a 200 answer ({ awb_assign_status: 0 }) is also "paused"', async () => {
     fakeShiprocket(happy({ 'POST /courier/assign/awb': () => json({ awb_assign_status: 0, message: 'Low wallet balance' }) }));
     await expect(new ShiprocketAdapter('api-f@example.com', 'pw', 'https://sr-f.test').book(request())).rejects.toMatchObject({ statusCode: 503, message: BOOKING_PAUSED });
@@ -182,5 +201,32 @@ describe('Shiprocket adapter: cancel, balance, services, tracking', () => {
     const out = await new ShiprocketAdapter('api-v@example.com', 'pw', 'https://sr-v.test').trackAwb('SR1');
     expect(out).toEqual({ tracking_data: { shipment_status: 6 } });
     expect(calls.some((c) => c.path === '/courier/track/awb/SR1')).toBe(true);
+  });
+});
+
+describe('Shiprocket tracking poll: a fleet bigger than one round is still covered (TRK-001)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('rotates through every live AWB: nothing is left out for ever, nothing is asked twice in one round', async () => {
+    const { shiprocket } = await import('../../../src/couriers/aggregators/shiprocket/index.js');
+    const asked: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      const url = new URL(input);
+      if (url.pathname.endsWith('/auth/login')) return json({ token: 'tok' });
+      const m = url.pathname.match(/\/courier\/track\/awb\/(.+)$/); if (m) asked.push(decodeURIComponent(m[1]));
+      return json({ tracking_data: { track_status: 0 } });
+    }));
+    const wanted = new Set(Array.from({ length: 450 }, (_, i) => `AWB${String(i).padStart(4, '0')}`));
+    const creds = { email: 'poll@example.com', password: 'pw', baseUrl: 'https://sr-poll.test' };
+    const perRound: string[][] = [];
+    for (let round = 0; round < 3; round++) { asked.length = 0; await shiprocket.poll!(creds, wanted); perRound.push([...asked]); }
+    expect(perRound[0]).toHaveLength(200);
+    expect(new Set(perRound[0]).size).toBe(200); // no AWB twice in one round
+    expect(new Set(perRound.flat()).size).toBe(450); // three rounds cover all 450
+  });
+  it('nothing to ask about is no work and no network call', async () => {
+    const { shiprocket } = await import('../../../src/couriers/aggregators/shiprocket/index.js');
+    const f = vi.fn(); vi.stubGlobal('fetch', f);
+    expect(await shiprocket.poll!({ email: 'a@b.co', password: 'x' }, new Set())).toEqual([]);
+    expect(f).not.toHaveBeenCalled();
   });
 });

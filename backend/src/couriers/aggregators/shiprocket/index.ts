@@ -80,7 +80,7 @@ export function fromTracking(awb: string, body: unknown): Item | null {
 }
 
 let pollCursor = 0; // the poll asks for a slice of the live AWBs each time and moves on, so a big fleet is covered over a few rounds
-const POLL_BATCH = 60;
+const POLL_BATCH = () => config.TRACKING_POLL_BATCH;
 
 export const shiprocket: AggregatorPlugin = {
   id: 'shiprocket',
@@ -98,12 +98,12 @@ export const shiprocket: AggregatorPlugin = {
     if (!credentials.email || !credentials.password) throw Object.assign(new Error('Shiprocket is not configured on this server.'), { statusCode: 503, expose: true });
     return new ShiprocketAdapter(credentials.email, credentials.password, credentials.baseUrl || 'https://apiv2.shiprocket.in');
   },
-  // Shiprocket has no list of recent orders with tracking: each live AWB is asked for individually (a rotating slice of POLL_BATCH per round).
+  // Shiprocket has no list of recent orders with tracking: each live AWB is asked for individually (a rotating slice of TRACKING_POLL_BATCH, default 200, per round).
   async poll(credentials, wanted) {
     if (!wanted?.size) return [];
     const adapter = new ShiprocketAdapter(credentials.email, credentials.password, credentials.baseUrl || 'https://apiv2.shiprocket.in');
-    const all = [...wanted]; const start = pollCursor % all.length; pollCursor += POLL_BATCH;
-    const slice = [...all.slice(start), ...all.slice(0, start)].slice(0, POLL_BATCH);
+    const all = [...wanted]; const start = pollCursor % all.length; pollCursor += POLL_BATCH();
+    const slice = [...all.slice(start), ...all.slice(0, start)].slice(0, POLL_BATCH());
     const out: NormalizedUpdate[] = [];
     for (let i = 0; i < slice.length; i += 4) {
       const part = await Promise.all(slice.slice(i, i + 4).map(async (awb) => {

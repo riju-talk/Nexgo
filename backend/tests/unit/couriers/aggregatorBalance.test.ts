@@ -21,13 +21,16 @@ describe('courier network wallet balance', () => {
     expect(await new LorrigoAdapter('key', 'https://lorrigo.test/api').balance()).toBeNull();
   });
 
-  it('classifies the balance: empty at or below zero, low under the warning level, otherwise ok', async () => {
+  // The balance is INFORMATION: Lorrigo books on a credit limit (it showed -19,105 rupees while bookings went through), so a negative number must never
+  // be reported as "refusing" or stop a booking. Only a real refusal does that (aggregatorRefusals.ts).
+  it('classifies the balance as information only: low under the warning level (negative included), otherwise ok', async () => {
     const { balanceStatus } = await import('../../../src/lib/aggregatorBalance.js');
-    expect(balanceStatus(-6237, 3000)).toBe('empty');
-    expect(balanceStatus(0, 3000)).toBe('empty');
+    expect(balanceStatus(-19105, 3000)).toBe('low');
+    expect(balanceStatus(0, 3000)).toBe('low');
     expect(balanceStatus(2999, 3000)).toBe('low');
     expect(balanceStatus(3000, 3000)).toBe('ok');
     expect(balanceStatus(null, 3000)).toBe('unknown');
     expect(balanceStatus(Number.NaN, 3000)).toBe('unknown');
+    for (const n of [-19105, 0, 5, 1e9, null, Number.NaN]) expect(['ok', 'low', 'unknown']).toContain(balanceStatus(n as number | null, 3000)); // never 'refusing'
   });
 });

@@ -53,5 +53,18 @@ export function markWorking(id: string): void {
   void db.query('UPDATE courier_aggregators SET last_ok_at = now() WHERE code = $1', [id]).catch(() => {});
 }
 
+/**
+ * Is this aggregator error text a refusal because the aggregator's WALLET / credit is used up? Deliberately narrow: a message that merely contains the word
+ * "wallet" or "insufficient" (insufficient address, wallet mentioned in a pincode note...) must NOT pause every seller's bookings on that aggregator.
+ */
+export function isBalanceRefusal(message: string): boolean {
+  const t = String(message ?? '');
+  return /insufficient\s+(wallet\s+)?(balance|funds|credit)/i.test(t)
+    || /(wallet|account)\s+(balance\s+)?(is\s+)?(low|insufficient|exhausted|empty)/i.test(t)
+    || /low\s+(wallet\s+)?balance/i.test(t)
+    || /(please\s+)?recharge\s+(your\s+)?(wallet|account)/i.test(t)
+    || /not\s+enough\s+(wallet\s+)?(balance|funds|credit)/i.test(t);
+}
+
 /** Tests: forget everything held in memory. */
 export function resetRefusalCache(): void { cache = null; flight = null; lastOkWrite.clear(); }
