@@ -5,7 +5,7 @@ import { config } from '../config.js';
 // registered (so it can never drift), and Swagger UI is loaded from a CDN. No extra dependency.
 type RouteInfo = { method: string; url: string };
 
-const PUBLIC = [/^\/$/, /^\/docs$/, /^\/openapi\.json$/, /^\/health$/, /^\/ready$/, /^\/v1\/auth\/(login|signup|forgot-password|reset-password)$/, /^\/v1\/admin\/auth\/(login|mfa)$/, /^\/v1\/locations\//, /^\/v1\/webhooks\//, /^\/v1\/team\/invitations\/accept$/];
+const PUBLIC = [/^\/$/, /^\/docs$/, /^\/openapi\.json$/, /^\/health$/, /^(\/v1)?\/health\/worker$/, /^\/ready$/, /^\/v1\/auth\/(login|signup|forgot-password|reset-password)$/, /^\/v1\/admin\/auth\/(login|mfa)$/, /^\/v1\/locations\//, /^\/v1\/webhooks\//, /^\/v1\/team\/invitations\/accept$/];
 
 const SUMMARIES: Record<string, string> = {
   'POST /v1/auth/login': 'Sign in as a seller (sets the session cookie)',

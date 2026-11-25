@@ -120,7 +120,8 @@ app.get('/ready', async (_request, reply) => {
   catch { return reply.code(503).send({ status: 'not_ready' }); }
 });
 // For an outside monitor: 503 when the process that works the queues is not running. Reveals nothing but that.
-app.get('/health/worker', async (_request, reply) => { const h = await workerHealth(); return reply.code(h.alive ? 200 : 503).send({ status: h.alive ? 'ok' : 'down' }); });
+// Two paths: nginx and the web container forward only /v1/* (and exactly /health) to the API, so the public address is /v1/health/worker; /health/worker is for the host itself.
+for (const path of ['/health/worker', '/v1/health/worker']) app.get(path, async (_request, reply) => { const h = await workerHealth(); return reply.code(h.alive ? 200 : 503).send({ status: h.alive ? 'ok' : 'down' }); });
 await app.register(authRoutes);
 await app.register(sellerRoutes);
 await app.register(shippingRoutes);

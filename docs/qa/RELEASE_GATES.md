@@ -96,7 +96,7 @@ Any unresolved P0, duplicate booking/debit risk, tenant isolation failure, false
 ### Recommendation: LIMITED GO, Lorrigo only, after the five conditions. Unrestricted release: NO-GO.
 
 1. Rotate every credential pasted in chat (Shiprocket API user password; the other pasted value wherever it belongs).
-2. Deploy, then check: `/health/worker` answers 200, migration 0076 is applied, Admin > System settings shows the worker running.
+2. Deploy, then check: `https://<domain>/v1/health/worker` answers 200, migration 0076 is applied, Admin > System settings shows the worker running.
 3. One controlled Lorrigo booking, label and cancel, with the wallet debit and refund checked. Then one small bulk batch (10 orders).
 4. Open in a browser: create order, bulk upload, Track > Book now, print label, NDR board.
 5. Keep Shiprocket courier services inactive until the same single booking passes there (recharge its wallet first).

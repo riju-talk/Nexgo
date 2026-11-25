@@ -42,6 +42,7 @@ const killWorker = async () => { spawnSync(process.platform === 'win32' ? 'taskk
 
 // 1. no worker has ever run
 T('No worker: /health/worker answers 503', await health() === 503, String(await health()));
+T('...also at the public address /v1/health/worker (the only prefix nginx forwards), without a session', (await fetch(API + '/v1/health/worker')).status === 503);
 T('...and the API itself stays healthy (the site does not go down with the worker)', (await fetch(API + '/health')).status === 200 && (await fetch(API + '/ready')).status === 200);
 const first = await mk(6);
 let q = await call('POST', '/v1/shipments/assign-batch', { orderIds: first });

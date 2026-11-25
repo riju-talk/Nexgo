@@ -111,7 +111,7 @@ const leaks = (text, asked = []) => secretWords.filter((w) => text.includes(w) &
 
 const spec = (await nobody('GET', '/openapi.json')).j; const routes = [];
 for (const [path, ops] of Object.entries(spec.paths)) for (const m of Object.keys(ops)) routes.push({ m: m.toUpperCase(), path });
-const PUBLIC = /^\/(health|ready|docs|openapi\.json)|^\/v1\/(auth\/(login|signup|forgot-password|reset-password|logout|heartbeat)|admin\/auth\/|webhooks\/|public\/|locations\/|payments\/|channels\/shopify\/callback|admin\/accounts$)|^\/v2\/webhooks\//;
+const PUBLIC = /^\/(health|ready|docs|openapi\.json)|^\/v1\/health\/|^\/v1\/(auth\/(login|signup|forgot-password|reset-password|logout|heartbeat)|admin\/auth\/|webhooks\/|public\/|locations\/|payments\/|channels\/shopify\/callback|admin\/accounts$)|^\/v2\/webhooks\//;
 const seller = routes.filter((r) => r.path.startsWith('/v1/') && !r.path.startsWith('/v1/admin') && !PUBLIC.test(r.path) && !r.path.startsWith('/v1/auth/'));
 const admin = routes.filter((r) => r.path.startsWith('/v1/admin') && !/\/v1\/admin\/(auth\/|accounts$)/.test(r.path));
 T('The API describes its own routes (the sweep covers all of them)', seller.length > 100 && admin.length > 50, `${seller.length} seller routes, ${admin.length} admin routes`);
