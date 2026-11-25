@@ -12,14 +12,14 @@ This document defines a decision, not a checklist that can be bypassed because o
 
 ## Gate 1 — Build and automated quality
 
-- [ ] Frontend lint passes.
-- [ ] Frontend production build passes.
-- [ ] Frontend unit tests pass.
-- [ ] Backend typecheck passes.
-- [ ] Backend unit/integration tests pass.
+- [x] Frontend lint passes. (`npm run lint`, exit 0, 2026-11-26)
+- [x] Frontend production build passes. (`npm run build`, exit 0)
+- [x] Frontend unit tests pass. (`npm test`: 53 / 53)
+- [x] Backend typecheck passes. (`npm run check`, exit 0)
+- [x] Backend unit/integration tests pass. (vitest 511 / 511; e2e suites in TEST_MATRIX section 10)
 - [ ] API contract tests pass.
-- [ ] E2E critical path passes.
-- [ ] Migrations tested on clean and existing schema.
+- [ ] E2E critical path passes. **API-level e2e PASS; browser e2e NOT RUN.**
+- [ ] Migrations tested on clean and existing schema. **Clean: PASS (75 migrations on an empty database). Existing / production-sized data: NOT RUN.**
 - [ ] No unexplained test skips/failures.
 
 ## Gate 2 — Security and data isolation
@@ -33,16 +33,16 @@ This document defines a decision, not a checklist that can be bypassed because o
 
 ## Gate 3 — Order and booking correctness
 
-- [ ] Create order/readiness validation.
+- [x] Create order/readiness validation. (booking gate verified; creation / import validation not re-audited, ORD-001)
 - [ ] CSV bulk import boundary tests.
 - [ ] Quote, serviceability, rate, and booking parity.
 - [ ] Credentials and provider health gates.
 - [ ] Manual, synchronous autoassign, and async batch flows.
-- [ ] Concurrent/double booking prevention.
-- [ ] Timeout reconciliation before retry.
+- [x] Concurrent/double booking prevention. (concurrency.mjs 10 / 10)
+- [ ] Timeout reconciliation before retry. **OPEN: BOOK-001 (P0). No durable booking intent, no reconciliation job.**
 - [ ] Provider failover classification.
 - [ ] Wallet debit/cancel refund/COD/RTO integrity.
-- [ ] No false booking success state.
+- [ ] No false booking success state. **ORD-007 (seller could mark an order booked) fixed and verified; UX-008 (bulk reported queued as assigned) fixed, logic verified, browser not run.**
 
 ## Gate 4 — Operations and user experience
 
@@ -95,3 +95,20 @@ Any unresolved P0, duplicate booking/debit risk, tenant isolation failure, false
 ## Known limitations and risk acceptance
 
 Record each item with: defect ID, risk, impact, mitigation/feature disablement, owner, expiry/revisit date, approver. No blanket risk acceptance.
+
+## Sign-off record, 2026-11-26 run
+
+| Gate | Status | Basis |
+|---|---|---|
+| 1 Build and automated quality | **PASS** with the two exceptions above | commands in TEST_MATRIX section 10 |
+| 2 Security and data isolation | **NOT PASSED** | SEC-001 / SEC-002 / SEC-003 / SEC-004 not completed; no full two-seller suite |
+| 3 Order and booking correctness | **NOT PASSED** | BOOK-001 (P0) open |
+| 4 Operations and UX | **NOT PASSED** | OPS-001 / DEP-001 (P0) open; no browser run |
+| 5 Provider verification | **NOT PASSED** | no live Lorrigo test certified in this run; Shiprocket never run live; RapidShyp not integrated |
+| 6 Decision | **NO-GO** for an unrestricted release | see criteria below |
+
+### Recommendation: NO-GO (unrestricted). Conditional LIMITED GO is possible once the criteria below are met.
+
+Closed in this run (with evidence): the 2026-11-25 booking-hold incident (BOOK-011), the false-"booked" order state (ORD-007), unready orders reaching couriers (BOOK-010), refusal-state race and over-broad classifier (BOOK-004 / BOOK-012), bulk upload reporting queued orders as assigned (UX-008), undetectable blocked print window (UX-010), concurrent double booking (BOOK-002 verified safe).
+
+To move to LIMITED GO: (1) close BOOK-001 with a durable booking intent, reconciliation job and a fault-injection test; (2) a worker heartbeat with a visible degraded state and a test that stops the worker (OPS-001); (3) the two-seller isolation suite (SEC-001); (4) one controlled live Lorrigo booking, label and cancel, with its evidence attached; (5) keep Shiprocket and any RapidShyp integration **disabled** until each has one controlled live booking; (6) one browser run of the order-to-AWB journey.

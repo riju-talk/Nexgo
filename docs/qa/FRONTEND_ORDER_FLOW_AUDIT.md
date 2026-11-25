@@ -151,3 +151,11 @@ Not yet inspected/executed in this pass:
 - Live Shiprocket/Lorrigo transactions.
 - Full test suite, lint, build, typecheck, migration tests.
 - Exact UX copy and visual states.
+
+## 9. Update 2026-11-26: confirmed findings, fixes and new findings
+
+- **UX-008 confirmed and fixed.** `lib/assignBatches.js` ends polling when the batch is fully paused and returns no per-order results; the importer treated every order without a result as assigned. Now `lib/bulkOutcome.js` marks a sent order with no answer as `queued` (saved, waiting), and the summary, toast, row label and a persistent banner say so. `tests/bulkOutcome.test.mjs` reproduces the paused case first (4 orders, 0 results -> 0 booked, 4 queued).
+- **UX-010 confirmed and fixed.** `window.open(url, '_blank', 'noopener')` returns `null` by specification, so a blocked pop-up was indistinguishable from an opened window. `lib/openDocs.js` opens without the feature, cuts the opener by hand, and Track shows a persistent "Open N labels" link when blocked. A storage failure is no longer reported as "too many".
+- **New: order state could be set to `booked` by a seller.** `PATCH /v1/orders/:id/state` (called from `CourierChooser`, `LiveCreateOrder`, `LiveSellerOperations`) accepted `booked` and `returned`. See ORD-007.
+- **New: silent catch.** The "mark ready" call in `CourierChooser.jsx` and `LiveCreateOrder.jsx` swallowed all errors. Fixed (ORD-008).
+- **Not yet reviewed:** the single-order quote-failure recovery screen (spec 4.1), the bulk **result file** (spec 4.2: every source row with a stable status and next action), offline / session-expiry behaviour, keyboard and mobile layouts. These remain **NOT RUN**; no browser test was executed in this pass.

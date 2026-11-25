@@ -182,3 +182,50 @@
 | REL-T10 | Provider credentials | Verified, not exposed; provider disabled if unverified |
 | REL-T11 | Backup/rollback | Tested or owner-approved procedure |
 | REL-T12 | Smoke test | Critical user journey passes |
+
+## 10. Execution results (2026-11-26, local throwaway DB + fake providers)
+
+Commands (from `backend/` unless stated): `npx tsc --noEmit`; `npx vitest run`; `node tests/e2e/<name>.mjs` against the API started as described in each file's header. From the repo root: `npm run lint`, `npm run build`, `npm test`.
+
+| Suite | Result |
+|---|---|
+| Backend typecheck | PASS |
+| Backend unit (vitest) | **PASS 511 / 511** (28 files) |
+| Frontend lint / production build / unit (`npm test`) | PASS / PASS / **PASS 53 / 53** |
+| `e2e/readiness.mjs` | **PASS 38 / 38** |
+| `e2e/concurrency.mjs` | **PASS 10 / 10** |
+| `e2e/speed.mjs` (queue, pause, resume, 429, 502, negative-balance incident) | **PASS 33 / 33** |
+| `e2e/cancel.mjs`, `e2e/actions.mjs`, `e2e/tracking.mjs`, `e2e/notifications.mjs` | PASS 11/11, 22/22, 26/26, 20/20 |
+| `e2e/shiprocket.mjs` (Shiprocket-only API) / `e2e/failover.mjs` (both aggregators) | **PASS 26 / 26** and **PASS 8 / 8** (fake providers only) |
+
+Scenario status (IDs from sections 1 to 9). PASS = executed and passed in the environment above. Everything not listed is **NOT RUN**.
+
+| ID | Status | Evidence |
+|---|---|---|
+| ORD-T09 weight zero | PASS | readiness.mjs: refused by book, auto-assign and queue; no courier call |
+| ORD-T10 missing dimensions | PASS | readiness.mjs (all three missing; a partial set cannot exist: DB constraint `orders_package_dimensions_complete`) |
+| ORD-T04 invalid mobile, ORD-T11 COD amount | PASS (unit) / DB-enforced | `orderReadiness.test.ts`; table constraints `customers_phone_check`, `orders_check` refuse the state |
+| ORD-T05 short address, customer city | PASS | readiness.mjs |
+| BOOK-T04 not-ready order submitted | PASS | readiness.mjs: 422 ORDER_NOT_READY, no provider request |
+| BOOK-T05 double click / repeated request | PASS | concurrency.mjs (6 identical requests: 1 shipment, 1 debit) |
+| BOOK-T06 two concurrent entry paths | PASS | concurrency.mjs (manual + auto-assign + queue + manual) |
+| BOOK-T13 provider balance refusal | PASS | speed.mjs sections 4, 5, 7, 9: orders kept, resumed by themselves, no duplicate |
+| BOOK-T14 exact charge, one debit | PASS | concurrency.mjs wallet = start minus charges |
+| BOOK-T15 cancellation refunds once | PASS | cancel.mjs, speed.mjs |
+| BOOK-T18 failover | PASS | failover.mjs |
+| BOOK-T19/T20 Shiprocket | PASS against fake only | shiprocket.mjs; **no live account** |
+| BOOK-T07 timeout unknown, BOOK-T08 provider success + local save failure | **NOT RUN** | no injection test written (BOOK-001 open) |
+| BOOK-T11/T12 wallet / debit limit, BOOK-T16/T17 | NOT RUN in this run | covered by earlier suites only |
+| OPS-T02 worker stopped, OPS-T03 crash mid-job, OPS-T05/T06 | **NOT RUN** | needs a separate worker process |
+| OPS-T04 restart resumes, OPS-T09 page closed | PASS (queue persisted in DB) | speed.mjs sections 4, 5, 9 |
+| DOC-T06 popup blocked | PASS (unit logic only) | openDocs.test.mjs; **real browser NOT RUN** |
+| DOC-T05 label batch 60/61/100/5000 | PASS (unit boundary) | openDocs.test.mjs |
+| TRK-T02 duplicate webhook, TRK-T04 unknown status | PASS | tracking.mjs, shiprocketPlugin.test.ts |
+| TRK-T03 invalid webhook secret | PASS | shiprocket.mjs |
+| TRK-T06 NDR retry accepted once | PASS (state only) | tracking.mjs; **provider NDR action NOT sent for Shiprocket** |
+| SEC-T01..T05 | PARTIAL | foreign order id, foreign batch, foreign notification checks inside existing suites; **no full suite** |
+| UX-T05 partial bulk success | PASS (logic) | bulkOutcome.test.mjs; browser NOT RUN |
+| UX-T01..T04, T06..T12 | NOT RUN | no browser or accessibility run |
+| REL-T01..T04 | PASS | see above |
+| REL-T06 migration clean DB | PASS | all 75 migrations applied from empty on a throwaway database |
+| REL-T07 migration existing DB, REL-T08 Docker, REL-T09, REL-T11 backup / rollback | **NOT RUN** | |
