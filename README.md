@@ -29,7 +29,7 @@ Or the whole stack in Docker (production images, throwaway Postgres + Mailpit + 
 docker compose --profile local up --build      # http://localhost:3021, mail at http://localhost:8025
 ```
 
-Deploying: see `docs/PRODUCTION_DEPLOYMENT.md`.
+Deploying: `bash deploy/ec2/deploy.sh` on the EC2 host (runs the migrations, then the API, worker and web containers).
 
 **Development logins** are fixed in the backend (`backend/src/lib/devAccounts.ts`) and created at startup, only when `NODE_ENV=development` and `DATABASE_URL` points at this machine. The UI never shows or pre-fills them.
 
@@ -49,9 +49,6 @@ cd backend && npm run check               # API type-check
 
 ## Documentation
 
-- `docs/ENGINEERING_HANDOFF.md` — current state, what is implemented and verified, non-negotiable rules. Read before changing backend code.
-- `docs/BACKEND_PLAN.md` — phased build plan and security gates.
-- `docs/LOCAL_BACKEND_BUILD_PLAN.md` — local-first execution plan for seller and admin modules.
-- `docs/AWS_BACKEND_PLAN.md` — mapping of the same architecture onto AWS.
-- `docs/STAGING_CHECKLIST.md` — what has been verified and what blocks staging.
-- `docs/DEMO_RUNBOOK.md` — scripted owner demo.
+- `docs/ADD_AN_AGGREGATOR.md` — how a courier aggregator (Lorrigo, Shiprocket) is plugged in.
+- `docs/SHIPROCKET_SETUP.md` — connecting a Shiprocket account.
+- `docs/qa/` — QA specification, defect register, test matrix and release gates.
