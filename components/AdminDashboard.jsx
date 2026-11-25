@@ -177,6 +177,12 @@ export default function AdminDashboard({ mobile, phone }) {
           </Card>
         </section>
 
+        {live.worker && (!live.worker.alive || live.worker.oldestUnconfirmedSeconds > 900) && (
+          <div role="alert" style={{ padding: '12px 14px', borderRadius: 10, background: '#FDF2F2', border: '1px solid #F1B8B8', color: '#9B1C1C', fontSize: 13.5, lineHeight: 1.5 }}>
+            {!live.worker.alive && <div><b>The background worker is not running.</b> {live.worker.waiting} queued action{live.worker.waiting === 1 ? ' is' : 's are'} waiting and tracking is not refreshed. Restart it on the server: <code>docker compose up -d worker</code></div>}
+            {live.worker.oldestUnconfirmedSeconds > 900 && <div><b>{live.worker.unconfirmedBookings} courier booking{live.worker.unconfirmedBookings === 1 ? '' : 's'} could not be confirmed yet</b> (oldest {Math.round(live.worker.oldestUnconfirmedSeconds / 60)} min). Check the courier dashboard.</div>}
+          </div>
+        )}
         <WalletWarning items={live.aggregatorBalances} />
         {live.trackingHealth && <TrackingHealth t={live.trackingHealth} />}
         {live.assignQueue && (live.assignQueue.queued + live.assignQueue.running > 0 || live.assignQueue.p95Ms) && (

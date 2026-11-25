@@ -6,6 +6,7 @@ import { audit } from '../lib/audit.js';
 import { requireOnboarded } from '../lib/onboarding.js';
 import { requireSeller } from './seller.js';
 import { READY_SQL } from './shipments.js';
+import { workerHealth } from '../lib/workerHealth.js';
 
 /**
  * Queue courier assignment instead of doing it inside the request:
@@ -36,12 +37,19 @@ export async function assignBatchRoutes(app: FastifyInstance) {
     const input = z.object({ orderIds: z.array(uuid).min(1).max(MAX_ORDERS), providerCode: code.optional(), serviceCode: code.optional() }).parse(request.body);
     const p = principal(request);
     const ids = [...new Set(input.orderIds)];
-    let notReady: string[] = [];
+    let notReady: string[] = []; let notQueued: { id: string; reason: string }[] = []; // every requested order that is NOT waiting for a courier after this call, with the reason
     const created = await withSellerTransaction(p.sellerId, async (client) => {
       // Only this seller's orders that still have no courier.
-      const eligible = await client.query<{ id: string; ready: boolean }>(
-        `SELECT o.id, ${READY_SQL} AS ready FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.seller_id = $1 AND o.id = ANY($2::uuid[]) AND o.state IN ('new', 'ready_to_ship')
-           AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id = o.id)`, [p.sellerId, ids]);
+      const found = await client.query<{ id: string; ready: boolean; state: string; shipped: boolean }>(
+        `SELECT o.id, o.state::text AS state, ${READY_SQL} AS ready, EXISTS (SELECT 1 FROM shipments s WHERE s.order_id = o.id) AS shipped
+           FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.seller_id = $1 AND o.id = ANY($2::uuid[])`, [p.sellerId, ids]);
+      const eligible = { rows: found.rows.filter((r) => !r.shipped && ['new', 'ready_to_ship'].includes(r.state)) };
+      const known = new Set(found.rows.map((r) => r.id));
+      notQueued = [
+        ...ids.filter((x) => !known.has(x)).map((x) => ({ id: x, reason: 'Order not found.' })),
+        ...found.rows.filter((r) => r.shipped || !['new', 'ready_to_ship'].includes(r.state)).map((r) => ({ id: r.id, reason: r.shipped || r.state === 'booked' ? 'This order already has a courier.' : `This order is ${r.state}.` })),
+        ...eligible.rows.filter((r) => !r.ready).map((r) => ({ id: r.id, reason: 'Order details are incomplete. Fix it in Track > Needs fixing, then assign again.' })),
+      ];
       // Incomplete orders are NOT queued (the booking would refuse them anyway): they come back as `notReady` so the seller can fix them (ORD-004).
       notReady = eligible.rows.filter((r) => !r.ready).map((r) => r.id);
       eligible.rows = eligible.rows.filter((r) => r.ready);
@@ -61,14 +69,14 @@ export async function assignBatchRoutes(app: FastifyInstance) {
       return { batchId, queued };
     });
     const skipped = ids.length - created.queued;
-    return reply.code(created.batchId ? 202 : 200).send({ id: created.batchId, queued: created.queued, skipped, notReady: notReady.length, notReadyIds: notReady.slice(0, 200) });
+    return reply.code(created.batchId ? 202 : 200).send({ id: created.batchId, queued: created.queued, skipped, notReady: notReady.length, notReadyIds: notReady, notQueued, workerDelayed: !(await workerHealth()).alive });
   });
 
   app.get('/v1/shipments/assign-batch/active', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
     return withSellerTransaction(p.sellerId, async (client) => {
       const r = await client.query(`${progressSql} AND b.finished_at IS NULL GROUP BY b.id ORDER BY b.created_at DESC LIMIT 1`, [p.sellerId]);
-      return { batch: r.rows[0] ?? null };
+      return { batch: r.rows[0] ? { ...r.rows[0], stalled: !(await workerHealth()).alive } : null };
     });
   });
 
@@ -85,7 +93,7 @@ export async function assignBatchRoutes(app: FastifyInstance) {
             `SELECT order_id, state, awb, courier, error FROM assign_batch_items WHERE batch_id = $1`, [id])).rows
             .map((x) => ({ orderId: x.order_id, ok: x.state === 'ok', awb: x.awb ?? undefined, courier: x.courier ?? undefined, error: x.error ?? undefined }))
         : undefined;
-      return { ...batch, done: batch.assigned + batch.failed, results };
+      return { ...batch, done: batch.assigned + batch.failed, results, stalled: !batch.finished_at && !(await workerHealth()).alive };
     });
   });
 }

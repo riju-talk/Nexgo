@@ -51,15 +51,15 @@ function JobCard({ job, onOpenTrack }) {
             {job.ok} {c.noun}{job.failed ? ` · ${job.failed} ${c.bad}` : ''}
           </div>
           <div style={{ marginTop: 6, fontSize: 12, color: slow ? '#8A5A00' : T.TEXT_MUTED, lineHeight: 1.45 }}>
-            {slow ? 'Still working: the courier is answering slowly. Nothing is lost, you can keep waiting or leave this page.' : 'This runs on our servers. You can keep working or leave this page.'}
+            {job.stalled ? 'Saved on our servers, but background processing is delayed right now. Our team has been alerted. Nothing is lost: it continues by itself, and you can leave this page.' : slow ? 'Still working: the courier is answering slowly. Nothing is lost, you can keep waiting or leave this page.' : 'This runs on our servers. You can keep working or leave this page.'}
           </div>
         </>
       )}
 
       {!running && (
         <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-          <div style={{ fontSize: 13.5, color: T.TEXT }}>{job.phase === 'error' ? job.error : paused ? `${job.ok} assigned. ${job.paused} order${job.paused === 1 ? ' is' : 's are'} saved and will be booked automatically as soon as courier booking resumes.` : job.failed ? c.partial(job) : c.ok(job)}</div>
-          {paused && <div style={{ padding: '7px 9px', borderRadius: 8, background: '#FFF7E0', border: '1px solid #E0B24A', color: '#6B4A00', fontSize: 12.5, lineHeight: 1.45 }}>Courier booking is paused for a short while. Nothing is lost and you do not need to click anything again. Check Track &gt; Pickup Pending later for the new AWBs.</div>}
+          <div style={{ fontSize: 13.5, color: T.TEXT }}>{job.phase === 'error' ? job.error : paused && job.stalled ? `${job.ok} assigned. ${job.paused} order${job.paused === 1 ? ' is' : 's are'} saved and will be booked automatically when background processing resumes.` : paused ? `${job.ok} assigned. ${job.paused} order${job.paused === 1 ? ' is' : 's are'} saved and will be booked automatically as soon as courier booking resumes.` : job.failed ? c.partial(job) : c.ok(job)}</div>
+          {paused && <div style={{ padding: '7px 9px', borderRadius: 8, background: '#FFF7E0', border: '1px solid #E0B24A', color: '#6B4A00', fontSize: 12.5, lineHeight: 1.45 }}>{job.stalled ? 'Background processing is delayed.' : 'Courier booking is paused for a short while.'} Nothing is lost and you do not need to click anything again. Check Track &gt; Pickup Pending later for the new AWBs.</div>}
           {job.phase === 'done' && job.failed > 0 && job.firstError && <div style={{ padding: '7px 9px', borderRadius: 8, background: '#FDF2F2', border: '1px solid #F1B8B8', color: '#9B1C1C', fontSize: 12.5, lineHeight: 1.45 }}>Main reason: {job.firstError}</div>}
           {job.kind === 'assign' && job.phase === 'done' && <div style={{ marginTop: 4 }}><Btn small primary onClick={() => { onOpenTrack(); dismissJob(job.id); }}>View in Track</Btn></div>}
         </div>

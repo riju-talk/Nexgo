@@ -1,6 +1,7 @@
 'use client';
 
 import { assignInBatches } from '@/lib/assignBatches';
+import { assignSentence } from '@/lib/batchSteps';
 import { useEffect, useRef, useState } from 'react';
 import { apiFetch, ApiError, bookingErrorToast, isFundsMessage } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
@@ -18,7 +19,8 @@ export async function assignCouriers(orderIds, showToast, reload, courier) {
   const results = await assignInBatches(orderIds, { courier }); // progress is shown by the card on every page (components/JobProgressHost.jsx)
   const assigned = results.filter((r) => r.ok).length; const failed = results.length - assigned;
   const firstError = results.find((x) => !x.ok)?.error || '';
-  showToast(failed ? `${assigned} assigned, ${failed} not assigned: ${firstError}` : `${assigned} order${assigned === 1 ? '' : 's'} assigned to a courier`, failed ? 'error' : 'success', failed && isFundsMessage(firstError) ? 8000 : undefined);
+  const said = assignSentence({ assigned, failed, waiting: results.waiting || 0, firstError });
+  showToast(said.text, said.tone, said.tone === 'error' ? 8000 : undefined);
   await reload();
 }
 
@@ -45,7 +47,7 @@ export function ActiveAssignBanner({ onFinished }) {
   const done = batch.assigned + batch.failed;
   return (
     <div role="status" style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, background: '#EAF1FF', border: '1px solid #BBD0FF', color: '#1E3A8A', fontSize: 13, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-      <b>{batch.paused > 0 ? 'Courier booking is paused' : 'Assigning couriers in the background'}</b>
+      <b>{batch.paused > 0 ? 'Courier booking is paused' : batch.stalled ? 'Background processing is delayed: your orders are saved' : 'Assigning couriers in the background'}</b>
       <span>{batch.paused > 0 ? `${batch.paused} order${batch.paused === 1 ? ' is' : 's are'} saved and will be booked automatically when it resumes (${done} of ${batch.total} done).` : `${done} of ${batch.total} done${batch.failed ? ` · ${batch.failed} could not be assigned` : ''}. You can keep working or leave this page.`}</span>
       <span style={{ flex: '0 0 120px', height: 6, borderRadius: 3, background: '#D4E2FF' }}><span style={{ display: 'block', height: '100%', width: `${Math.round((done / batch.total) * 100)}%`, borderRadius: 3, background: '#3877fc' }} /></span>
     </div>
@@ -140,7 +142,7 @@ function SingleOrder({ order, onClose, onDone }) {
       )}
       <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
         <Btn primary loading={busy} disabled={!chosen} onClick={book}>{busy ? 'Booking…' : chosen ? `Book with ${chosen.provider.name} · ${inr(chosen.price.total)}` : 'Select a courier to book'}</Btn>
-        <Btn loading={busy} onClick={async () => { setBusy(true); await assignCouriers([order.id], showToast, async () => onDone()); setBusy(false); }}>Let NEXGO pick by my courier priority</Btn>
+        <Btn loading={busy} onClick={async () => { setBusy(true); try { await assignCouriers([order.id], showToast, async () => onDone()); } catch (e) { showToast(e instanceof ApiError ? e.message : 'The order could not be queued. Please try again.', 'error'); } finally { setBusy(false); } }}>Let NEXGO pick by my courier priority</Btn>
       </div>
       <div style={{ marginTop: 10, fontSize: 12, color: T.TEXT_MUTED }}>Booking charges your wallet the freight shown (GST is invoiced separately) and creates the AWB.</div>
     </>
@@ -160,8 +162,9 @@ function ManyOrders({ orders, onClose, onDone }) {
     const [providerCode, serviceCode] = courier.split(':');
     if (mode === 'one' && !providerCode) return showToast('Choose the courier to use.', 'error');
     setBusy(true);
-    await assignCouriers(orders.map((o) => o.id), showToast, async () => onDone(), mode === 'one' ? { providerCode, serviceCode } : undefined);
-    setBusy(false);
+    try { await assignCouriers(orders.map((o) => o.id), showToast, async () => onDone(), mode === 'one' ? { providerCode, serviceCode } : undefined); }
+    catch (e) { showToast(e instanceof ApiError ? e.message : 'The orders could not be queued. Please try again.', 'error'); }
+    finally { setBusy(false); }
   };
   const row = (id, label, hint) => (
     <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '11px 12px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${mode === id ? T.NAVY : T.BORDER}`, background: mode === id ? 'rgba(56,119,252,.09)' : T.SURFACE }}>

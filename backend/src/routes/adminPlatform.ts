@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { db } from '../db/client.js';
 import { requirePlatformAdmin } from '../lib/adminAuth.js';
 import { checkStorage } from '../lib/storage.js';
+import { workerHealth } from '../lib/workerHealth.js';
 
 // What each platform role may do. Mirrors the guards in lib/adminAuth.ts, shown read-only on the Role permissions screen.
 export const ROLE_MATRIX = [
@@ -65,7 +66,7 @@ export default async function adminPlatformRoutes(app: FastifyInstance) {
     return {
       jobsLast7Days: byState,
       assignWaiting: assign.rows[0].waiting, cancelWaiting: cancel.rows[0].waiting,
-      migrations: mig.rows[0], lastJobAt: lastJob.rows[0].at, storage,
+      worker: await workerHealth(), migrations: mig.rows[0], lastJobAt: lastJob.rows[0].at, storage,
       checkedAt: new Date().toISOString(),
     };
   });

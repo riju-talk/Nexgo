@@ -1,3 +1,4 @@
+import { workerHealth } from './lib/workerHealth.js';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { sellerSafeMessage } from './lib/sellerSafeError.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -118,6 +119,8 @@ app.get('/ready', async (_request, reply) => {
   try { await db.query('SELECT 1'); return { status: 'ready' }; }
   catch { return reply.code(503).send({ status: 'not_ready' }); }
 });
+// For an outside monitor: 503 when the process that works the queues is not running. Reveals nothing but that.
+app.get('/health/worker', async (_request, reply) => { const h = await workerHealth(); return reply.code(h.alive ? 200 : 503).send({ status: h.alive ? 'ok' : 'down' }); });
 await app.register(authRoutes);
 await app.register(sellerRoutes);
 await app.register(shippingRoutes);

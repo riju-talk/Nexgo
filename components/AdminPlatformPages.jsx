@@ -107,6 +107,8 @@ function System({ mobile }) {
         <Stat label="Jobs done (7 days)" value={loading ? '—' : num(j.succeeded || 0)} note="Succeeded" color={T.GREEN} />
       </div>
       <div style={{ ...CARD, padding: 16, display: 'grid', gap: 10, fontSize: 13.5 }}>
+        <div style={row}><span>Background worker (books queued orders, refreshes tracking)</span>{data ? (data.worker?.alive ? <Pill>Running</Pill> : <Pill color={T.RED}>{data.worker?.lastBeatAt ? `Not running since ${dateTime(data.worker.lastBeatAt)}` : 'Not running'}</Pill>) : '—'}</div>
+        <div style={row}><span>Courier bookings still being confirmed</span>{data ? (data.worker?.unconfirmedBookings ? <Pill color={data.worker.oldestUnconfirmedSeconds > 900 ? T.RED : '#B7791F'}>{`${data.worker.unconfirmedBookings} (oldest ${Math.max(1, Math.round(data.worker.oldestUnconfirmedSeconds / 60))} min)`}</Pill> : <Pill>None</Pill>) : '—'}</div>
         <div style={row}><span>File storage</span>{data ? (data.storage.ok ? <Pill>Working</Pill> : <Pill color={T.RED}>{data.storage.message || 'Not working'}</Pill>) : '—'}</div>
         <div style={row}><span>Database updates applied</span><b>{data ? `${data.migrations.applied} (latest ${data.migrations.latest})` : '—'}</b></div>
         <div style={row}><span>Last background job started</span><b>{data ? (data.lastJobAt ? dateTime(data.lastJobAt) : 'Never') : '—'}</b></div>

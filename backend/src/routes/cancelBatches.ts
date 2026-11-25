@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
 import { audit } from '../lib/audit.js';
 import { requireSeller } from './seller.js';
+import { workerHealth } from '../lib/workerHealth.js';
 
 /**
  * Cancel any number of shipments (and never-shipped orders) without keeping the page waiting:
@@ -48,7 +49,7 @@ export async function cancelBatchRoutes(app: FastifyInstance) {
       return { batchId, queued };
     });
     const skipped = shipmentIds.length + orderIds.length - created.queued;
-    return reply.code(created.batchId ? 202 : 200).send({ id: created.batchId, queued: created.queued, skipped });
+    return reply.code(created.batchId ? 202 : 200).send({ id: created.batchId, queued: created.queued, skipped, workerDelayed: !(await workerHealth()).alive });
   });
 
   app.get('/v1/shipments/cancel-batch/active', { preHandler: requireSeller }, async (request) => {
@@ -72,7 +73,7 @@ export async function cancelBatchRoutes(app: FastifyInstance) {
             `SELECT shipment_id, order_id, state, refunded_paise::text, error FROM cancel_batch_items WHERE batch_id = $1`, [id])).rows
             .map((x) => ({ shipmentId: x.shipment_id ?? undefined, orderId: x.order_id ?? undefined, ok: x.state === 'ok', refundedPaise: Number(x.refunded_paise), error: x.error ?? undefined }))
         : undefined;
-      return { ...batch, done: batch.cancelled + batch.failed, results };
+      return { ...batch, done: batch.cancelled + batch.failed, results, stalled: !batch.finished_at && !(await workerHealth()).alive };
     });
   });
 }

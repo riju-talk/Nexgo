@@ -413,16 +413,16 @@ export default function LiveTrack({ mobile }) {
         try { await apiFetch(`/v1/orders/${order.id}/details`, { method: 'PATCH', body }); fixed.push(order); }
         catch (e) { report.push({ id: row.nexgoId, ref: order.order_number, line: row.line, problem: e instanceof ApiError ? e.message : 'Could not save this order' }); }
       }
-      let assigned = 0;
+      let assigned = 0; let waiting = 0;
       if (fixed.length) {
         const results = await assignInBatches(fixed.map((o) => o.id));
         const r = { results };
-        assigned = results.filter((x) => x.ok).length;
+        assigned = results.filter((x) => x.ok).length; waiting = results.waiting || 0;
         const byOrder = new Map(fixed.map((o) => [o.id, o]));
         r.results.filter((x) => !x.ok).forEach((x) => report.push({ id: byOrder.get(x.orderId)?.nexgo_order_id, ref: byOrder.get(x.orderId)?.order_number, problem: `Saved, but no courier assigned: ${x.error}` }));
       }
       setFixReport({ total: rows.length, assigned, problems: report });
-      showToast(`${assigned} of ${rows.length} order${rows.length === 1 ? '' : 's'} assigned to a courier${report.length ? `, ${report.length} still need attention` : ''}`, report.length ? 'error' : 'success');
+      showToast(`${assigned} of ${rows.length} order${rows.length === 1 ? '' : 's'} assigned to a courier${waiting ? `, ${waiting} saved and waiting for courier booking` : ''}${report.length ? `, ${report.length} still need attention` : ''}`, report.length || waiting ? 'error' : 'success');
       await load();
     } catch (e) { showToast(e instanceof ApiError ? e.message : e.message || 'The file could not be processed', 'error'); }
     finally { setFixing(false); }

@@ -5,6 +5,7 @@ import { db, withSellerTransaction } from '../db/client.js';
 import { requireSeller } from './seller.js';
 import { requirePlatformAdmin } from '../lib/adminAuth.js';
 import { aggregatorBalances } from '../lib/aggregatorBalance.js';
+import { workerHealth } from '../lib/workerHealth.js';
 import { IST, cached, codPending, invalidateMetrics, pct, pickupMissedSql, pickupPendingSql, windowSql } from '../lib/metrics.js';
 
 function seller(request: FastifyRequest) { if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 }); return request.principal.sellerId; }
@@ -255,6 +256,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
         recentSignups: signups.rows,
         assignQueue: { queued: queue.rows[0]?.queued ?? 0, running: queue.rows[0]?.running ?? 0, p95Ms: queue.rows[0]?.p95 ?? null, oldestWaitSeconds: queue.rows[0]?.oldest ?? null },
         aggregatorBalances: await aggregatorBalances().catch(() => []),
+        worker: await workerHealth(),
         trackingHealth: { lastWebhookAt: tracking.rows[0].last_at, webhooks24h: tracking.rows[0].last24, stuckBooked: tracking.rows[0].stuck, liveShipments: tracking.rows[0].live, courierCancelled: tracking.rows[0].courier_cancelled },
       };
     });

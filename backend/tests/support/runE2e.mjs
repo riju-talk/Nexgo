@@ -24,7 +24,7 @@ const LORRIGO = { LORRIGO_API_KEY: 'test', LORRIGO_BASE_URL: 'http://127.0.0.1:4
 const SHIPROCKET = { SHIPROCKET_EMAIL: 'api@test.example', SHIPROCKET_PASSWORD: 'pw', SHIPROCKET_BASE_URL: 'http://127.0.0.1:4666' };
 // Each suite: which aggregators are configured, and (for suites that need volume) which suite must run first in the same database.
 const SUITES = {
-  readiness: { env: LORRIGO }, concurrency: { env: LORRIGO }, reconcile: { env: { ...LORRIGO, RECONCILE_AFTER_SECONDS: '2', BOOKING_STALE_SECONDS: '10' } }, heartbeat: { env: LORRIGO, worker: true }, tenancy: { env: LORRIGO },
+  readiness: { env: LORRIGO }, concurrency: { env: LORRIGO }, reconcile: { env: { ...LORRIGO, RECONCILE_AFTER_SECONDS: '2', BOOKING_STALE_SECONDS: '10' } }, heartbeat: { env: { ...LORRIGO, QUEUES_IN_API: 'false', RECONCILE_AFTER_SECONDS: '2', BOOKING_STALE_SECONDS: '10' } }, tenancy: { env: LORRIGO },
   speed: { env: LORRIGO }, cancel: { env: LORRIGO }, actions: { env: LORRIGO }, tracking: { env: LORRIGO }, notifications: { env: LORRIGO }, webhooks: { env: { ...LORRIGO, ...SHIPROCKET } },
   shiprocket: { env: SHIPROCKET }, failover: { env: { ...LORRIGO, ...SHIPROCKET } },
   cod: { env: LORRIGO }, metrics: { env: LORRIGO }, manifests: { env: LORRIGO }, 'states-otp': { env: LORRIGO }, lazy: { env: LORRIGO }, adminLists: { env: LORRIGO, after: 'lazy' }, platform: { env: LORRIGO, after: 'lazy' },
@@ -73,7 +73,7 @@ for (const name of names) {
   let api; const t0 = Date.now();
   try {
     if (!suite.after) { await dropDb(dbName); await admin(`CREATE DATABASE ${dbName} TEMPLATE ${TEMPLATE}`); }
-    api = await startApi(suite.worker ? { ...env, NODE_ENV: 'test' } : env, name);
+    api = await startApi(env, name);
     const run = spawnSync(process.execPath, [file], { cwd: backend, env: { ...system, ...env, E2E_TSX: tsx, E2E_WORKDIR: work }, encoding: 'utf8', timeout: 420_000, maxBuffer: 64e6 });
     const text = `${run.stdout}\n${run.stderr}`; const pass = (text.match(/^PASS /gm) || []).length; const fail = (text.match(/^FAIL /gm) || []);
     const crashed = run.status !== 0 && !fail.length; const ok = pass > 0 && !fail.length && !crashed;
