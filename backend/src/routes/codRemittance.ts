@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { pageRows } from '../lib/paging.js';
+import { pageOf, pageWithTotal } from '../lib/paging.js';
 import { z } from 'zod';
 import { db, withSellerTransaction, withTransaction } from '../db/client.js';
 import { requireAccountAdmin, requireFinanceAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
@@ -112,22 +112,19 @@ export async function codRemittanceRoutes(app: FastifyInstance) {
 
   app.get('/v1/admin/cod-remittances', { preHandler: requirePlatformAdmin }, async (request) => {
     const q = z.object({ sellerId: z.string().uuid().optional(), status: z.enum(['pending', 'approved', 'remitted']).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0) }).parse(request.query);
-    const result = await db.query(
+    return pageWithTotal((t, v) => db.query(t, v),
       `SELECT c.*, s.legal_name AS seller_name,
               (SELECT COALESCE(SUM(CASE WHEN w.entry_type IN ('credit','release') THEN w.amount_paise WHEN w.entry_type IN ('debit','hold') THEN -w.amount_paise ELSE w.amount_paise END),0)::bigint FROM wallet_entries w WHERE w.seller_id = c.seller_id) AS wallet_balance_paise
          FROM cod_remittance_cycles c JOIN sellers s ON s.id = c.seller_id
        WHERE ($1::uuid IS NULL OR c.seller_id = $1) AND ($2::cod_remittance_status IS NULL OR c.status = $2)
-       ORDER BY c.created_at DESC, c.id DESC LIMIT $3 OFFSET $4`,
-      [q.sellerId ?? null, q.status ?? null, q.limit + 1, q.offset],
+       ORDER BY c.created_at DESC, c.id DESC`,
+      [q.sellerId ?? null, q.status ?? null], pageOf(request.query),
     );
-    return pageRows(result.rows, q.limit);
   });
 
   app.get('/v1/seller/cod-remittances', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
-    return withSellerTransaction(p.sellerId, async (client) => ({
-      items: (await client.query('SELECT id, cycle_start, cycle_end, shipment_count, cod_collected_paise, charges_deducted_paise, net_remitted_paise, status, bank_reference, remitted_at FROM cod_remittance_cycles WHERE seller_id=$1 ORDER BY cycle_start DESC LIMIT 100', [p.sellerId])).rows,
-    }));
+    return withSellerTransaction(p.sellerId, (client) => pageWithTotal((t, v) => client.query(t, v), 'SELECT id, cycle_start, cycle_end, shipment_count, cod_collected_paise, charges_deducted_paise, net_remitted_paise, status, bank_reference, remitted_at FROM cod_remittance_cycles WHERE seller_id=$1 ORDER BY cycle_start DESC, id', [p.sellerId], pageOf(request.query, 100, 1000)));
   });
   // The delivered COD shipments a remittance cycle was cut from (same rule the generator uses), for the statement download.
   app.get('/v1/seller/cod-remittances/:cycleId/lines', { preHandler: requireSeller }, async (request) => {

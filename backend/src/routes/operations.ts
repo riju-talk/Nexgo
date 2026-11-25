@@ -1,3 +1,4 @@
+import { pageOf, pageWithTotal } from '../lib/paging.js';
 import { consigneeKey, customerIdFor, customerIdsFor } from '../lib/customers.js';
 import { assertNoOpenBooking } from '../lib/bookingAttempts.js';
 import { queueCodConfirmation } from '../lib/codConfirmation.js';
@@ -143,8 +144,8 @@ export async function operationsRoutes(app: FastifyInstance) {
       return { id, deactivated: true, newDefaultId: target.is_default ? others.id : null };
     });
   });
-  app.get('/v1/customers', { preHandler: requireSeller }, async (request) => { const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: maskCustomerRows((await client.query('SELECT * FROM customers WHERE seller_id = $1 ORDER BY created_at DESC LIMIT 100', [p.sellerId])).rows, p, 'orders.view_customer') })); });
-  app.get('/v1/products', { preHandler: requireSeller }, async (request) => { const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query('SELECT * FROM products WHERE seller_id = $1 ORDER BY sku LIMIT 250', [p.sellerId])).rows })); });
+  app.get('/v1/customers', { preHandler: requireSeller }, async (request) => { const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => { const x = await pageWithTotal((t, v) => client.query(t, v), 'SELECT * FROM customers WHERE seller_id = $1 ORDER BY created_at DESC, id', [p.sellerId], pageOf(request.query)); return { ...x, items: maskCustomerRows(x.items, p, 'orders.view_customer') }; }); });
+  app.get('/v1/products', { preHandler: requireSeller }, async (request) => { const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query('SELECT * FROM products WHERE seller_id = $1 ORDER BY sku LIMIT 10000', [p.sellerId])).rows })); });
   app.post('/v1/products', { preHandler: requireSeller }, async (request, reply) => {
     const input = productInput.parse(request.body); const p = getPrincipal(request);
     const row = await withSellerTransaction(p.sellerId, async (client) => {
@@ -153,7 +154,15 @@ export async function operationsRoutes(app: FastifyInstance) {
     }); return reply.code(201).send(row);
   });
   app.get('/v1/orders', { preHandler: requireSeller }, async (request) => {
-    const p = getPrincipal(request); return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query(`SELECT o.*,w.name AS warehouse_name,w.pincode AS warehouse_pincode,c.full_name AS customer_name,c.city AS customer_city,c.pincode AS customer_pincode FROM orders o JOIN warehouses w ON w.id=o.warehouse_id JOIN customers c ON c.id=o.customer_id WHERE o.seller_id=$1 ORDER BY o.created_at DESC LIMIT 100`, [p.sellerId])).rows }));
+    const p = getPrincipal(request);
+    const q = z.object({ state: z.enum(['draft', 'new', 'ready_to_ship', 'booked', 'cancelled', 'returned']).optional().or(z.literal('').transform(() => undefined)), q: z.string().trim().max(120).optional() }).parse(request.query);
+    const like = q.q ? `%${q.q.replace(/[\\%_]/g, (m) => `\\${m}`)}%` : null;
+    return withSellerTransaction(p.sellerId, async (client) => {
+      const x = await pageWithTotal((t, v) => client.query(t, v), `SELECT o.*,w.name AS warehouse_name,w.pincode AS warehouse_pincode,c.full_name AS customer_name,c.city AS customer_city,c.pincode AS customer_pincode
+        FROM orders o JOIN warehouses w ON w.id=o.warehouse_id JOIN customers c ON c.id=o.customer_id WHERE o.seller_id=$1 AND ($2::order_state IS NULL OR o.state=$2::order_state)
+         AND ($3::text IS NULL OR o.order_number ILIKE $3 OR o.nexgo_order_id ILIKE $3 OR c.full_name ILIKE $3 OR c.pincode ILIKE $3) ORDER BY o.created_at DESC, o.id DESC`, [p.sellerId, q.state ?? null, like], pageOf(request.query));
+      return x;
+    });
   });
   app.get('/v1/orders/:orderId', { preHandler: requireSeller }, async (request) => {
     const p = getPrincipal(request); const orderId = uuid.parse((request.params as { orderId: string }).orderId);
@@ -270,7 +279,7 @@ export async function operationsRoutes(app: FastifyInstance) {
     }
     return { results, created: results.filter((r) => r.ok && !r.existing).length, existing: results.filter((r) => r.existing).length, failed: results.filter((r) => !r.ok).length };
   });
-  // Rectify an order that never got a courier (Track > Failed): consignee, payment and parcel can change until a shipment exists.
+  // Rectify an order that never got a courier (Track > Needs fixing): consignee, payment and parcel can change until a shipment exists.
   app.patch('/v1/orders/:orderId/details', { preHandler: requireSeller }, async (request) => {
     const p = getPrincipal(request); const orderId = uuid.parse((request.params as { orderId: string }).orderId);
     const input = z.object({

@@ -59,10 +59,10 @@ const invalid = (message: string) => new ShiprocketError(message, 422);
 
 // Checked before any Shiprocket call, so bad data never creates a pickup location or an order there and the seller is told exactly what to fix.
 function validate(d: BookingDetails, request: CourierBookingRequest) {
-  if (!/^[6-9]\d{9}$/.test(tenDigits(d.consignee.phone))) throw invalid('The customer mobile number is not valid for this courier (10 digits starting 6-9). Correct it in Track > Failed.');
-  if (!/^\d{6}$/.test(d.consignee.pincode) || d.consignee.pincode === '000000') throw invalid('The customer pincode is missing or not valid. Correct it in Track > Failed.');
+  if (!/^[6-9]\d{9}$/.test(tenDigits(d.consignee.phone))) throw invalid('The customer mobile number is not valid for this courier (10 digits starting 6-9). Correct it in Track > Needs fixing.');
+  if (!/^\d{6}$/.test(d.consignee.pincode) || d.consignee.pincode === '000000') throw invalid('The customer pincode is missing or not valid. Correct it in Track > Needs fixing.');
   if (d.consignee.name.trim().length < 2) throw invalid('The customer name is missing.');
-  if (d.consignee.address1.trim().length < 3 || /^address missing$/i.test(d.consignee.address1.trim())) throw invalid('The customer address is missing. Correct it in Track > Failed.');
+  if (d.consignee.address1.trim().length < 3 || /^address missing$/i.test(d.consignee.address1.trim())) throw invalid('The customer address is missing. Correct it in Track > Needs fixing.');
   if (!d.items.length) throw invalid('The order has no products.');
   if (request.paymentMode === 'cod' && !(request.codAmountPaise > 0)) throw invalid('A cash-on-delivery order needs an amount to collect.');
 }

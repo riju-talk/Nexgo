@@ -17,9 +17,9 @@ const days = (t) => (t.minDays === t.maxDays ? `${t.minDays} day${t.minDays === 
 // only; without it the seller's priority list decides.
 export async function assignCouriers(orderIds, showToast, reload, courier) {
   const results = await assignInBatches(orderIds, { courier }); // progress is shown by the card on every page (components/JobProgressHost.jsx)
-  const assigned = results.filter((r) => r.ok).length; const failed = results.length - assigned;
+  const assigned = results.filter((r) => r.ok && !r.already).length; const already = results.filter((r) => r.already).length; const failed = results.length - assigned - already;
   const firstError = results.find((x) => !x.ok)?.error || '';
-  const said = assignSentence({ assigned, failed, waiting: results.waiting || 0, firstError });
+  const said = assignSentence({ assigned, failed, already, waiting: results.waiting || 0, firstError });
   showToast(said.text, said.tone, said.tone === 'error' ? 8000 : undefined);
   await reload();
 }

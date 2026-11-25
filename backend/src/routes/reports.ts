@@ -1,3 +1,4 @@
+import { pageOf, pageWithTotal } from '../lib/paging.js';
 import { hasPermission } from '../lib/permissions.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { PoolClient } from 'pg';
@@ -105,9 +106,7 @@ export async function reportRoutes(app: FastifyInstance) {
 
   app.get('/v1/reports', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
-    return withSellerTransaction(p.sellerId, async (client) => ({
-      items: (await client.query(`SELECT ${RUN_COLUMNS},(SELECT u.full_name FROM users u WHERE u.id=report_runs.created_by) AS generated_by FROM report_runs WHERE seller_id=$1 ORDER BY created_at DESC LIMIT 20`, [p.sellerId])).rows,
-    }));
+    return withSellerTransaction(p.sellerId, (client) => pageWithTotal((t, v) => client.query(t, v), `SELECT ${RUN_COLUMNS},(SELECT u.full_name FROM users u WHERE u.id=report_runs.created_by) AS generated_by FROM report_runs WHERE seller_id=$1 ORDER BY created_at DESC, id`, [p.sellerId], pageOf(request.query, 20)));
   });
 
   app.post('/v1/reports', { preHandler: requireSeller }, async (request, reply) => {

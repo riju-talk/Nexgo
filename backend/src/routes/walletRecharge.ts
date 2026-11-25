@@ -1,3 +1,4 @@
+import { pageOf, pageWithTotal } from '../lib/paging.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
@@ -69,9 +70,7 @@ export async function walletRechargeRoutes(app: FastifyInstance) {
 
   app.get('/v1/wallet/recharges', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
-    return withSellerTransaction(p.sellerId, async (client) => ({
-      items: (await client.query('SELECT id, amount_paise, status, provider_order_id, created_at, completed_at FROM wallet_recharges WHERE seller_id=$1 ORDER BY created_at DESC LIMIT 100', [p.sellerId])).rows,
-    }));
+    return withSellerTransaction(p.sellerId, (client) => pageWithTotal((t, v) => client.query(t, v), 'SELECT id, amount_paise, status, provider_order_id, created_at, completed_at FROM wallet_recharges WHERE seller_id=$1 ORDER BY created_at DESC, id', [p.sellerId], pageOf(request.query)));
   });
 
   // Public endpoint (no session — Razorpay calls this directly), authenticated

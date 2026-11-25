@@ -170,7 +170,7 @@ export async function importOrder(ch: Channel, node: Node): Promise<ImportResult
     const isCod = (node.paymentGatewayNames ?? []).some((g: string) => COD_GATEWAY.test(g)) && total > 0;
     const outstanding = paise(node.totalOutstandingSet); const codAmount = isCod ? Math.min(total, outstanding > 0 ? outstanding : total) : 0; // part-paid COD: collect only what is still owed
 
-    // Missing/odd consignee data still imports (placeholder values) so the order lands in Track > Failed where the seller can correct it.
+    // Missing/odd consignee data still imports (placeholder values) so the order lands in Track > Needs fixing where the seller can correct it.
     const name = String(ship.name || node.customer?.displayName || 'Customer').trim().slice(0, 120).padEnd(2, ' '); const phone = tenDigits(String(ship.phone || node.phone || node.customer?.phone || ''));
     const zip = String(ship.zip ?? '').replace(/\s/g, ''); const pin = /^\d{6}$/.test(zip) ? zip : '000000';
     const customer = { id: await customerIdFor(c, ch.seller_id, { fullName: name, email: node.email || node.customer?.email || null, phone, addressLine1: String(ship.address1 || 'Address missing').slice(0, 200), addressLine2: ship.address2 || null, city: String(ship.city || 'Unknown').slice(0, 80), state: String(ship.province || 'Unknown').slice(0, 80), pincode: pin, companyName: ship.company || null }) };

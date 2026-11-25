@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { pageRows } from '../lib/paging.js';
+import { pageOf, pageWithTotal } from '../lib/paging.js';
 import { z } from 'zod';
 import { db, withSellerTransaction, withTransaction } from '../db/client.js';
 import { requireAccountAdmin, requireFinanceAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
@@ -101,13 +101,12 @@ export async function invoiceRoutes(app: FastifyInstance) {
 
   app.get('/v1/admin/invoices', { preHandler: requirePlatformAdmin }, async (request) => {
     const q = z.object({ sellerId: z.string().uuid().optional(), status: z.enum(['draft', 'issued', 'void']).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0) }).parse(request.query);
-    const result = await db.query(
+    return pageWithTotal((t, v) => db.query(t, v),
       `SELECT i.*, s.legal_name AS seller_name FROM invoices i JOIN sellers s ON s.id = i.seller_id
        WHERE ($1::uuid IS NULL OR i.seller_id = $1) AND ($2::invoice_status IS NULL OR i.status = $2)
-       ORDER BY i.created_at DESC, i.id DESC LIMIT $3 OFFSET $4`,
-      [q.sellerId ?? null, q.status ?? null, q.limit + 1, q.offset],
+       ORDER BY i.created_at DESC, i.id DESC`,
+      [q.sellerId ?? null, q.status ?? null], pageOf(request.query),
     );
-    return pageRows(result.rows, q.limit);
   });
 
   function principal(request: FastifyRequest) {
@@ -117,9 +116,7 @@ export async function invoiceRoutes(app: FastifyInstance) {
 
   app.get('/v1/seller/invoices', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
-    return withSellerTransaction(p.sellerId, async (client) => ({
-      items: (await client.query('SELECT id, invoice_number, period_start, period_end, subtotal_paise, gst_paise, total_paise, shipment_count, status, issued_at FROM invoices WHERE seller_id=$1 ORDER BY created_at DESC LIMIT 100', [p.sellerId])).rows,
-    }));
+    return withSellerTransaction(p.sellerId, (client) => pageWithTotal((t, v) => client.query(t, v), 'SELECT id, invoice_number, period_start, period_end, subtotal_paise, gst_paise, total_paise, shipment_count, status, issued_at FROM invoices WHERE seller_id=$1 ORDER BY created_at DESC, id', [p.sellerId], pageOf(request.query, 100, 1000)));
   });
 
   // Everything the monthly tax invoice (print page) and its shipment-wise Excel / CSV annexure need.

@@ -36,7 +36,7 @@ function CreditLimits({ mobile }) {
         <Stat label="Total limit given" value={t ? inr0(t.limitPaise) : '—'} note="Across listed sellers" color={T.GREEN} />
         <Stat label="Credit in use" value={t ? inr0(t.usedPaise) : '—'} note="Negative wallet balances" color={T.RED} />
       </div>
-      <div style={{ ...CARD, padding: 4 }}><Table columns={cols} rows={data?.items || []} loading={loading} error={errText(error)} empty="No seller has a debit limit or a negative wallet." /></div>
+      <div style={{ ...CARD, padding: 4 }}><Table paged="admin-credit" columns={cols} rows={data?.items || []} loading={loading} error={errText(error)} empty="No seller has a debit limit or a negative wallet." /></div>
     </div>
   );
 }
@@ -86,7 +86,7 @@ function Escalations({ mobile }) {
         <Stat label="Urgent" value={loading ? '—' : num(items.filter((x) => x.priority === 'urgent').length)} note="Priority urgent" color={T.RED} />
         <Stat label="Waiting over 48 h" value={loading ? '—' : num(items.filter((x) => x.age_hours >= 48).length)} note="Any priority" color="#8A5A00" />
       </div>
-      <div style={{ ...CARD, padding: 4 }}><Table columns={cols} rows={items} loading={loading} error={errText(error)} empty="Nothing is escalated. Every urgent or old ticket has been handled." /></div>
+      <div style={{ ...CARD, padding: 4 }}><Table paged="admin-escalations" columns={cols} rows={items} loading={loading} error={errText(error)} empty="Nothing is escalated. Every urgent or old ticket has been handled." /></div>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { pageOf, pageWithTotal } from '../lib/paging.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db, withTransaction } from '../db/client.js';
@@ -51,7 +52,5 @@ export async function adminDisputeRoutes(app: FastifyInstance) {
     return result.row;
   });
 
-  app.get('/v1/admin/tds', { preHandler: requirePlatformAdmin }, async () => ({
-    items: (await db.query(`SELECT t.*, s.legal_name AS seller_name FROM tds_entries t JOIN sellers s ON s.id = t.seller_id ORDER BY t.created_at DESC LIMIT 200`)).rows,
-  }));
+  app.get('/v1/admin/tds', { preHandler: requirePlatformAdmin }, async (request) => pageWithTotal((t, v) => db.query(t, v), 'SELECT t.*, s.legal_name AS seller_name FROM tds_entries t JOIN sellers s ON s.id = t.seller_id ORDER BY t.created_at DESC, t.id', [], pageOf(request.query)));
 }

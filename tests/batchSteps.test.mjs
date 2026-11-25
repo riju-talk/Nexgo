@@ -36,3 +36,14 @@ test('a progress question that fails is asked again (the batch runs on the serve
 });
 test('a clear refusal (404) is not asked again', async () => { let n = 0; await assert.rejects(askAgain(async () => { n += 1; throw Object.assign(new Error('gone'), { status: 404 }); }, { sleep })); assert.equal(n, 1); });
 test('it gives up in the end', async () => { let n = 0; await assert.rejects(askAgain(async () => { n += 1; throw Object.assign(new Error('down'), { status: 503 }); }, { sleep, giveUp: 5 })); assert.equal(n, 5); });
+
+test('an order that was already booked is not a failure: it comes back with its AWB, and nothing is said to be charged again', () => {
+  const results = notQueuedResults({ notQueued: [{ id: 'o1', reason: 'This order already has a courier.', awb: 'AWB1', courier: 'Delhivery' }, { id: 'o2', reason: 'Order details are incomplete.' }] });
+  assert.deepEqual(results[0], { orderId: 'o1', ok: true, already: true, awb: 'AWB1', courier: 'Delhivery' });
+  assert.equal(results[1].ok, false);
+  const rows = [...applyAssignmentResults(new Map([['A', { created: true, existing: true, orderId: 'o1' }], ['B', { created: true, orderId: 'o2' }]]), ['o1', 'o2'], results).values()];
+  const s = summarizeBulk(rows);
+  assert.deepEqual([s.booked, s.already, s.refused, s.failed], [1, 1, 1, 0]);
+  assert.match(rows[1].failure, /^Order saved, but no courier yet: /);
+  assert.match(assignSentence({ assigned: 0, failed: 0, waiting: 0, already: 3 }).text, /3 orders already had a courier\. Nothing was booked or charged again/);
+});

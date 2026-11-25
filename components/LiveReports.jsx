@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { reportsApi } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
+import { useClientPages } from '@/lib/useClientPages';
+import { Pagination } from './Kit';
 import * as T from '@/lib/theme';
 import { FORMATS } from '@/lib/exportFile';
 
@@ -55,6 +57,7 @@ export default function LiveReports({ mobile }) {
     return () => { live = false; };
   }, [fetchRuns, applyRuns]);
 
+  const runPages = useClientPages(runs, 'reports', { defaultSize: 15 });
   const def = types.find((t) => t.id === form.type);
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value, ...(key === 'type' ? { status: 'all' } : {}) }));
   const valid = !!form.from && !!form.to && form.to >= form.from;
@@ -142,7 +145,7 @@ export default function LiveReports({ mobile }) {
       {runs?.length > 0 && (
         <section style={{ ...CARD, overflow: 'hidden', marginTop: 14 }}>
           <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.DIVIDER}`, color: T.TEXT, fontWeight: 800, fontSize: 13 }}>Recent reports</div>
-          {runs.map((run) => (
+          {runPages.items.map((run) => (
             <div key={run.id} style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', borderTop: `1px solid ${T.DIVIDER}` }}>
               <div style={{ minWidth: 0 }}>
                 <b style={{ color: T.TEXT, fontSize: 13 }}>{label(run.report_type)}</b>
@@ -151,6 +154,7 @@ export default function LiveReports({ mobile }) {
               <div style={{ display: 'flex', gap: 8 }}><Button onClick={() => open(run)}>View</Button><Button disabled={!run.row_count} onClick={() => download(run, 'csv')}>CSV</Button><Button disabled={!run.row_count} onClick={() => download(run, 'xlsx')}>Excel</Button></div>
             </div>
           ))}
+          <Pagination {...runPages.pager} noun="reports" />
         </section>
       )}
     </main>

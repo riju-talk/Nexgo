@@ -1,3 +1,4 @@
+import { pageOf, pageWithTotal } from '../lib/paging.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { withSellerTransaction } from '../db/client.js';
@@ -7,10 +8,10 @@ import { requireSeller } from './seller.js';
 export async function codConfirmationRoutes(app: FastifyInstance) {
   app.get('/v1/cod-confirmations', { preHandler: requireSeller }, async (request) => {
     const p = request.principal!;
-    return withSellerTransaction(p.sellerId, async (client) => ({ items: (await client.query(
+    return withSellerTransaction(p.sellerId, (client) => pageWithTotal((t, v) => client.query(t, v),
       `SELECT cc.id, cc.order_id, cc.channel, cc.state, cc.message, cc.queued_at, cc.responded_at, o.order_number, o.nexgo_order_id, o.cod_amount_paise, o.state AS order_state, c.full_name AS customer_name
        FROM cod_confirmations cc JOIN orders o ON o.id = cc.order_id JOIN customers c ON c.id = o.customer_id
-       WHERE cc.seller_id = $1 ORDER BY cc.queued_at DESC LIMIT 100`, [p.sellerId])).rows }));
+       WHERE cc.seller_id = $1 ORDER BY cc.queued_at DESC, cc.id`, [p.sellerId], pageOf(request.query)));
   });
 
   // Records the customer's answer. Answering twice is a no-op (the first answer stands). Declining cancels an order that has no courier yet.

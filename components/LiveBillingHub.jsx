@@ -148,7 +148,7 @@ function InvoiceTab() {
   const { showToast } = useAppState();
   const [rows, setRows] = useState(null); const [error, setError] = useState('');
   const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [format, setFormat] = useState('csv');
-  useEffect(() => { let live = true; apiFetch('/v1/seller/invoices').then((x) => { if (live) setRows(x.items || []); }).catch((e) => { if (live) { setRows([]); setError(e.status === 401 ? 'Sign in to view invoices.' : e.message || 'Invoices could not be loaded.'); } }); return () => { live = false; }; }, []);
+  useEffect(() => { let live = true; apiFetch('/v1/seller/invoices?pageSize=1000').then((x) => { if (live) setRows(x.items || []); }).catch((e) => { if (live) { setRows([]); setError(e.status === 401 ? 'Sign in to view invoices.' : e.message || 'Invoices could not be loaded.'); } }); return () => { live = false; }; }, []);
   const shown = useMemo(() => (rows || []).filter((r) => (!from || (r.period_end || '').slice(0, 10) >= from) && (!to || (r.period_start || '').slice(0, 10) <= to)), [rows, from, to]);
   const period = (r) => new Date(r.period_start).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
   const exportRows = async () => { if (!shown.length) return showToast('Nothing to export.', 'error'); await saveRows([['Invoice no', 'Service type', 'Invoice date', 'Invoice period', 'Subtotal INR', 'GST INR', 'Invoice amount INR', 'Status'], ...shown.map((r) => [r.invoice_number, 'Shipment', dayText(r.issued_at || r.period_end), period(r), r.subtotal_paise / 100, r.gst_paise / 100, r.total_paise / 100, r.status])], `invoices-${isoDay()}`, format, 'Invoices'); showToast(`Exported ${shown.length} invoices`); };
@@ -161,7 +161,7 @@ function InvoiceTab() {
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}><select aria-label="Export format" style={FIELD} value={format} onChange={(e) => setFormat(e.target.value)}>{FORMATS.map(([id, l]) => <option key={id} value={id}>{l}</option>)}</select><Btn onClick={exportRows}>⤓ Export</Btn></div>
       </div>
       <section style={{ ...CARD, overflow: 'hidden' }}>
-        <Table loading={rows === null} error={error} rows={shown} empty="No invoices yet. Your monthly shipping invoice appears here once it is issued."
+        <Table paged="invoices" noun="invoices" loading={rows === null} error={error} rows={shown} empty="No invoices yet. Your monthly shipping invoice appears here once it is issued."
           columns={[
             { h: 'Invoice no. #', cell: (r) => <b style={{ fontFamily: T.MONO }}>{r.invoice_number}</b> }, { h: 'Service type', cell: () => 'Shipment' }, { h: 'Invoice date', cell: (r) => dayText(r.issued_at || r.period_end) },
             { h: 'Invoice period', cell: (r) => period(r) }, { h: 'Shipments', cell: (r) => r.shipment_count }, { h: 'GST', cell: (r) => inr(r.gst_paise) }, { h: 'Invoice amount', cell: (r) => <b>{inr(r.total_paise)}</b> },

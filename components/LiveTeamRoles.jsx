@@ -127,7 +127,7 @@ export default function LiveTeamRoles({ mobile }) {
         <Btn primary onClick={() => setAdding(true)} disabled={!data}>+ Add employee access</Btn>
       </div>
       <section style={{ ...CARD, overflow: 'hidden' }}>
-        <Table columns={columns} rows={data?.members || []} loading={!data && !error} error={error} rowKey={(m) => m.user_id} empty="No team members yet." />
+        <Table paged="team" columns={columns} rows={data?.members || []} loading={!data && !error} error={error} rowKey={(m) => m.user_id} empty="No team members yet." />
       </section>
       <section style={{ ...CARD, padding: 16, marginTop: 14 }}>
         <b style={{ color: T.TEXT, fontSize: 13.5 }}>Invite by email instead</b>

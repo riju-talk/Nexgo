@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { pageRows } from '../lib/paging.js';
+import { pageOf, pageWithTotal } from '../lib/paging.js';
 import { z } from 'zod';
 import { db } from '../db/client.js';
 import { requireAccountAdmin, requireCommercialAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
@@ -35,16 +35,15 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
   // --- Seller lifecycle -----------------------------------------------
   app.get('/v1/admin/wallets', { preHandler: requirePlatformAdmin }, async (request) => {
     const q = z.object({ search: z.string().trim().max(120).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0) }).parse(request.query);
-    const result = await db.query(
+    return pageWithTotal((t, v) => db.query(t, v),
       `SELECT s.id, s.legal_name, s.nexgo_code, s.state,
         COALESCE(SUM(CASE WHEN w.entry_type IN ('credit','release') THEN w.amount_paise WHEN w.entry_type IN ('debit','hold') THEN -w.amount_paise ELSE w.amount_paise END), 0)::bigint AS balance_paise,
         COUNT(w.id)::int AS entry_count, MAX(w.created_at) AS last_activity_at
        FROM sellers s LEFT JOIN wallet_entries w ON w.seller_id=s.id
        WHERE ($1::text IS NULL OR s.legal_name ILIKE '%' || $1 || '%' OR s.nexgo_code ILIKE '%' || $1 || '%')
-       GROUP BY s.id ORDER BY balance_paise ASC, s.legal_name, s.id LIMIT $2 OFFSET $3`,
-      [q.search ? escLike(q.search) : null, q.limit + 1, q.offset],
+       GROUP BY s.id ORDER BY balance_paise ASC, s.legal_name, s.id`,
+      [q.search ? escLike(q.search) : null], pageOf(request.query),
     );
-    return pageRows(result.rows, q.limit);
   });
 
   // Pickups pending across all sellers: the same definition as every other pickup figure (lib/metrics.ts). Exact totals, filters and paging (no 500-row cap).
@@ -88,21 +87,20 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
 
   app.get('/v1/admin/orders', { preHandler: requirePlatformAdmin }, async (request) => {
     const q = z.object({ state: z.enum(['new', 'ready_to_ship', 'booked', 'cancelled']).optional(), orderFlow: z.enum(['forward', 'reverse', 'dropship', 'ship_now']).optional(), sellerId: uuid.optional(), q: z.string().trim().max(120).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0) }).parse(request.query);
-    const result = await db.query(
+    return pageWithTotal((t, v) => db.query(t, v),
       `SELECT o.id, o.order_number, o.order_flow, o.notes, o.state, o.payment_mode, o.subtotal_paise, o.total_weight_g, o.created_at,
               s.legal_name AS seller_name, c.full_name AS customer_name, c.city AS customer_city, c.pincode AS customer_pincode
        FROM orders o JOIN sellers s ON s.id = o.seller_id JOIN customers c ON c.id = o.customer_id
        WHERE ($1::order_state IS NULL OR o.state = $1) AND ($2::text IS NULL OR o.order_flow = $2) AND ($3::uuid IS NULL OR o.seller_id = $3)
-         AND ($5::text IS NULL OR o.order_number ILIKE '%' || $5 || '%' OR c.full_name ILIKE '%' || $5 || '%' OR c.phone ILIKE '%' || $5 || '%')
-       ORDER BY o.created_at DESC, o.id DESC LIMIT $4 OFFSET $6`,
-      [q.state ?? null, q.orderFlow ?? null, q.sellerId ?? null, q.limit + 1, q.q ? escLike(q.q) : null, q.offset],
+         AND ($4::text IS NULL OR o.order_number ILIKE '%' || $4 || '%' OR c.full_name ILIKE '%' || $4 || '%' OR c.phone ILIKE '%' || $4 || '%')
+       ORDER BY o.created_at DESC, o.id DESC`,
+      [q.state ?? null, q.orderFlow ?? null, q.sellerId ?? null, q.q ? escLike(q.q) : null], pageOf(request.query),
     );
-    return pageRows(result.rows, q.limit);
   });
 
   app.get('/v1/admin/sellers', { preHandler: requirePlatformAdmin }, async (request) => {
     const q = pageQuery.parse(request.query);
-    const result = await db.query(
+    return pageWithTotal((t, v) => db.query(t, v),
       `SELECT s.id, s.legal_name, s.slug, s.nexgo_code, s.state, s.created_at, COALESCE(k.status, 'unsubmitted') AS kyc_status,
               poc.email AS email, poc.full_name AS poc_name,
               (SELECT count(*) FROM orders o WHERE o.seller_id = s.id) AS order_count,
@@ -111,12 +109,16 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
        LEFT JOIN seller_kyc k ON k.seller_id = s.id
        LEFT JOIN LATERAL (SELECT u.email, u.full_name FROM seller_memberships m JOIN users u ON u.id = m.user_id WHERE m.seller_id = s.id ORDER BY (m.role = 'owner') DESC, m.created_at LIMIT 1) poc ON true
        WHERE ($1::seller_state IS NULL OR s.state = $1)
-         AND ($2::text IS NULL OR s.legal_name ILIKE '%' || $2 || '%')
-       ORDER BY s.created_at DESC, s.id DESC LIMIT $3 OFFSET $4`,
-      [q.state ?? null, q.search ?? null, q.limit + 1, q.offset],
+         AND ($2::text IS NULL OR s.legal_name ILIKE '%' || $2 || '%' OR s.nexgo_code ILIKE '%' || $2 || '%' OR poc.email::text ILIKE '%' || $2 || '%')
+       ORDER BY s.created_at DESC, s.id DESC`,
+      [q.state ?? null, q.search ? escLike(q.search) : null], pageOf(request.query),
     );
-    return pageRows(result.rows, q.limit);
   });
+
+  // Every seller's name for the filter dropdowns (they used to know only the newest 100).
+  app.get('/v1/admin/seller-options', { preHandler: requirePlatformAdmin }, async () => ({
+    items: (await db.query('SELECT id, legal_name, nexgo_code FROM sellers ORDER BY legal_name, id LIMIT 20000')).rows,
+  }));
 
   app.get('/v1/admin/sellers/:sellerId', { preHandler: requirePlatformAdmin }, async (request, reply) => {
     const sellerId = uuid.parse((request.params as { sellerId: string }).sellerId);
@@ -202,19 +204,18 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
       limit: z.coerce.number().int().min(1).max(200).default(50),
       offset: z.coerce.number().int().min(0).default(0),
     }).parse(request.query);
-    const result = await db.query(
+    return pageWithTotal((t, v) => db.query(t, v),
       `SELECT sh.id, sh.awb, sh.state, sh.chargeable_weight_g, sh.shipping_charge_paise, sh.booked_at, sh.provider_id,
               cp.name AS courier_name, cs.display_name AS service_name,
               s.legal_name AS seller_name, o.order_number
        FROM shipments sh JOIN sellers s ON s.id = sh.seller_id JOIN orders o ON o.id = sh.order_id
        JOIN courier_providers cp ON cp.id = sh.provider_id JOIN courier_services cs ON cs.id = sh.service_id
        WHERE ($1::shipment_state IS NULL OR sh.state = $1) AND ($2::uuid IS NULL OR sh.seller_id = $2)
-         AND ($4::uuid IS NULL OR sh.provider_id = $4)
-         AND ($5::text IS NULL OR sh.awb ILIKE '%' || $5 || '%' OR o.order_number ILIKE '%' || $5 || '%')
-       ORDER BY sh.booked_at DESC, sh.id DESC LIMIT $3 OFFSET $6`,
-      [q.state ?? null, q.sellerId ?? null, q.limit + 1, q.providerId ?? null, q.q ? escLike(q.q) : null, q.offset],
+         AND ($3::uuid IS NULL OR sh.provider_id = $3)
+         AND ($4::text IS NULL OR sh.awb ILIKE '%' || $4 || '%' OR o.order_number ILIKE '%' || $4 || '%')
+       ORDER BY sh.booked_at DESC, sh.id DESC`,
+      [q.state ?? null, q.sellerId ?? null, q.providerId ?? null, q.q ? escLike(q.q) : null], pageOf(request.query),
     );
-    return pageRows(result.rows, q.limit);
   });
 
   // --- Global search box (top bar): sellers, AWBs and orders in one call ----
@@ -262,7 +263,7 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
       limit: z.coerce.number().int().min(1).max(200).default(50),
       offset: z.coerce.number().int().min(0).default(0),
     }).parse(request.query);
-    const result = await db.query(
+    return pageWithTotal((t, v) => db.query(t, v),
       `SELECT n.id, n.state, n.reason_code, n.reason_detail, n.opened_at, n.resolved_at,
               s.legal_name AS seller_name, sh.awb, o.order_number
        FROM ndr_cases n
@@ -270,9 +271,8 @@ export async function adminOperationsRoutes(app: FastifyInstance) {
        JOIN orders o ON o.id = sh.order_id
        JOIN sellers s ON s.id = n.seller_id
        WHERE ($1::ndr_state IS NULL OR n.state = $1) AND ($2::uuid IS NULL OR n.seller_id = $2)
-       ORDER BY n.opened_at DESC, n.id DESC LIMIT $3 OFFSET $4`,
-      [q.state ?? null, q.sellerId ?? null, q.limit + 1, q.offset],
+       ORDER BY n.opened_at DESC, n.id DESC`,
+      [q.state ?? null, q.sellerId ?? null], pageOf(request.query),
     );
-    return pageRows(result.rows, q.limit);
   });
 }

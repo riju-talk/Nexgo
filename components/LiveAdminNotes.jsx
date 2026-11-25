@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { adminApi, apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
+import { usePagedNav } from '@/lib/usePageNav';
 import * as T from '@/lib/theme';
-import { BLUE, Btn, CARD, FIELD, Table, dayText, inr } from './Kit';
+import { BLUE, Btn, CARD, FIELD, Table, dayText, inr, Pagination } from './Kit';
 
 const GST_BPS = 1800;
 const rupeesToPaise = (v) => Math.round((Number(v) || 0) * 100);
@@ -15,20 +16,13 @@ const Label = ({ children }) => <span style={{ display: 'block', fontSize: 12.5,
 export default function LiveAdminNotes({ mobile }) {
   const { showToast } = useAppState();
   const [sellers, setSellers] = useState([]); const [invoices, setInvoices] = useState([]);
-  const [notes, setNotes] = useState(null); const [tds, setTds] = useState(null); const [error, setError] = useState('');
+  const notesNav = usePagedNav({ path: '/v1/admin/credit-notes', name: 'admin-notes', defaultSize: 15 }); const tdsNav = usePagedNav({ path: '/v1/admin/tds', name: 'admin-tds', defaultSize: 15 });
+  const notes = notesNav.started ? notesNav.items : null; const tds = tdsNav.started ? tdsNav.items : null; const error = notesNav.message || tdsNav.message;
   const [cn, setCn] = useState({ sellerId: '', invoiceId: '', reason: '', amount: '' }); const [td, setTd] = useState({ sellerId: '', fy: currentFy(), quarter: '1', section: '194C', taxable: '', rate: '1', cert: '' });
   const [busy, setBusy] = useState('');
 
-  const [tick, setTick] = useState(0);
-  const load = () => setTick((t) => t + 1);
-  useEffect(() => {
-    let live = true;
-    Promise.all([apiFetch('/v1/admin/credit-notes'), apiFetch('/v1/admin/tds')])
-      .then(([a, b]) => { if (live) { setNotes(a.items); setTds(b.items); setError(''); } })
-      .catch((e) => { if (live) { setNotes([]); setTds([]); setError(e.status === 401 || e.status === 403 ? 'Sign in as a platform administrator.' : e.message || 'Documents could not be loaded.'); } });
-    return () => { live = false; };
-  }, [tick]);
-  useEffect(() => { let live = true; adminApi.sellers({ limit: '100' }).then((x) => { if (live) setSellers(x.items || []); }).catch(() => {}); return () => { live = false; }; }, []);
+  const load = () => { notesNav.reload(); tdsNav.reload(); };
+  useEffect(() => { let live = true; adminApi.sellerOptions().then((x) => { if (live) setSellers(x.items || []); }).catch(() => {}); return () => { live = false; }; }, []);
   useEffect(() => { if (!cn.sellerId) return; let live = true; adminApi.invoices({ sellerId: cn.sellerId, limit: 200 }).then((x) => { if (live) setInvoices(x.items || []); }).catch(() => { if (live) setInvoices([]); }); return () => { live = false; }; }, [cn.sellerId]);
 
   const subtotal = rupeesToPaise(cn.amount); const gst = Math.floor((subtotal * GST_BPS) / 10_000);
@@ -75,9 +69,9 @@ export default function LiveAdminNotes({ mobile }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 16, alignItems: 'start' }}>
         <section style={{ ...CARD, overflow: 'hidden', background: 'var(--ops-surface)' }}><div style={{ padding: '13px 16px', borderBottom: `1px solid ${T.DIVIDER}` }}><b style={{ color: T.TEXT }}>Recent credit notes</b></div>
-          <Table loading={notes === null} rows={notes || []} minWidth={520} empty="No credit notes issued yet." columns={[{ h: 'Credit note', cell: (r) => <b style={{ fontFamily: T.MONO }}>{r.credit_note_number}</b> }, { h: 'Seller', cell: (r) => r.seller_name }, { h: 'Issued', cell: (r) => dayText(r.issued_at) }, { h: 'Total', cell: (r) => <b>{inr(r.total_paise)}</b> }]} /></section>
+          <Table loading={notes === null} rows={notes || []} minWidth={520} empty="No credit notes issued yet." columns={[{ h: 'Credit note', cell: (r) => <b style={{ fontFamily: T.MONO }}>{r.credit_note_number}</b> }, { h: 'Seller', cell: (r) => r.seller_name }, { h: 'Issued', cell: (r) => dayText(r.issued_at) }, { h: 'Total', cell: (r) => <b>{inr(r.total_paise)}</b> }]} /><Pagination page={notesNav.page} pages={notesNav.pages} size={notesNav.size} total={notesNav.total} loading={notesNav.loading} onPage={notesNav.setPage} onSize={notesNav.setSize} noun="credit notes" /></section>
         <section style={{ ...CARD, overflow: 'hidden', background: 'var(--ops-surface)' }}><div style={{ padding: '13px 16px', borderBottom: `1px solid ${T.DIVIDER}` }}><b style={{ color: T.TEXT }}>Recent TDS entries</b></div>
-          <Table loading={tds === null} rows={tds || []} minWidth={520} empty="No TDS entries recorded yet." columns={[{ h: 'Seller', cell: (r) => r.seller_name }, { h: 'FY / Qtr', cell: (r) => `FY ${r.financial_year} · Q${r.quarter}` }, { h: 'Section', cell: (r) => r.section }, { h: 'TDS', cell: (r) => <b>{inr(r.tds_paise)}</b> }]} /></section>
+          <Table loading={tds === null} rows={tds || []} minWidth={520} empty="No TDS entries recorded yet." columns={[{ h: 'Seller', cell: (r) => r.seller_name }, { h: 'FY / Qtr', cell: (r) => `FY ${r.financial_year} · Q${r.quarter}` }, { h: 'Section', cell: (r) => r.section }, { h: 'TDS', cell: (r) => <b>{inr(r.tds_paise)}</b> }]} /><Pagination page={tdsNav.page} pages={tdsNav.pages} size={tdsNav.size} total={tdsNav.total} loading={tdsNav.loading} onPage={tdsNav.setPage} onSize={tdsNav.setSize} noun="TDS entries" /></section>
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import { pageOf, pageWithTotal } from '../lib/paging.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db, withSellerTransaction, withTransaction } from '../db/client.js';
@@ -33,7 +34,7 @@ export async function billingExtrasRoutes(app: FastifyInstance) {
     return withSellerTransaction(p.sellerId, async (client) => ({
       items: (await client.query(
         `SELECT c.id, c.credit_note_number, c.reason, c.subtotal_paise, c.gst_paise, c.total_paise, c.issued_at, i.invoice_number
-         FROM credit_notes c LEFT JOIN invoices i ON i.id = c.invoice_id WHERE c.seller_id=$1 ORDER BY c.issued_at DESC LIMIT 200`, [p.sellerId])).rows,
+         FROM credit_notes c LEFT JOIN invoices i ON i.id = c.invoice_id WHERE c.seller_id=$1 ORDER BY c.issued_at DESC LIMIT 5000`, [p.sellerId])).rows,
     }));
   });
 
@@ -42,7 +43,7 @@ export async function billingExtrasRoutes(app: FastifyInstance) {
     return withSellerTransaction(p.sellerId, async (client) => ({
       items: (await client.query(
         `SELECT id, financial_year, quarter, section, taxable_paise, tds_rate_bps, tds_paise, certificate_reference, created_at
-         FROM tds_entries WHERE seller_id=$1 ORDER BY financial_year DESC, quarter DESC, created_at DESC LIMIT 200`, [p.sellerId])).rows,
+         FROM tds_entries WHERE seller_id=$1 ORDER BY financial_year DESC, quarter DESC, created_at DESC LIMIT 5000`, [p.sellerId])).rows,
     }));
   });
 
@@ -87,7 +88,5 @@ export async function billingExtrasRoutes(app: FastifyInstance) {
     return reply.code(201).send(row);
   });
 
-  app.get('/v1/admin/credit-notes', { preHandler: requirePlatformAdmin }, async () => ({
-    items: (await db.query(`SELECT c.*, s.legal_name AS seller_name FROM credit_notes c JOIN sellers s ON s.id=c.seller_id ORDER BY c.issued_at DESC LIMIT 200`)).rows,
-  }));
+  app.get('/v1/admin/credit-notes', { preHandler: requirePlatformAdmin }, async (request) => pageWithTotal((t, v) => db.query(t, v), 'SELECT c.*, s.legal_name AS seller_name FROM credit_notes c JOIN sellers s ON s.id=c.seller_id ORDER BY c.issued_at DESC, c.id', [], pageOf(request.query)));
 }

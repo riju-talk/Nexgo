@@ -12,7 +12,7 @@ import { workerHealth } from '../lib/workerHealth.js';
  *   GET  /v1/shipments/cancel-batch/active the seller's unfinished batch, if any (so the page can show progress after a refresh)
  * The worker (lib/cancelQueue.ts) cancels them through cancelShipment(), the same code as the single Cancel button.
  */
-const MAX_ITEMS = 2000;
+const MAX_ITEMS = 5000;
 const uuid = z.string().uuid();
 
 function principal(request: FastifyRequest) {

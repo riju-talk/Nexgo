@@ -1,3 +1,4 @@
+import { pageOf, pageWithTotal } from '../lib/paging.js';
 import argon2 from 'argon2';
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -161,7 +162,7 @@ export async function adminSellerProfileRoutes(app: FastifyInstance) {
   app.get('/v1/admin/rate-cards/overview', { preHandler: requirePlatformAdmin }, async (request) => {
     const { search } = z.object({ search: z.string().trim().max(120).optional() }).parse(request.query);
     const like = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
-    const result = await db.query(
+    return pageWithTotal((t, v) => db.query(t, v),
       `SELECT s.id, s.legal_name, s.nexgo_code, s.state, rc.id AS card_id, rc.name AS card_name, rc.effective_from,
               COALESCE(x.services, 0)::int AS services, COALESCE(x.couriers, '{}') AS couriers
        FROM sellers s
@@ -169,8 +170,7 @@ export async function adminSellerProfileRoutes(app: FastifyInstance) {
        LEFT JOIN LATERAL (SELECT count(DISTINCT r.service_id) AS services, array_agg(DISTINCT cp.name) AS couriers
                           FROM rate_card_rates r JOIN courier_services cs ON cs.id = r.service_id JOIN courier_providers cp ON cp.id = cs.provider_id WHERE r.rate_card_id = rc.id) x ON true
        WHERE ($1::text IS NULL OR s.legal_name ILIKE $1 OR s.nexgo_code ILIKE $1)
-       ORDER BY s.legal_name LIMIT 300`, [like]);
-    return { items: result.rows };
+       ORDER BY s.legal_name, s.id`, [like], pageOf(request.query));
   });
 
   // Everything the "Assign courier and rates" screen needs for one seller: all bookable courier services, whether the seller can use each, and the current card's rows.

@@ -51,3 +51,23 @@ export function mergeNewestFirst<T extends { ts: string; id: string }>(sources: 
 export function pageRows<T>(rows: T[], limit: number): { items: T[]; hasMore: boolean } {
   return { items: rows.slice(0, limit), hasMore: rows.length > limit };
 }
+
+/** Which rows a numbered list asks for: `page` + `pageSize` (the pagination control) or `limit` + `offset`. Anything invalid falls back to the first page. */
+export function pageOf(query: unknown, fallback = 50, max = 200): { limit: number; offset: number } {
+  const q = (query ?? {}) as Record<string, unknown>;
+  const whole = (v: unknown, min: number) => { const n = Number(v); return v !== undefined && v !== '' && Number.isInteger(n) && n >= min ? n : undefined; };
+  const limit = Math.min(whole(q.pageSize, 1) ?? whole(q.limit, 1) ?? fallback, max);
+  const page = whole(q.page, 1);
+  return { limit, offset: Math.min(page !== undefined ? (page - 1) * limit : whole(q.offset, 0) ?? 0, 10_000_000) };
+}
+
+/**
+ * One page of a list plus the exact number of rows that match, so every list can show "Showing 51-100 of 292" and real page numbers. `sql` has its ORDER BY
+ * (with a unique tie-breaker) but no LIMIT. A page past the end is empty with the true total, and the screen goes to the last page.
+ */
+export async function pageWithTotal<T extends object = Record<string, unknown>>(run: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }>, sql: string, params: unknown[], { limit, offset }: { limit: number; offset: number }): Promise<{ items: T[]; total: number; hasMore: boolean }> {
+  const rows = (await run(`${sql} LIMIT ${limit} OFFSET ${offset}`, params)).rows as T[];
+  // The first page that is not full already says how many there are.
+  const total = offset === 0 && rows.length < limit ? rows.length : Number(((await run(`SELECT count(*)::int AS n FROM (${sql}) counted`, params)).rows[0] as { n: number }).n);
+  return { items: rows, total, hasMore: offset + rows.length < total };
+}

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { pageRows } from '../lib/paging.js';
+import { pageOf, pageWithTotal } from '../lib/paging.js';
 import { z } from 'zod';
 import { db } from '../db/client.js';
 import { requireAccountAdmin, requirePlatformAdmin } from '../lib/adminAuth.js';
@@ -16,7 +16,7 @@ export async function adminVisibilityRoutes(app: FastifyInstance) {
       limit: z.coerce.number().int().min(1).max(500).default(100),
     }).parse(request.query);
     // actor_kind tells a reader at a glance who acted: a platform admin, a seller's user, the admin-creation API, or the system itself.
-    const result = await db.query(
+    return pageWithTotal((t, v) => db.query(t, v),
       `SELECT a.id, a.action, a.target_type, a.target_id, a.metadata, a.created_at, a.request_id,
               s.legal_name AS seller_name, u.email AS actor_email, u.full_name AS actor_name, pa.role AS actor_role,
               CASE WHEN pa.user_id IS NOT NULL THEN 'admin' WHEN u.id IS NOT NULL THEN 'seller'
@@ -29,10 +29,9 @@ export async function adminVisibilityRoutes(app: FastifyInstance) {
          AND ($3::text IS NULL OR u.email ILIKE '%' || $3 || '%')
          AND ($4::date IS NULL OR a.created_at >= $4::date) AND ($5::date IS NULL OR a.created_at < $5::date + 1)
          AND ($6::timestamptz IS NULL OR a.created_at < $6::timestamptz)
-       ORDER BY a.created_at DESC LIMIT $7`,
-      [q.sellerId ?? null, q.action ?? null, q.actor ?? null, q.from ?? null, q.to ?? null, q.before ?? null, q.limit],
+       ORDER BY a.created_at DESC, a.id DESC`,
+      [q.sellerId ?? null, q.action ?? null, q.actor ?? null, q.from ?? null, q.to ?? null, q.before ?? null], pageOf(request.query, 100),
     );
-    return { items: result.rows };
   });
 
   app.get('/v1/admin/jobs', { preHandler: requirePlatformAdmin }, async (request) => {
@@ -42,14 +41,13 @@ export async function adminVisibilityRoutes(app: FastifyInstance) {
       limit: z.coerce.number().int().min(1).max(200).default(50),
       offset: z.coerce.number().int().min(0).default(0),
     }).parse(request.query);
-    const result = await db.query(
+    return pageWithTotal((t, v) => db.query(t, v),
       `SELECT j.id, j.job_type, j.state, j.attempts, j.error_summary, j.queued_at, j.started_at, j.completed_at, s.legal_name AS seller_name
        FROM job_runs j LEFT JOIN sellers s ON s.id = j.seller_id
        WHERE ($1::job_state IS NULL OR j.state = $1) AND ($2::text IS NULL OR j.job_type = $2)
-       ORDER BY j.queued_at DESC, j.id DESC LIMIT $3 OFFSET $4`,
-      [q.state ?? null, q.jobType ?? null, q.limit + 1, q.offset],
+       ORDER BY j.queued_at DESC, j.id DESC`,
+      [q.state ?? null, q.jobType ?? null], pageOf(request.query),
     );
-    return pageRows(result.rows, q.limit);
   });
 
   // A dead-lettered or failed job is requeued, not silently discarded — it

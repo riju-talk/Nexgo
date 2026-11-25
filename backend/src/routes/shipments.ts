@@ -63,6 +63,28 @@ async function fundsShort(client: PoolClient, sellerId: string, amountPaise: num
  */
 export type BookingContext = { input: z.infer<typeof bookingInput>; key: string; zone: string; selection: Rate; price: ReturnType<typeof calculateRate>; details: Awaited<ReturnType<typeof loadBookingDetails>>; promisedDays: number };
 
+/** The plain reason a courier cannot be used for an order (the same rules as the query in prepareBooking, asked one by one). Only runs when booking was refused. */
+async function whyNotBookable(client: PoolClient, sellerId: string, input: z.infer<typeof bookingInput>, zone: string): Promise<string> {
+  const r = (await client.query<{ order_state: string; payment_mode: string; weight: number; courier: string; active: boolean; supports_cod: boolean; access: string | null; cod_enabled: boolean | null; blocked: boolean; has_card: boolean; has_rate: boolean }>(
+    `SELECT o.state::text AS order_state, o.payment_mode::text AS payment_mode, GREATEST(o.total_weight_g,o.volumetric_weight_g) AS weight, cp.name AS courier, (cs.is_active AND cp.integration_state='live') AS active, cp.supports_cod, sca.state::text AS access, sca.cod_enabled,
+            (EXISTS (SELECT 1 FROM seller_pincode_blocks sb WHERE sb.seller_id=o.seller_id AND (sb.service_id IS NULL OR sb.service_id=cs.id) AND sb.pincode=c.pincode) OR EXISTS (SELECT 1 FROM platform_pincode_blocks pb WHERE pb.pincode=c.pincode)
+              OR EXISTS (SELECT 1 FROM courier_pincode_rules b WHERE b.service_id=cs.id AND b.rule_type='blocked' AND c.pincode LIKE b.destination_prefix || '%')
+              OR (EXISTS (SELECT 1 FROM courier_pincode_rules w WHERE w.service_id=cs.id AND w.rule_type='allowed') AND NOT EXISTS (SELECT 1 FROM courier_pincode_rules w WHERE w.service_id=cs.id AND w.rule_type='allowed' AND c.pincode LIKE w.destination_prefix || '%'))) AS blocked,
+            card.id IS NOT NULL AS has_card, EXISTS (SELECT 1 FROM rate_card_rates rcr WHERE rcr.rate_card_id=card.id AND rcr.service_id=cs.id AND rcr.zone_code IN ($5,'national') AND rcr.min_weight_g<=GREATEST(o.total_weight_g,o.volumetric_weight_g)) AS has_rate
+       FROM orders o JOIN customers c ON c.id=o.customer_id JOIN courier_services cs ON cs.code=$4 JOIN courier_providers cp ON cp.id=cs.provider_id AND cp.code=$3 LEFT JOIN seller_courier_access sca ON sca.seller_id=o.seller_id AND sca.service_id=cs.id
+       LEFT JOIN LATERAL (SELECT id FROM rate_cards WHERE seller_id=o.seller_id AND state='active' AND effective_from<=now() AND (effective_to IS NULL OR effective_to>now()) ORDER BY effective_from DESC LIMIT 1) card ON true
+      WHERE o.id=$1 AND o.seller_id=$2`, [input.orderId, sellerId, input.providerCode, input.serviceCode, zone])).rows[0];
+  if (!r) return 'This courier was not found. Choose another courier.';
+  if (r.order_state !== 'ready_to_ship') return r.order_state === 'booked' ? 'This order already has a courier.' : `This order is ${r.order_state.replace(/_/g, ' ')}, so it cannot be booked.`;
+  if (!r.active) return `${r.courier} is switched off right now. Choose another courier.`;
+  if (r.access !== 'enabled') return `${r.courier} is not enabled for your account. Choose another courier or contact support.`;
+  if (r.payment_mode === 'cod' && !(r.supports_cod && r.cod_enabled)) return `${r.courier} does not take cash on delivery for your account. Switch the order to prepaid or choose another courier.`;
+  if (r.blocked) return `${r.courier} does not deliver to this pincode. Choose another courier.`;
+  if (!r.has_card) return 'No rate card is set for your account yet. Please contact support.';
+  if (!r.has_rate) return `${r.courier} has no rate for a ${(r.weight / 1000).toFixed(2)} kg parcel on this route. Choose another courier or contact support.`;
+  return `${r.courier} cannot take this order. Choose another courier.`;
+}
+
 export async function prepareBooking(client: PoolClient, p: ReturnType<typeof principal>, input: z.infer<typeof bookingInput>, key: string): Promise<{ replay: true; shipment: Record<string, unknown> } | { replay: false; ctx: BookingContext }> {
     const previous = await client.query('SELECT * FROM shipments WHERE seller_id=$1 AND idempotency_key=$2', [p.sellerId, key]); if (previous.rows[0]) return { replay: true as const, shipment: previous.rows[0] };
     if ((await client.query('SELECT 1 FROM shipments WHERE seller_id=$1 AND order_id=$2', [p.sellerId, input.orderId])).rows[0]) throw await alreadyBooked(p.sellerId, input.orderId);
@@ -70,7 +92,7 @@ export async function prepareBooking(client: PoolClient, p: ReturnType<typeof pr
     const lane = await client.query<{ wc: string; ws: string; cc: string; cs: string }>(`SELECT COALESCE(wp.city, w.city) AS wc, COALESCE(wp.state, w.state) AS ws, COALESCE(p.city, c.city) AS cc, COALESCE(p.state, c.state) AS cs FROM orders o JOIN warehouses w ON w.id=o.warehouse_id JOIN customers c ON c.id=o.customer_id LEFT JOIN pincodes p ON p.pincode=c.pincode LEFT JOIN pincodes wp ON wp.pincode=w.pincode WHERE o.id=$1 AND o.seller_id=$2`, [input.orderId, p.sellerId]);
     const zone = lane.rows[0] ? laneZone({ city: lane.rows[0].wc, state: lane.rows[0].ws }, { city: lane.rows[0].cc, state: lane.rows[0].cs }) : 'rest_of_india';
     const rate = await client.query<Rate>(`SELECT cp.id AS provider_id,cp.code AS provider_code,cp.aggregator,cp.name AS provider_name,cs.id AS service_id,cs.code AS service_code,cs.display_name AS service_name,rcr.base_weight_g,rcr.base_price_paise,rcr.additional_weight_g,rcr.additional_price_paise,rcr.cod_fee_paise,rcr.fuel_surcharge_bps,rcr.cod_percent_bps,rcr.rto_base_price_paise,rcr.rto_additional_price_paise,o.payment_mode,o.cod_amount_paise,GREATEST(o.total_weight_g,o.volumetric_weight_g) AS total_weight_g,c.pincode AS destination_pincode FROM orders o JOIN customers c ON c.id=o.customer_id JOIN seller_courier_access sca ON sca.seller_id=o.seller_id AND sca.state='enabled' JOIN courier_services cs ON cs.id=sca.service_id AND cs.is_active JOIN courier_providers cp ON cp.id=cs.provider_id AND cp.integration_state='live' JOIN LATERAL (SELECT id FROM rate_cards WHERE seller_id=o.seller_id AND state='active' AND effective_from<=now() AND (effective_to IS NULL OR effective_to>now()) ORDER BY effective_from DESC LIMIT 1) card ON true JOIN rate_card_rates rcr ON rcr.rate_card_id=card.id AND rcr.service_id=cs.id AND rcr.zone_code IN ($5,'national') AND rcr.min_weight_g<=GREATEST(o.total_weight_g,o.volumetric_weight_g) WHERE o.id=$1 AND o.seller_id=$2 AND o.state='ready_to_ship' AND cp.code=$3 AND cs.code=$4 AND (o.payment_mode='prepaid' OR (sca.cod_enabled=true AND cp.supports_cod)) AND NOT EXISTS (SELECT 1 FROM seller_pincode_blocks sb WHERE sb.seller_id=o.seller_id AND (sb.service_id IS NULL OR sb.service_id=cs.id) AND sb.pincode=c.pincode) AND NOT EXISTS (SELECT 1 FROM platform_pincode_blocks pb WHERE pb.pincode=c.pincode) AND NOT EXISTS (SELECT 1 FROM courier_pincode_rules blocked WHERE blocked.service_id=cs.id AND blocked.rule_type='blocked' AND c.pincode LIKE blocked.destination_prefix || '%') AND (NOT EXISTS (SELECT 1 FROM courier_pincode_rules allowed WHERE allowed.service_id=cs.id AND allowed.rule_type='allowed') OR EXISTS (SELECT 1 FROM courier_pincode_rules allowed WHERE allowed.service_id=cs.id AND allowed.rule_type='allowed' AND c.pincode LIKE allowed.destination_prefix || '%')) ORDER BY (rcr.zone_code=$5) DESC, rcr.min_weight_g DESC LIMIT 1`, [input.orderId, p.sellerId, input.providerCode, input.serviceCode, zone]);
-    const selection = rate.rows[0]; if (!selection) throw Object.assign(new Error('The selected courier service is not available for this ready-to-ship order'), { statusCode: 422 });
+    const selection = rate.rows[0]; if (!selection) throw Object.assign(new Error(await whyNotBookable(client, p.sellerId, input, zone)), { statusCode: 422 });
     const pinLane = (await client.query<{ is_oda: boolean; cod_available: boolean; serves_oda: boolean; zone: string | null; city: string | null; state: string | null; is_active: boolean | null; typical_delivery_days: number | null; max_delivery_days: number | null }>(`SELECT p.is_oda, p.cod_available, cs.serves_oda, p.zone, p.city, p.state, p.is_active, cs.typical_delivery_days, cs.max_delivery_days FROM courier_services cs LEFT JOIN pincodes p ON p.pincode=$1 WHERE cs.id=$2`, [selection.destination_pincode, selection.service_id])).rows[0];
     const promisedDays = 1 + deliveryWindow({ typical: pinLane?.typical_delivery_days ?? null, max: pinLane?.max_delivery_days ?? null }, pinLane?.zone ? { pincode: selection.destination_pincode, city: pinLane.city ?? '', state: pinLane.state ?? '', zone: pinLane.zone as PincodeInfo['zone'], cod_available: pinLane.cod_available, is_oda: pinLane.is_oda, is_active: pinLane.is_active ?? true } : null, null).maxDays;
     if (pinLane?.is_active === false) throw Object.assign(new Error('This pincode is currently suspended. No courier delivers there right now.'), { statusCode: 422 }); // the same rule as the quote
@@ -231,6 +253,7 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
     // Step 2, one courier at a time: every attempt is its own booking (no connection held while the aggregator works), so a refused
     // courier leaves nothing behind and the next one is tried.
     let lastError = 'No serviceable courier for this order';
+    const said = new Map<string, string>(); // reason -> the first courier that gave it
     // Failover between aggregators: a courier whose aggregator has no balance left is skipped without a single call, and one that refuses for balance
     // while being tried is skipped for the rest of this order. Only when no courier on a funded aggregator is left does the order wait (BOOKING_PAUSED).
     // (An aggregator counts as refusing only because it really refused a booking recently, never because of its balance figure.) When EVERY courier of this
@@ -253,10 +276,13 @@ export async function assignOneOrder(p: { userId: string; sellerId: string; role
         if (status === 402) return { ok: false, error: lastError, ms: Date.now() - started }; // wallet short: no point trying other couriers
         if (lastError === BOOKING_PAUSED) { if (c.agg) pausedAggs.add(c.agg); skippedForBalance = true; continue; } // this aggregator is out of balance: try a courier on another one
         if (status !== 422) throw e;
+        if (!said.has(lastError.replace(c.pname, ''))) said.set(lastError.replace(c.pname, ''), lastError.startsWith(c.pname) ? lastError : `${c.pname}: ${lastError}`);
       }
     }
     if (skippedForBalance && (lastError === 'No serviceable courier for this order' || lastError === BOOKING_PAUSED)) return { ok: false, error: BOOKING_PAUSED, ms: Date.now() - started };
-    return { ok: false, error: lastError, ms: Date.now() - started };
+    // Every courier refused for one and the same reason: say it once. Otherwise say the first two, so the seller knows it is not one problem.
+    const combined = said.size > 1 ? [...said.values()].slice(0, 2).join(' ') + (said.size > 2 ? ` (+${said.size - 2} more couriers)` : '') : toTry.length > 1 && /^(?!No |This |The )/.test(lastError) ? `None of your ${toTry.length} couriers could take it, for example: ${lastError}` : lastError;
+    return { ok: false, error: sellerSafeMessage(combined), ms: Date.now() - started };
   } catch (e) {
     return { ok: false, error: sellerSafeMessage((e as Error).message || 'Could not assign a courier'), ms: Date.now() - started };
   } finally {

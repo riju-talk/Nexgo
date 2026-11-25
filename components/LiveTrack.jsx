@@ -59,6 +59,8 @@ const TABS = [
   ['rto', 'RTO', (r) => RTO.includes(r.state)],
   ['lost', 'Lost', (r) => r.state === 'lost' || r.rto_status === 'lost'],
   ['cancelled', 'Cancelled', (r) => r.state === 'cancelled'],
+  // Shown only while something needs fixing (an order with a missing or wrong detail, or a parcel the courier cancelled): without it such orders were invisible everywhere.
+  ['failed', 'Needs fixing', (r) => r.state === 'failed'],
 ];
 const CHANNELS = [['single', 'Single created'], ['bulk_upload', 'Bulk upload'], ['shopify', 'Shopify'], ['amazon', 'Amazon'], ['woocommerce', 'WooCommerce'], ['opencart', 'OpenCart'], ['magento', 'Magento']];
 const channelName = (c) => (CHANNELS.find(([k]) => k === c) || [null, title(c || 'single')])[1];
@@ -400,7 +402,7 @@ export default function LiveTrack({ mobile }) {
     setFixing(true); setFixReport(null);
     try {
       const rows = await readCorrections(file);
-      if (!rows) throw new Error('"NEXGO order ID" column not found. Upload the file downloaded from the Exception & Error tab.');
+      if (!rows) throw new Error('"NEXGO order ID" column not found. Upload the file downloaded from the Needs fixing tab.');
       if (!rows.length) throw new Error('The file has no order rows.');
       if (rows.length > 500) throw new Error('Upload up to 500 orders at a time.');
       const byId = new Map((await fetchAll({ tab: 'failed', filters: EMPTY })).filter((o) => o.state === 'failed').map((o) => [o.nexgo_order_id, o]));
@@ -503,7 +505,7 @@ export default function LiveTrack({ mobile }) {
       </div>
 
       <div role="tablist" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-        {TABS.map(([key, name]) => {
+        {TABS.filter(([key]) => key !== 'failed' || counts.failed > 0 || tab === 'failed').map(([key, name]) => {
           const on = tab === key;
           return <button key={key} role="tab" aria-selected={on} onClick={() => setTab(key)} style={{ height: 32, padding: '0 12px', borderRadius: 99, border: `1px solid ${on ? T.NAVY : T.BORDER}`, background: on ? T.NAVY : T.SURFACE, color: on ? '#fff' : key === 'delayed' && counts.delayed ? T.RED : T.TEXT_LABEL, fontWeight: 720, fontSize: 12.5, cursor: 'pointer' }}>{name} <span style={{ opacity: 0.7, fontWeight: 600 }}>{counts[key] || 0}</span></button>;
         })}
@@ -560,7 +562,7 @@ export default function LiveTrack({ mobile }) {
         </div>
       )}
 
-      {counts.all === 0 && !activeFilters && !list.loading ? (
+      {counts.all === 0 && !counts.failed && !activeFilters && !list.loading ? (
         <section style={{ ...CARD, minHeight: 220, padding: 42, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}><div style={{ width: 42, height: 42, borderRadius: 12, display: 'grid', placeItems: 'center', background: 'rgba(56,119,252,.12)', color: T.ACCENT, fontSize: 20 }}>✈</div><b style={{ marginTop: 14, color: T.TEXT, fontSize: 16 }}>No shipments yet</b><span style={{ marginTop: 5, color: T.TEXT_MUTED, fontSize: 13 }}>Book an order with a courier and its live tracking will appear here.</span></section>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: selected && !mobile ? 'minmax(0,1fr) 400px' : '1fr', gap: 14, alignItems: 'start' }}>

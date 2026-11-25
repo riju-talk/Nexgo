@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
+import { usePagedNav } from '@/lib/usePageNav';
 import * as T from '@/lib/theme';
-import { Btn, CARD, FIELD } from './Kit';
+import { Btn, CARD, FIELD, Pagination } from './Kit';
 
 const AREA = 'cod-confirmation';
 const CHANNELS = [['custom', 'Custom'], ['shopify', 'Shopify'], ['woocommerce', 'WooCommerce'], ['magento', 'Magento'], ['opencart', 'OpenCart'], ['amazon', 'Amazon.in']];
@@ -24,9 +25,8 @@ export default function LiveCodConfirmation({ mobile }) {
     }).catch(() => {}).finally(() => live && setLoaded(true));
     return () => { live = false; };
   }, []);
-  const [pending, setPending] = useState([]);
-  const loadPending = () => apiFetch('/v1/cod-confirmations').then((x) => setPending(x.items || [])).catch(() => {});
-  useEffect(() => { loadPending(); }, []);
+  const list = usePagedNav({ path: '/v1/cod-confirmations', name: 'cod-confirmations', defaultSize: 25 }); const pending = list.items;
+  const loadPending = list.reload;
   // Until a telephony provider is connected, the customer's reply is recorded here by hand.
   const answer = async (id, a) => {
     try { const r = await apiFetch(`/v1/cod-confirmations/${id}/answer`, { method: 'POST', body: { answer: a } }); showToast(r.state === 'declined' ? (r.orderCancelled ? 'Declined: order cancelled' : 'Declined: order already has a courier, cancel it from Track') : r.replay ? 'Already answered' : 'Order confirmed'); loadPending(); }
@@ -79,6 +79,7 @@ export default function LiveCodConfirmation({ mobile }) {
                 {c.state === 'pending' ? <span style={{ display: 'flex', gap: 8 }}><Btn small onClick={() => answer(c.id, 'confirm')}>Confirm</Btn><Btn small onClick={() => answer(c.id, 'decline')}>Decline</Btn></span> : <b style={{ color: c.state === 'confirmed' ? T.GREEN : T.RED }}>{c.state === 'confirmed' ? 'Confirmed' : 'Declined'}</b>}
               </div>
             ))}
+            <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading} onPage={list.setPage} onSize={list.setSize} noun="confirmations" />
           </div>
         )}
       </div>

@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { adminApi, ApiError } from '@/lib/api';
+import { ApiError } from '@/lib/api';
+import { usePagedNav } from '@/lib/usePageNav';
+import { Pagination } from './Kit';
 
 const CARD = { background: 'var(--ops-surface)', border: '1px solid var(--ops-border)', borderRadius: 12, boxShadow: 'var(--ops-shadow)' };
 const FIELD = { height: 36, boxSizing: 'border-box', border: '1px solid var(--ops-border)', borderRadius: 8, padding: '0 10px', background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 13 };
@@ -18,20 +20,16 @@ function Btn({ children, onClick, primary }) {
 export default function AdminRateCards({ mobile }) {
   const router = useRouter();
   const [q, setQ] = useState(''); const [qLive, setQLive] = useState('');
-  const [rows, setRows] = useState(null); const [error, setError] = useState(null);
   useEffect(() => { const t = setTimeout(() => setQLive(q.trim()), 300); return () => clearTimeout(t); }, [q]);
-  const load = useCallback(async () => {
-    setError(null);
-    try { setRows((await adminApi.rateCardOverview(qLive)).items || []); } catch (e) { setError(e); }
-  }, [qLive]);
-  useEffect(() => { load(); }, [load]); // eslint-disable-line react-hooks/set-state-in-effect -- async fetch; state is set after the await
+  const list = usePagedNav({ path: '/v1/admin/rate-cards/overview', query: qLive ? `search=${encodeURIComponent(qLive)}` : '', name: 'admin-rate-cards', defaultSize: 25 });
+  const rows = list.started ? list.items : null; const error = list.error;
 
   const unauth = error instanceof ApiError && error.status === 401;
   return (
     <div style={{ padding: mobile ? '14px 12px 42px' : '18px 28px 48px' }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
         <input aria-label="Search sellers" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search seller name or Nexgo code" style={{ ...FIELD, width: mobile ? '100%' : 300 }} />
-        <span style={{ color: 'var(--ops-muted)', fontSize: 13 }}>{rows ? `${rows.length} seller${rows.length === 1 ? '' : 's'}` : 'Loading sellers'}</span>
+        <span style={{ color: 'var(--ops-muted)', fontSize: 13 }}>{rows ? `${Number(list.total ?? 0).toLocaleString('en-IN')} seller${list.total === 1 ? '' : 's'}` : 'Loading sellers'}</span>
       </div>
       {error ? <div style={{ ...CARD, padding: 28, color: 'var(--ops-muted)', fontSize: 13.5 }}>{unauth ? 'Sign in as a platform administrator to manage rate cards.' : 'Rate cards could not be loaded. Try again.'}</div> : !rows ? <div style={{ ...CARD, padding: 28, color: 'var(--ops-muted)' }}>Loading…</div> : !rows.length ? <div style={{ ...CARD, padding: 28, color: 'var(--ops-muted)' }}>No seller matches this search.</div> : (
         <div style={{ ...CARD, overflow: 'hidden' }}>
@@ -49,6 +47,7 @@ export default function AdminRateCards({ mobile }) {
               ))}</tbody>
             </table>
           </div>
+          <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading} onPage={list.setPage} onSize={list.setSize} noun="sellers" />
         </div>
       )}
     </div>

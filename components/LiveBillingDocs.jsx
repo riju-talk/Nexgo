@@ -5,6 +5,8 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { saveRows } from '@/lib/exportFile';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
+import { useClientPages } from '@/lib/useClientPages';
+import { Pagination } from './Kit';
 
 // Credit notes and TDS: finance documents issued by the platform, read-only for sellers.
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
@@ -45,6 +47,7 @@ export default function LiveBillingDocs({ kind, mobile, embedded = false }) {
   }, [cfg.path]);
 
   const stats = useMemo(() => (rows ? cfg.stats(rows) : null), [rows, cfg]);
+  const { items: pageItems, pager } = useClientPages(rows, kind);
   const pad = mobile ? '14px 12px 42px' : '18px 28px 48px';
   const unauth = error instanceof ApiError && error.status === 401;
 
@@ -74,9 +77,10 @@ export default function LiveBillingDocs({ kind, mobile, embedded = false }) {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse' }}>
                   <thead><tr>{cfg.columns.map((h) => <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10.5, letterSpacing: '.07em', color: T.TEXT_MUTED, background: T.TABLE_HEAD_BG, textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
-                  <tbody>{rows.map((r) => <tr key={r.id}>{cfg.cells(r).map((cell, i) => <td key={i} style={{ padding: '12px 14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{cell}</td>)}</tr>)}</tbody>
+                  <tbody>{pageItems.map((r) => <tr key={r.id}>{cfg.cells(r).map((cell, i) => <td key={i} style={{ padding: '12px 14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{cell}</td>)}</tr>)}</tbody>
                 </table>
               </div>
+              <Pagination {...pager} noun={cfg.noun} />
             </section>
           )}
         </>

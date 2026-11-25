@@ -7,7 +7,8 @@ import { useRouter } from 'next/navigation';
 import { adminApi, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
-import { LoadMore } from './Kit';
+import { usePagedNav } from '@/lib/usePageNav';
+import { Pagination } from './Kit';
 
 const CARD = { background: 'var(--ops-surface)', border: '1px solid var(--ops-border)', borderRadius: 10, boxShadow: 'var(--ops-shadow)' };
 const FIELD = { height: 33, padding: '0 10px', border: '1px solid var(--ops-border)', borderRadius: 8, background: 'var(--ops-surface)', color: 'var(--ops-text)', fontSize: 12.5 };
@@ -129,7 +130,7 @@ const FILTERED = ['orders', 'shipments', 'rto', 'ndr', 'pickups'];
 export default function LiveAdminQueues({ activeId, mobile }) {
   const { nav, showToast, trackFocus, setTrackFocus } = useAppState();
   const router = useRouter();
-  const [items, setItems] = useState(null); const [more, setMore] = useState(false); const [moreBusy, setMoreBusy] = useState(false); const [error, setError] = useState(null); const [busy, setBusy] = useState('');
+  const [courierItems, setCourierItems] = useState(null); const [courierError, setCourierError] = useState(null); const [busy, setBusy] = useState('');
   const kind = activeId.replace('a-', '');
   const filtered = FILTERED.includes(kind);
   const [sellers, setSellers] = useState([]); const [couriers, setCouriers] = useState([]);
@@ -140,53 +141,43 @@ export default function LiveAdminQueues({ activeId, mobile }) {
   useEffect(() => {
     if (!filtered && kind !== 'couriers') return undefined;
     let live = true;
-    if (filtered) adminApi.sellers({ limit: 100 }).then((x) => { if (live) setSellers(x.items || []); }).catch(() => {});
+    if (filtered) adminApi.sellerOptions().then((x) => { if (live) setSellers(x.items || []); }).catch(() => {});
     adminApi.couriers().then((x) => { if (live) setCouriers(x.items || []); }).catch(() => {});
     return () => { live = false; };
   }, [filtered, kind]);
 
   // Reset filters when the screen changes; a search hand-off from the top bar pre-fills the box.
-  useEffect(() => { setSellerId(''); setProviderId(''); setQ(''); setQLive(''); setItems(null); }, [kind]); // eslint-disable-line react-hooks/set-state-in-effect -- screen switch resets the filters
+  useEffect(() => { setSellerId(''); setProviderId(''); setQ(''); setQLive(''); }, [kind]); // eslint-disable-line react-hooks/set-state-in-effect -- screen switch resets the filters
   useEffect(() => {
     if (!trackFocus || !['orders', 'shipments'].includes(kind)) return;
     setQ(trackFocus); setQLive(trackFocus); setTrackFocus(''); // eslint-disable-line react-hooks/set-state-in-effect -- one-shot hand-off from the top-bar search
   }, [trackFocus, kind, setTrackFocus]);
   useEffect(() => { const t = window.setTimeout(() => setQLive(q.trim()), 300); return () => window.clearTimeout(t); }, [q]);
 
-  // One batch of the current screen starting at `offset` (the first batch loads at once, the rest as the admin scrolls).
-  const fetchBatch = useCallback(async (offset) => {
-    const common = { limit: 50, offset, ...(sellerId ? { sellerId } : {}) };
-    if (kind === 'sellers') return adminApi.sellers({ limit: 50, offset });
-    if (kind === 'orders') return adminApi.orders({ ...common, ...(qLive ? { q: qLive } : {}) });
-    if (kind === 'shipments') return adminApi.shipments({ ...common, ...(providerId ? { providerId } : {}), ...(qLive ? { q: qLive } : {}) });
-    if (kind === 'rto') return adminApi.shipments({ ...common, state: 'rto', ...(providerId ? { providerId } : {}), ...(qLive ? { q: qLive } : {}) });
-    if (kind === 'ndr') return adminApi.ndr({ ...(sellerId ? { sellerId } : {}), limit: 50, offset });
-    if (kind === 'pickups') return adminApi.pickups();
-    if (kind === 'couriers') return adminApi.couriers();
-    return { items: [] };
-  }, [kind, sellerId, providerId, qLive]);
-  const load = useCallback(async () => {
-    setError(null);
-    try { const data = await fetchBatch(0); setItems(data?.items || []); setMore(!!data?.hasMore); } catch (e) { setError(e); }
-  }, [fetchBatch]);
-  const loadMore = async () => {
-    if (!items || moreBusy) return;
-    setMoreBusy(true);
-    try {
-      const data = await fetchBatch(items.length); const seen = new Set(items.map((r) => r.id));
-      setItems([...items, ...(data?.items || []).filter((r) => !seen.has(r.id))]); setMore(!!data?.hasMore && (data?.items || []).length > 0);
-    } catch (e) { showToast(e.message || 'Could not load more', 'error'); } finally { setMoreBusy(false); }
-  };
-  useEffect(() => { load(); }, [load]); // eslint-disable-line react-hooks/set-state-in-effect -- async fetch on mount; state is set after the await
+  // One numbered page at a time. Couriers are a short fixed list and come whole.
+  const query = useMemo(() => {
+    const p = new URLSearchParams();
+    if (sellerId && filtered) p.set('sellerId', sellerId);
+    if (kind === 'rto') p.set('state', 'rto');
+    if (providerId && (kind === 'shipments' || kind === 'rto')) p.set('providerId', providerId);
+    if (qLive && ['orders', 'shipments', 'rto'].includes(kind)) p.set('q', qLive);
+    if (qLive && kind === 'sellers') p.set('search', qLive);
+    return p.toString();
+  }, [kind, sellerId, providerId, qLive, filtered]);
+  const path = { sellers: '/v1/admin/sellers', orders: '/v1/admin/orders', shipments: '/v1/admin/shipments', rto: '/v1/admin/shipments', ndr: '/v1/admin/ndr' }[kind];
+  const list = usePagedNav({ path, query, name: `admin-${kind}`, defaultSize: 25, enabled: !!path });
+  const loadCouriers = useCallback(async () => { if (kind !== 'couriers') return; setCourierError(null); try { setCourierItems((await adminApi.couriers()).items || []); } catch (e) { setCourierError(e); } }, [kind]);
+  useEffect(() => { loadCouriers(); }, [loadCouriers]); // eslint-disable-line react-hooks/set-state-in-effect -- async fetch on mount; state is set after the await
+  const load = kind === 'couriers' ? loadCouriers : list.reload;
+  const items = kind === 'couriers' ? courierItems : list.started ? list.items : null;
+  const error = kind === 'couriers' ? courierError : list.error;
 
-  const sellerName = useMemo(() => sellers.find((s) => s.id === sellerId)?.legal_name, [sellers, sellerId]);
   const rows = useMemo(() => {
     if (!items) return items;
-    if (kind === 'pickups' && sellerName) return items.filter((r) => r.seller_name === sellerName);
     // One row per courier service: Courier / Service Provider / Integration / Mode Type.
     if (kind === 'couriers') return items.flatMap((c) => (c.services?.length ? c.services : [null]).map((s, i) => ({ id: `${c.id}-${s?.id || i}`, courier: c, service: s })));
     return items;
-  }, [items, kind, sellerName]);
+  }, [items, kind]);
 
   const columns = { sellers: ['Seller Name', 'Email ID', 'KYC Status', 'Nexgo Code', 'Created on', 'POC', 'Status', 'View Details'], orders: ['Order', 'Seller', 'Customer', 'Flow', 'Value', 'State'], shipments: ['AWB', 'Courier', 'Seller', 'Order', 'Charge', 'Status'], rto: ['AWB', 'Courier', 'Seller', 'Order', 'Charge', 'Status'], pickups: ['AWB', 'Seller', 'Warehouse', 'Courier', 'Booked on', 'Pickup', 'Status'], ndr: ['AWB', 'Seller', 'Reason', 'State'], couriers: ['Courier', 'Service Provider', 'Integration', 'Mode Type', 'COD'] }[kind];
   const cells = (r) => {
@@ -206,12 +197,12 @@ export default function LiveAdminQueues({ activeId, mobile }) {
     {courierTabs && <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 10 }}>{tab('', 'All couriers')}{couriers.map((c) => tab(c.id, c.name))}</div>}
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 13, flexWrap: 'wrap' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        {['orders', 'shipments', 'rto'].includes(kind) && <input aria-label="Search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={kind === 'orders' ? 'Search order, customer or phone' : 'Search AWB or order number'} style={{ ...FIELD, width: mobile ? '100%' : 260 }} />}
+        {['orders', 'shipments', 'rto', 'sellers'].includes(kind) && <input aria-label="Search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={kind === 'orders' ? 'Search order, customer or phone' : kind === 'sellers' ? 'Search seller name, email or Nexgo code' : 'Search AWB or order number'} style={{ ...FIELD, width: mobile ? '100%' : 260 }} />}
         {filtered && <select aria-label="Seller" value={sellerId} onChange={(e) => setSellerId(e.target.value)} style={{ ...FIELD, maxWidth: 220 }}><option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.legal_name}</option>)}</select>}
-        <span style={{ color: 'var(--ops-muted)', fontSize: 13 }}>{rows ? `${rows.length}${more ? '+' : ''} live records` : 'Connecting to platform operations'}</span>
+        <span style={{ color: 'var(--ops-muted)', fontSize: 13 }}>{rows ? `${Number(kind === 'couriers' ? rows.length : list.total ?? 0).toLocaleString('en-IN')} record${(kind === 'couriers' ? rows.length : list.total) === 1 ? '' : 's'}` : 'Connecting to platform operations'}</span>
       </div>
       <Button onClick={load}>Refresh</Button>
     </div>
-    {!rows && !error ? <div style={{ ...CARD, minHeight: 220, display: 'grid', placeItems: 'center', color: 'var(--ops-muted)' }}>Loading live queue</div> : error || !rows?.length ? empty : <div style={{ ...CARD, overflow: 'hidden' }}><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse' }}><thead><tr>{columns.map((x) => <th key={x} style={{ padding: '11px 15px', background: 'var(--ops-surface-soft)', textAlign: 'left', color: 'var(--ops-muted)', fontSize: 10.5, letterSpacing: '.075em', textTransform: 'uppercase' }}>{x}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}>{cells(row).map((cell, index) => <td key={index} style={{ padding: '13px 15px', borderTop: '1px solid var(--ops-divider)', color: 'var(--ops-text)', fontSize: 13, fontWeight: typeof cell === 'string' || typeof cell === 'number' ? 560 : 400 }}>{cell}</td>)}</tr>)}</tbody></table></div>{kind !== 'pickups' && kind !== 'couriers' && <LoadMore shown={rows.length} total={null} hasMore={more} loading={false} loadingMore={moreBusy} error={false} onMore={loadMore} noun="records" />}</div>}
+    {!rows && !error ? <div style={{ ...CARD, minHeight: 220, display: 'grid', placeItems: 'center', color: 'var(--ops-muted)' }}>Loading live queue</div> : error || !rows?.length ? empty : <div style={{ ...CARD, overflow: 'hidden' }}><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse' }}><thead><tr>{columns.map((x) => <th key={x} style={{ padding: '11px 15px', background: 'var(--ops-surface-soft)', textAlign: 'left', color: 'var(--ops-muted)', fontSize: 10.5, letterSpacing: '.075em', textTransform: 'uppercase' }}>{x}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}>{cells(row).map((cell, index) => <td key={index} style={{ padding: '13px 15px', borderTop: '1px solid var(--ops-divider)', color: 'var(--ops-text)', fontSize: 13, fontWeight: typeof cell === 'string' || typeof cell === 'number' ? 560 : 400 }}>{cell}</td>)}</tr>)}</tbody></table></div>{kind !== 'couriers' && <Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading} onPage={list.setPage} onSize={list.setSize} noun="records" />}</div>}
   </div>;
 }

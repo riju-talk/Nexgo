@@ -7,7 +7,8 @@ import { adminApi, apiFetch, ApiError } from '@/lib/api';
 import { useAppState } from '@/lib/AppStateContext';
 import * as T from '@/lib/theme';
 import { maskedIdProof } from '@/lib/idProof';
-import { LoadMore } from './Kit';
+import { usePagedNav } from '@/lib/usePageNav';
+import { Pagination } from './Kit';
 
 const CARD = { background: 'var(--nx-surface)', border: '1px solid var(--nx-border)', borderRadius: 10, boxShadow: '0 1px 2px rgba(20,44,66,.04), 0 8px 24px rgba(20,44,66,.045)' };
 const title = (v = '') => v.replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -17,24 +18,16 @@ function Pill({ children, tone = 'ok' }) { const c = tone === 'warn' ? T.AMBER :
 
 // Placeholder until a real bank transfer reference is captured from the payout rail.
 
-// Kept outside the component so a reload depends only on the screen, not on
-// per-row busy state (memoizing on `busy` refetched the queue on every click).
-// Each loader reads one batch: (search, offset) -> { items, hasMore }. The first batch loads at once, the rest as the admin scrolls.
-const BATCH = 50;
-const LOADERS = {
-  'a-kyc': (search, offset) => adminApi.kycQueue('pending_review', { limit: BATCH, offset }),
-  'a-wallets': (search, offset) => adminApi.wallets({ ...(search ? { search } : {}), limit: BATCH, offset }),
-  'a-cod': (search, offset) => adminApi.codRemittances({ limit: BATCH, offset }),
-  'a-invoices': (search, offset) => adminApi.invoices({ limit: BATCH, offset }),
-  'a-jobs': (search, offset) => adminApi.jobs({ limit: BATCH, offset }),
-  'a-audit': () => adminApi.auditEvents(),
+// The list behind each screen: one numbered page at a time, exact totals.
+const LISTS = {
+  'a-kyc': ['/v1/admin/kyc', 'status=pending_review'], 'a-wallets': ['/v1/admin/wallets', ''], 'a-cod': ['/v1/admin/cod-remittances', ''], 'a-invoices': ['/v1/admin/invoices', ''], 'a-jobs': ['/v1/admin/jobs', ''],
 };
 
 // Admin: how many days after delivery a seller's COD is paid (D+N).
 function PayoutDays() {
   const { showToast } = useAppState();
   const [sellers, setSellers] = useState([]); const [id, setId] = useState(''); const [days, setDays] = useState(2);
-  useEffect(() => { adminApi.sellers().then((x) => setSellers(x.items || [])).catch(() => {}); }, []);
+  useEffect(() => { adminApi.sellerOptions().then((x) => setSellers(x.items || [])).catch(() => {}); }, []);
   const save = async () => { try { await apiFetch(`/v1/admin/sellers/${id}/remittance-days`, { method: 'PUT', body: { days: Number(days) } }); showToast(`Payout day set to D+${days}`); } catch (e) { showToast(e.message || 'Could not save payout days', 'error'); } };
   return <div style={{ ...CARD, padding: 14, marginBottom: 14, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}><b style={{ fontSize: 13, color: T.TEXT }}>COD payout day (D+N)</b><select aria-label="Seller" value={id} onChange={(e) => setId(e.target.value)} style={{ height: 33, borderRadius: 8, border: `1px solid ${T.INPUT_BORDER}`, padding: '0 8px', background: T.SURFACE, color: T.TEXT }}><option value="">Select seller</option>{sellers.map((x) => <option key={x.id} value={x.id}>{x.legal_name || x.name}</option>)}</select>D+<input aria-label="Days after delivery" type="number" min="0" max="15" value={days} onChange={(e) => setDays(e.target.value)} style={{ width: 64, height: 33, borderRadius: 8, border: `1px solid ${T.INPUT_BORDER}`, padding: '0 8px', background: T.SURFACE, color: T.TEXT }} /><Button primary disabled={!id} onClick={save}>Save</Button><span style={{ fontSize: 12, color: T.TEXT_MUTED }}>Delivered on 10 Oct with D+2 is paid on 12 Oct. Wallet debt is recovered from the payout first.</span></div>;
 }
@@ -45,7 +38,7 @@ function GenerateCycle({ onDone }) {
   const [sellers, setSellers] = useState([]); const [id, setId] = useState(''); const [busy, setBusy] = useState(false);
 
   const [from, setFrom] = useState(() => new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10)); const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
-  useEffect(() => { adminApi.sellers().then((x) => setSellers(x.items || [])).catch(() => {}); }, []);
+  useEffect(() => { adminApi.sellerOptions().then((x) => setSellers(x.items || [])).catch(() => {}); }, []);
   const generate = async () => {
     if (!id) return showToast('Choose a seller first.', 'error');
     setBusy(true);
@@ -57,16 +50,11 @@ function GenerateCycle({ onDone }) {
 }
 
 export default function LiveAdminOperations({ activeId, mobile }) {
-  const { showToast } = useAppState(); const [items, setItems] = useState(null); const [more, setMore] = useState(false); const [moreBusy, setMoreBusy] = useState(false); const [busy, setBusy] = useState(''); const [search, setSearch] = useState(''); const [searchLive, setSearchLive] = useState(''); const [rejecting, setRejecting] = useState(null); const [rejectReason, setRejectReason] = useState('');
+  const { showToast } = useAppState(); const [busy, setBusy] = useState(''); const [search, setSearch] = useState(''); const [searchLive, setSearchLive] = useState(''); const [rejecting, setRejecting] = useState(null); const [rejectReason, setRejectReason] = useState('');
   useEffect(() => { const t = window.setTimeout(() => setSearchLive(search.trim()), 300); return () => window.clearTimeout(t); }, [search]);
-  const load = useCallback(async () => { const loader = LOADERS[activeId]; if (!loader) return; try { const x = await loader(searchLive, 0); setItems(x.items || []); setMore(!!x.hasMore); } catch { setItems([]); setMore(false); } }, [activeId, searchLive]);
-  useEffect(() => { load(); }, [load]); // eslint-disable-line react-hooks/set-state-in-effect -- async fetch on mount; state is set after the await
-  const loadMore = async () => {
-    const loader = LOADERS[activeId]; if (!loader || !items || moreBusy) return;
-    setMoreBusy(true);
-    try { const x = await loader(searchLive, items.length); const seen = new Set(items.map((r) => r.id || r.seller_id)); setItems([...items, ...(x.items || []).filter((r) => !seen.has(r.id || r.seller_id))]); setMore(!!x.hasMore && (x.items || []).length > 0); }
-    catch (e) { showToast(e.message || 'Could not load more', 'error'); } finally { setMoreBusy(false); }
-  };
+  const [path, base] = LISTS[activeId] || [];
+  const list = usePagedNav({ path, query: [base, activeId === 'a-wallets' && searchLive ? `search=${encodeURIComponent(searchLive)}` : ''].filter(Boolean).join('&'), name: `admin-${activeId}`, defaultSize: 25, enabled: !!path });
+  const load = list.reload; const items = list.started ? list.items : null;
   const decide = async (r, decision) => { setBusy(r.seller_id); try { await adminApi.kycDecision(r.seller_id, decision, decision === 'rejected' ? 'Please review submitted business documents.' : undefined); showToast(`KYC ${decision}`); load(); } catch (e) { showToast(e instanceof ApiError ? e.message : 'KYC action failed', 'error'); } finally { setBusy(''); } };
   const cod = async (r, action) => { let bankReference; let walletDeductionPaise; if (action === 'remit') { const bal = Number(r.wallet_balance_paise || 0); if (bal < 0) { const maxPaise = Math.min(-bal, Number(r.net_remitted_paise || 0)); const ans = await askText({ title: 'Deduct from wallet before paying', message: `${r.seller_name}'s wallet is ${money(bal)}. COD to pay: ${money(r.net_remitted_paise)}. Enter how many rupees to deduct (0 = none, maximum ${money(maxPaise)}). The rest is paid to the seller's bank.`, label: 'Deduct (₹)', placeholder: String(maxPaise / 100), confirmLabel: 'Next', minLength: 1 }); if (ans == null || ans === '') return; const rupees = Number(String(ans).replace(/[, ₹]/g, '')); if (!Number.isFinite(rupees) || rupees < 0 || rupees * 100 > maxPaise) { showToast(`Enter an amount between 0 and ${money(maxPaise)}.`, 'error'); return; } walletDeductionPaise = Math.round(rupees * 100); } bankReference =await askText({ title: 'Mark this payout as remitted', message: `Enter the bank transaction reference (UTR) of the transfer to ${r.seller_name}.`, label: 'Bank reference (UTR)', placeholder: 'e.g. HDFCR52026110612345', confirmLabel: 'Mark remitted', minLength: 4 }); if (!bankReference) return; } setBusy(r.id); try { await apiFetch(`/v1/admin/cod-remittances/${r.id}/${action}`, { method: 'POST', body: action === 'remit' ? { bankReference, ...(walletDeductionPaise !== undefined ? { walletDeductionPaise } : {}) } : {} }); showToast(action === 'approve' ? 'COD cycle approved' : 'COD cycle marked remitted'); load(); } catch (e) { const due = /NOT_DUE_UNTIL_(\d{4}-\d{2}-\d{2})/.exec(e.message || ''); showToast(due ? `Not due yet: this cycle can be paid on ${due[1]} (delivery date + payout days).` : e.message || 'COD action failed', 'error'); } finally { setBusy(''); } };
   const issue = async r => { setBusy(r.id); try { await apiFetch(`/v1/admin/invoices/${r.id}/issue`, { method: 'POST', body: {} }); showToast('Invoice issued and document job queued'); load(); } catch (e) { showToast(e.message || 'Invoice could not be issued', 'error'); } finally { setBusy(''); } };
@@ -82,5 +70,5 @@ export default function LiveAdminOperations({ activeId, mobile }) {
     'a-audit': { title: 'Audit trail', intro: 'Immutable administrative activity across sellers, couriers, finance, and access.', columns: ['When', 'Actor', 'Action', 'Target', 'Workspace'], cells: r => [new Date(r.created_at).toLocaleString('en-IN'), r.actor_name || 'System', <b>{title(r.action)}</b>, `${r.target_type || '—'} ${r.target_id ? String(r.target_id).slice(0, 8) : ''}`, r.seller_name || 'Platform'] },
   }[activeId];
   if (!config) return null;
-  return <div style={{ padding: mobile ? '14px 12px 42px' : '18px 28px 48px', maxWidth: '100%' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: 12, marginBottom: 15 }}><div><div style={{ color: T.TEXT, fontWeight: 760, fontSize: 19 }}>{config.title}</div><div style={{ color: T.TEXT_SECONDARY, marginTop: 4, fontSize: 13 }}>{config.intro}</div></div><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{activeId === 'a-wallets' && <input aria-label="Search seller" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search seller name or Nexgo code" style={{ height: 33, width: 250, borderRadius: 8, border: `1px solid ${T.INPUT_BORDER}`, padding: '0 10px', background: T.SURFACE, color: T.TEXT, fontSize: 12.5 }} />}<Button onClick={load}>Refresh</Button></div></div>{activeId === 'a-cod' && <><PayoutDays /><GenerateCycle onDone={load} /></>}{items === null ? <div style={{ ...CARD, padding: 30, color: T.TEXT_SECONDARY }}>Loading operations…</div> : !items.length ? <div style={{ ...CARD, padding: 30, color: T.TEXT_SECONDARY }}>{activeId === 'a-wallets' && searchLive ? `No seller matches "${searchLive}".` : 'No records need attention right now.'}</div> : <div style={{ ...CARD, overflow: 'hidden' }}><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 850, borderCollapse: 'collapse' }}><thead><tr>{config.columns.map(x => <th key={x} style={{ padding: '11px 14px', textAlign: 'left', background: T.TABLE_HEAD_BG, color: T.TEXT_MUTED, fontSize: 10.5, letterSpacing: '.07em', textTransform: 'uppercase' }}>{x}</th>)}</tr></thead><tbody>{items.map(r => <tr key={r.id || r.seller_id}>{config.cells(r).map((cell, i) => <td key={i} style={{ padding: '13px 14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{cell}</td>)}</tr>)}</tbody></table></div><LoadMore shown={items.length} total={null} hasMore={more} loading={false} loadingMore={moreBusy} error={false} onMore={loadMore} noun="records" /></div>}</div>;
+  return <div style={{ padding: mobile ? '14px 12px 42px' : '18px 28px 48px', maxWidth: '100%' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: 12, marginBottom: 15 }}><div><div style={{ color: T.TEXT, fontWeight: 760, fontSize: 19 }}>{config.title}</div><div style={{ color: T.TEXT_SECONDARY, marginTop: 4, fontSize: 13 }}>{config.intro}</div></div><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{activeId === 'a-wallets' && <input aria-label="Search seller" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search seller name or Nexgo code" style={{ height: 33, width: 250, borderRadius: 8, border: `1px solid ${T.INPUT_BORDER}`, padding: '0 10px', background: T.SURFACE, color: T.TEXT, fontSize: 12.5 }} />}<Button onClick={load}>Refresh</Button></div></div>{activeId === 'a-cod' && <><PayoutDays /><GenerateCycle onDone={load} /></>}{items === null ? <div style={{ ...CARD, padding: 30, color: T.TEXT_SECONDARY }}>Loading operations…</div> : !items.length ? <div style={{ ...CARD, padding: 30, color: T.TEXT_SECONDARY }}>{list.error ? list.message : activeId === 'a-wallets' && searchLive ? `No seller matches "${searchLive}".` : 'No records need attention right now.'}</div> : <div style={{ ...CARD, overflow: 'hidden' }}><div style={{ overflowX: 'auto' }}><table style={{ width: '100%', minWidth: 850, borderCollapse: 'collapse' }}><thead><tr>{config.columns.map(x => <th key={x} style={{ padding: '11px 14px', textAlign: 'left', background: T.TABLE_HEAD_BG, color: T.TEXT_MUTED, fontSize: 10.5, letterSpacing: '.07em', textTransform: 'uppercase' }}>{x}</th>)}</tr></thead><tbody>{items.map(r => <tr key={r.id || r.seller_id}>{config.cells(r).map((cell, i) => <td key={i} style={{ padding: '13px 14px', borderTop: `1px solid ${T.DIVIDER}`, color: T.TEXT_LABEL, fontSize: 13 }}>{cell}</td>)}</tr>)}</tbody></table></div><Pagination page={list.page} pages={list.pages} size={list.size} total={list.total} loading={list.loading} onPage={list.setPage} onSize={list.setSize} noun="records" /></div>}</div>;
 }

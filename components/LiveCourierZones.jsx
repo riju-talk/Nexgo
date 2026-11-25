@@ -208,8 +208,8 @@ export default function LiveCourierZones({ mobile }) {
     try {
       const p = new URLSearchParams(params);
       p.set('pageSize', '1000');
-      const allData = await apiFetch(`/v1/admin/couriers/${courierId}/zones/lanes?${p}`);
-      const all = allData.lanes || [];
+      const all = [];
+      for (let n = 1; n <= 200; n++) { p.set('page', String(n)); const x = await apiFetch(`/v1/admin/couriers/${courierId}/zones/lanes?${p}`); all.push(...(x.lanes || [])); if (n >= (x.pagination?.totalPages || 1)) break; }
 
       if (!all.length) return showToast('Nothing to export.', 'error');
 

@@ -22,7 +22,7 @@ export default async function adminPlatformRoutes(app: FastifyInstance) {
          FROM sellers s
          LEFT JOIN LATERAL (SELECT SUM(CASE WHEN entry_type IN ('credit','release') THEN amount_paise WHEN entry_type IN ('debit','hold') THEN -amount_paise ELSE amount_paise END) AS bal FROM wallet_entries WHERE seller_id = s.id) w ON true
         WHERE s.wallet_debit_limit_paise > 0 OR COALESCE(w.bal,0) < 0
-        ORDER BY (CASE WHEN COALESCE(w.bal,0) < 0 THEN -COALESCE(w.bal,0) ELSE 0 END) DESC, s.legal_name LIMIT 300`);
+        ORDER BY (CASE WHEN COALESCE(w.bal,0) < 0 THEN -COALESCE(w.bal,0) ELSE 0 END) DESC, s.legal_name LIMIT 20000`);
     const items = r.rows.map((x) => {
       const balance = Number(x.balance_paise); const limit = Number(x.limit_paise);
       const used = balance < 0 ? -balance : 0;
@@ -47,7 +47,7 @@ export default async function adminPlatformRoutes(app: FastifyInstance) {
               floor(extract(epoch FROM (now() - t.created_at)) / 3600)::int AS age_hours
          FROM support_tickets t JOIN sellers s ON s.id = t.seller_id
         WHERE t.state IN ('open','in_progress') AND (t.priority IN ('urgent','high') OR t.created_at < now() - interval '48 hours')
-        ORDER BY CASE t.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 ELSE 3 END, t.created_at LIMIT 200`);
+        ORDER BY CASE t.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 ELSE 3 END, t.created_at LIMIT 5000`);
     return { items: r.rows };
   });
 

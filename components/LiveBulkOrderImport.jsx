@@ -5,7 +5,8 @@ import { applyAssignmentResults, bookingSentence, summarizeBulk } from '@/lib/bu
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { apiFetch, ApiError, isFundsMessage } from '@/lib/api';
-import { Spinner } from './Kit';
+import { useClientPages } from '@/lib/useClientPages';
+import { Pagination, Spinner } from './Kit';
 import { useAppState } from '@/lib/AppStateContext';
 import { TEMPLATE_COLUMNS, TEMPLATE_HEADERS, TEMPLATE_SAMPLE_ROWS } from '@/lib/bulkTemplate.mjs';
 import { saveRows } from '@/lib/exportFile';
@@ -102,7 +103,13 @@ function groupOrders(rows, products) {
     const key = row.orderNumber || `__missing_${row.line}`;
     if (!orders.has(key)) orders.set(key, { ...row, lines: [row.line], items: [], errors: [] });
     const order = orders.get(key);
-    if (order.lines[0] !== row.line) order.lines.push(row.line);
+    if (order.lines[0] !== row.line) {
+      order.lines.push(row.line);
+      // Rows under one order number are the products of ONE order. Another customer under the same number is a mistake in the sheet: taking the first customer would
+      // silently drop the second one's parcel. (A blank cell on a product row is fine.)
+      const differs = ['customerName', 'phone', 'address', 'pincode'].find((f) => row[f] && order[f] && row[f].toLowerCase() !== order[f].toLowerCase());
+      if (differs && row.orderNumber) order.clash = `Order number ${row.orderNumber} is used for two different customers (rows ${order.lines[0]} and ${row.line} differ in ${{ customerName: 'customer name', phone: 'phone', address: 'address', pincode: 'pincode' }[differs]}). Give each order its own number`;
+    }
     const product = row.sku ? products.find((p) => p.sku?.toLowerCase() === row.sku.toLowerCase()) : null;
     order.items.push({
       productId: product?.id, sku: row.sku || product?.sku || 'CUSTOM', name: row.productName || product?.name || '',
@@ -121,6 +128,7 @@ function validate(order) {
   const phone = (order.phone || '').replace(/\D/g, '').slice(-10);
   const alternatePhone = (order.alternatePhone || '').replace(/\D/g, '').slice(-10);
   if (!order.orderNumber) errors.push('Order number is required');
+  if (order.clash) errors.push(order.clash);
   if (rawPayment && !['cod', 'prepaid', 'pp', 'pre-paid', 'pre paid'].includes(rawPayment)) errors.push('Payment type must be COD or Prepaid');
   if (!order.customerName || order.customerName.length < 2) errors.push('Customer name is required');
   if (!/^[6-9]\d{9}$/.test(phone)) errors.push('Enter a valid 10-digit phone');
@@ -152,7 +160,8 @@ function validate(order) {
 // Fix the cells, delete the Error column (or leave it, it is ignored) and upload the file again.
 // Only real problems are failures: bad data, an order that could not be created, or an assignment that failed after creation (with the courier's own reason).
 // A missing rate preview is not one: couriers are assigned only after the order is created.
-const isFailed = (o) => o.unassigned || (!o.created && (o.errors.length || o.failure));
+const isFailed = (o) => !o.created && !!(o.errors.length || o.failure); // not saved: goes into the re-upload file
+const needsCourier = (o) => !!(o.created && o.unassigned); // saved in NEXGO, no courier yet: assign from Track, never re-upload
 const failureReason = (o) => o.failure || o.errors.join(' | ');
 // How each template column is filled from a parsed order (and one of its product lines).
 const CELL = {
@@ -177,8 +186,8 @@ function downloadFailedOrders(orders, fileName, format = 'xlsx') {
 }
 
 function downloadErrorReport(orders, fileName, format = 'xlsx') {
-  const rows = orders.filter(isFailed).map((o) => [o.orderNumber || '', o.lines.join(', '), failureReason(o)]);
-  saveRows([['Order number', 'Sheet rows', 'Problem'], ...rows], `${fileName.replace(/\.[^.]+$/, '') || 'bulk-orders'}-errors`, format, 'Errors');
+  const rows = orders.filter((o) => isFailed(o) || needsCourier(o)).map((o) => [o.orderNumber || '', o.lines.join(', '), needsCourier(o) ? 'Saved, no courier' : 'Not saved', failureReason(o)]);
+  saveRows([['Order number', 'Sheet rows', 'Status', 'Problem'], ...rows], `${fileName.replace(/\.[^.]+$/, '') || 'bulk-orders'}-errors`, format, 'Errors');
 }
 
 // The pickup warehouse for an order: the one whose ID (WH000004) is in the sheet, else the one chosen on the page.
@@ -287,7 +296,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     }
   };
 
-  const validOrders = orders.filter((o) => !o.errors.length && !o.created);
+  const validOrders = orders.filter((o) => !o.errors.length && !o.created && (!o.failure || o.retry)); // a row the server refused needs a corrected sheet: pressing Create again cannot help
   // `list` = the orders to create, `all` = every order on the page (defaults to what is on screen: used by the Retry button).
   const createOrders = async (list = validOrders, all = orders) => {
     if (!list.length) return;
@@ -312,9 +321,9 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
         const chunk = chunks.shift();
         try {
           const res = await apiFetchPatient('/v1/orders/bulk', { method: 'POST', body: { orders: chunk.map(payloadOf) } });
-          chunk.forEach((o, k) => { const r = res.results?.find((x) => x.index === k); if (r?.existing) existing += 1; outcome.set(o.orderNumber, r?.ok ? { created: true, orderId: r.id } : { failure: r?.error || 'Not created' }); });
+          chunk.forEach((o, k) => { const r = res.results?.find((x) => x.index === k); if (r?.existing) existing += 1; outcome.set(o.orderNumber, r?.ok ? { created: true, orderId: r.id, existing: !!r.existing } : { failure: r?.error || 'Not created' }); });
         } catch (error) {
-          chunk.forEach((o) => outcome.set(o.orderNumber, { failure: error instanceof ApiError ? error.message : 'Not created' }));
+          chunk.forEach((o) => outcome.set(o.orderNumber, { failure: error instanceof ApiError ? error.message : 'Not created', retry: !(error instanceof ApiError) || error.status === 0 || error.status === 429 || error.status >= 500 })); // the request failed, not the row
         }
         finished += chunk.length; setProgress(`Creating orders… ${finished} of ${validOrders.length}`);
       }
@@ -339,27 +348,33 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
     setCreating(false);
     const summary = summarizeBulk(next);
     const { created, queued, booked } = summary;
-    const failed = next.filter((o) => o.errors.length || o.failure).length;
+    const failed = next.filter(isFailed).length;
     setResult({ total: next.length, created, failed, existing, queued, booked });
     if (existing) showToast(`${Math.max(created - existing, 0)} unique order${created - existing === 1 ? '' : 's'} added. ${existing} duplicate${existing === 1 ? '' : 's'} discarded (already in NEXGO).`);
-    if (created && !existing) {
+    if (summary.refused || (created && !existing)) {
       if (assignMode === 'none') showToast(`${created} order${created === 1 ? '' : 's'} created. Choose couriers in Track > Ready to ship.`);
-      else showToast(bookingSentence(summary), queued ? 'error' : 'success', queued ? 9000 : undefined);
+      else showToast(bookingSentence(summary), queued || summary.refused ? 'error' : 'success', queued || summary.refused ? 9000 : undefined);
     }
     const fundsStop = next.find((o) => isFundsMessage(o.failure));
     if (fundsStop) showToast(fundsStop.failure, 'error', 8000); // debit limit reached or wallet empty: said plainly and left on screen longer
-    else if (failed) showToast(`${failed} order${failed === 1 ? '' : 's'} failed or not assigned — download the failed orders file.`, 'error');
+    else if (failed) showToast(`${failed} order${failed === 1 ? '' : 's'} not saved. Download “Orders to fix”, correct the cells and upload that file.`, 'error');
   };
 
   const onDrop = (e) => { e.preventDefault(); setDragging(false); importFile(e.dataTransfer.files?.[0]); };
-  const failedCount = orders.filter((o) => o.errors.length || o.failure).length;
+  const failedCount = orders.filter((o) => isFailed(o) && !o.retry).length; const noCourier = orders.filter(needsCourier); const savedCount = orders.filter((o) => o.created).length; const alreadyCount = orders.filter((o) => o.existing).length;
+  // Each order is counted once: created, failed, or ready to try again
   // Why the failed orders failed, grouped (digits and quoted values collapsed), so thousands of failures read as a few causes.
   const reasons = useMemo(() => {
     const counts = new Map();
-    for (const o of orders) for (const text of [...o.errors, ...(o.failure ? [o.failure] : [])]) { const key = text.replace(/"[^"]*"/g, '"…"').replace(/\d{3,}/g, '#'); counts.set(key, (counts.get(key) || 0) + 1); }
+    for (const o of orders.filter(isFailed)) for (const text of [...o.errors, ...(o.failure ? [o.failure] : [])]) { const key = text.replace(/"[^"]*"/g, '"…"').replace(/\d{3,}/g, '#'); counts.set(key, (counts.get(key) || 0) + 1); }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   }, [orders]);
-  const unassignedCount = orders.filter(isFailed).length;
+  const unassignedCount = orders.filter(isFailed).length; // rows for the re-upload file
+  const [view, setView] = useState('all');
+  const groupOf = (o) => (o.created ? (o.unassigned ? 'nocourier' : o.awb ? 'booked' : 'created') : isFailed(o) && !o.retry ? 'failed' : 'ready');
+  const groups = { all: orders.length, created: 0, booked: 0, nocourier: 0, failed: 0, ready: 0 }; for (const o of orders) groups[groupOf(o)] += 1;
+  const shownView = groups[view] ? view : 'all';
+  const { items: pageOrders, pager } = useClientPages(shownView === 'all' ? orders : orders.filter((o) => groupOf(o) === shownView), 'bulk-results', { resetKey: `${fileName}|${shownView}` });
 
   return (
     <div style={{ flex: 1, padding: embedded ? 0 : mobile ? '14px 12px 42px' : '18px 28px 48px' }}>
@@ -378,14 +393,15 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
         <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(5,minmax(0,1fr))', gap: 12, marginTop: 18 }}>
           <SummaryCard label="Total uploads" value={fileName ? 1 : 0} tone="#3877fc" icon="⇧" />
           <SummaryCard label="Total orders" value={orders.length} tone="#3B82F6" icon="□" />
-          <SummaryCard label="Ready to create" value={validOrders.length} tone="#F59E0B" icon="…" />
-          <SummaryCard label="Successful orders" value={result?.created ?? orders.filter((o) => o.created && !o.unassigned).length} tone="#22C55E" icon="✓" />
-          <SummaryCard label="Failed orders" value={failedCount} tone="#EF4444" icon="×" />
+          <SummaryCard label={alreadyCount ? `Saved (${alreadyCount} were already in NEXGO)` : 'Saved orders'} value={savedCount} tone="#22C55E" icon="✓" />
+          <SummaryCard label={noCourier.length ? 'Saved, no courier yet' : 'Booked with a courier'} value={noCourier.length || orders.filter((o) => o.awb).length} tone={noCourier.length ? '#F59E0B' : '#3877fc'} icon={noCourier.length ? '!' : '➜'} />
+          <SummaryCard label="Not saved (fix the sheet)" value={failedCount + validOrders.length} tone="#EF4444" icon="×" />
         </div>
 
         {!!orders.length && validOrders.length > 0 && !creating && !loading && <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 9, background: `${T.GREEN}12`, color: T.TEXT, fontSize: 13, lineHeight: 1.5 }}><b>{validOrders.length} order{validOrders.length === 1 ? ' was' : 's were'} not created.</b> Click “Create {validOrders.length} order{validOrders.length === 1 ? '' : 's'}” to try again.</div>}
         {(result?.queued || 0) > 0 && <div role="status" style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: '#FFF7E0', border: '1px solid #E0B24A', color: '#6B4A00', fontSize: 12.5, lineHeight: 1.6 }}><b>{result.queued} order{result.queued === 1 ? ' is' : 's are'} saved but NOT booked yet.</b> Courier booking is paused or still running. They stay in the queue and book automatically; you do not need to upload again. {result.booked} of {result.created} created order{result.created === 1 ? ' is' : 's are'} booked so far. Check Track for the AWBs.</div>}
-        {failedCount > 0 && <div style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: `${T.RED}0D`, fontSize: 12.5, lineHeight: 1.6 }}><b style={{ color: T.RED }}>Why {failedCount} order{failedCount === 1 ? '' : 's'} failed</b>{reasons.map(([text, n]) => <div key={text} style={{ color: T.TEXT_SECONDARY }}><b style={{ color: T.TEXT }}>{n}</b> × {text}</div>)}</div>}
+        {failedCount > 0 && <div style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: `${T.RED}0D`, fontSize: 12.5, lineHeight: 1.6 }}><b style={{ color: T.RED }}>Why {failedCount} order{failedCount === 1 ? ' was' : 's were'} not saved</b>{reasons.map(([text, n]) => <div key={text} style={{ color: T.TEXT_SECONDARY }}><b style={{ color: T.TEXT }}>{n}</b> × {text}</div>)}</div>}
+        {noCourier.length > 0 && <div role="status" style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: '#FFF7E0', border: '1px solid #E0B24A', color: '#6B4A00', fontSize: 12.5, lineHeight: 1.6 }}><b>{noCourier.length} order{noCourier.length === 1 ? ' is' : 's are'} saved but no courier took {noCourier.length === 1 ? 'it' : 'them'}.</b> Do not upload {noCourier.length === 1 ? 'it' : 'them'} again: assign a courier in Track &gt; Ready to ship.{[...noCourier.reduce((m, o) => { const k = o.failure.replace('Order saved, but no courier yet: ', ''); return m.set(k, (m.get(k) || 0) + 1); }, new Map())].sort((x, y) => y[1] - x[1]).slice(0, 4).map(([text, n]) => <div key={text}><b>{n}</b> × {text}</div>)}</div>}
         {warehouses && !warehouses.length && <div style={{ marginTop: 18 }}><Action onClick={() => nav('warehouse')}>Add a pickup warehouse first</Action></div>}
         {warehouses?.length > 0 && <div style={{ marginTop: 16, fontSize: 12.5, color: T.TEXT_SECONDARY, lineHeight: 1.7 }}><b style={{ color: T.TEXT }}>Your warehouse IDs</b> (use in the Warehouse ID column): {warehouses.filter((w) => w.is_active !== false).map((w) => <span key={w.id} style={{ display: 'inline-block', margin: '0 8px 0 0' }}><code style={{ fontFamily: T.MONO, fontWeight: 700, color: T.TEXT }}>{w.warehouse_code}</code> {w.name}</span>)}</div>}
 
@@ -423,22 +439,25 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
           <div style={{ margin: '18px 0 11px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13, color: T.TEXT_SECONDARY }}>
               <span>Total <b style={{ color: T.TEXT }}>{orders.length}</b></span>
-              <span>Ready <b style={{ color: T.GREEN }}>{validOrders.length}</b></span>
-              {result && <span>Created <b style={{ color: T.GREEN }}>{result.created}</b></span>}
-              <span>Failed <b style={{ color: failedCount ? T.RED : T.TEXT }}>{failedCount}</b></span>
+              <span>Saved <b style={{ color: T.GREEN }}>{savedCount}</b></span>
+              {noCourier.length > 0 && <span>of these without a courier <b style={{ color: '#8A5A00' }}>{noCourier.length}</b></span>}
+              <span>Not saved <b style={{ color: failedCount ? T.RED : T.TEXT }}>{failedCount + validOrders.length}</b></span>
             </div>
             <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
-              {unassignedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => { const n = downloadFailedOrders(orders, fileName, fmt); showToast(`${n} failed order${n === 1 ? '' : 's'} saved as ${fmt === 'xlsx' ? 'Excel' : 'CSV'}. Correct the errors and upload the file again.`); }}>⬇ Failed orders ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
+              {unassignedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => { const n = downloadFailedOrders(orders, fileName, fmt); showToast(`${n} failed order${n === 1 ? '' : 's'} saved as ${fmt === 'xlsx' ? 'Excel' : 'CSV'}. Correct the errors and upload the file again.`); }}>⬇ Orders to fix ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
               {failedCount > 0 && ['xlsx', 'csv'].map((fmt) => <Action key={fmt} onClick={() => downloadErrorReport(orders, fileName, fmt)}>Error report ({fmt === 'xlsx' ? 'Excel' : 'CSV'})</Action>)}
               {result?.created > 0 && <Action primary onClick={() => nav('shipments')}>{assignMode === 'none' ? 'Go to Track > Ready to ship' : 'Go to Track'}</Action>}
               {(validOrders.length > 0 || creating) && <Action primary disabled={!validOrders.length || creating} onClick={() => createOrders()}>{creating ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Spinner size={13} />{progress || 'Creating orders…'}</span> : `Create ${validOrders.length} order${validOrders.length === 1 ? '' : 's'}`}</Action>}
             </div>
           </div>
 
+          <div role="tablist" aria-label="Orders in this file" style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 10 }}>
+            {[['all', 'All'], ['failed', 'Not saved'], ['nocourier', 'Saved, no courier'], ['created', 'Saved'], ['booked', 'Booked'], ['ready', 'Not saved yet']].filter(([id]) => id === 'all' || groups[id]).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={shownView === id} onClick={() => setView(id)} style={{ height: 32, padding: '0 12px', borderRadius: 99, border: `1px solid ${shownView === id ? T.NAVY : T.BORDER}`, background: shownView === id ? T.NAVY : T.SURFACE, color: shownView === id ? '#fff' : T.TEXT, fontSize: 12.5, fontWeight: 720, cursor: 'pointer' }}>{label} {groups[id].toLocaleString('en-IN')}</button>)}
+          </div>
           <div style={{ display: 'grid', gap: 10 }}>
-            {orders.map((o) => {
+            {pageOrders.map((o) => {
               const bad = o.errors.length || o.failure;
-              const status = o.created ? ['Created', T.GREEN] : bad ? ['Needs attention', T.RED] : ['Ready', T.ACCENT];
+              const status = o.unassigned ? ['Saved, no courier', '#8A5A00'] : o.already ? ['Already booked', T.GREEN] : o.existing ? ['Already in NEXGO', T.GREEN] : o.created ? [o.awb ? 'Booked' : 'Saved', T.GREEN] : bad ? ['Not saved', T.RED] : ['Ready', T.ACCENT];
               return (
                 <div key={o.orderNumber || o.lines[0]} style={{ ...CARD, padding: mobile ? 14 : 16, borderColor: bad ? `${T.RED}80` : 'var(--nx-glass-border)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
@@ -463,6 +482,7 @@ export default function LiveBulkOrderImport({ mobile, embedded = false }) {
               );
             })}
           </div>
+          <div style={{ ...CARD, marginTop: 10 }}><Pagination {...pager} noun="orders" /></div>
         </>
       )}
     </div>

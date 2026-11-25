@@ -82,7 +82,7 @@ export default function LiveCourierSla({ mobile }) {
         <Btn primary disabled={!courierId} onClick={() => open(null)}>+ Create policy</Btn>
       </section>
       <section style={{ ...CARD, overflow: 'hidden' }}>
-        <Table loading={loading} error={error} rows={showOff ? rows : rows.filter((r) => r.isActive)} rowKey={(r) => r.id} empty={courierId ? 'No SLA policies for this courier yet. Click “Create policy” to add the first one.' : 'Add a courier first.'} minWidth={880} columns={[
+        <Table paged="admin-sla" loading={loading} error={error} rows={showOff ? rows : rows.filter((r) => r.isActive)} rowKey={(r) => r.id} empty={courierId ? 'No SLA policies for this courier yet. Click “Create policy” to add the first one.' : 'Add a courier first.'} minWidth={880} columns={[
           { h: 'Zone', cell: (r) => <b>{zoneLabel(r.zone)}</b> },
           { h: 'Service type', cell: (r) => typeLabel(r.serviceType) },
           { h: 'Delivery promise', cell: (r) => `${r.promisedDays} day${r.promisedDays === 1 ? '' : 's'}` },

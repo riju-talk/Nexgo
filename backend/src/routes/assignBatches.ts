@@ -10,12 +10,12 @@ import { workerHealth } from '../lib/workerHealth.js';
 
 /**
  * Queue courier assignment instead of doing it inside the request:
- *   POST /v1/shipments/assign-batch        queue up to 2,000 orders; answers at once with the batch id
+ *   POST /v1/shipments/assign-batch        queue up to 5,000 orders; answers at once with the batch id
  *   GET  /v1/shipments/assign-batch/:id    progress (+ per-order results once finished)
  *   GET  /v1/shipments/assign-batch/active the seller's unfinished batch, if any (so Track can show progress after a refresh)
  * The booking itself runs in the worker (lib/assignQueue.ts) through the same assignOneOrder() the old request used.
  */
-const MAX_ORDERS = 2000;
+const MAX_ORDERS = 5000; // the same as "select all": one batch, so the progress counts to the real total
 const uuid = z.string().uuid();
 const code = z.string().regex(/^[a-z0-9-]{2,64}$/);
 
@@ -37,17 +37,17 @@ export async function assignBatchRoutes(app: FastifyInstance) {
     const input = z.object({ orderIds: z.array(uuid).min(1).max(MAX_ORDERS), providerCode: code.optional(), serviceCode: code.optional() }).parse(request.body);
     const p = principal(request);
     const ids = [...new Set(input.orderIds)];
-    let notReady: string[] = []; let notQueued: { id: string; reason: string }[] = []; // every requested order that is NOT waiting for a courier after this call, with the reason
+    let notReady: string[] = []; let notQueued: { id: string; reason: string; awb?: string; courier?: string }[] = []; // every requested order that is NOT waiting for a courier after this call, with the reason
     const created = await withSellerTransaction(p.sellerId, async (client) => {
       // Only this seller's orders that still have no courier.
-      const found = await client.query<{ id: string; ready: boolean; state: string; shipped: boolean }>(
-        `SELECT o.id, o.state::text AS state, ${READY_SQL} AS ready, EXISTS (SELECT 1 FROM shipments s WHERE s.order_id = o.id) AS shipped
-           FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.seller_id = $1 AND o.id = ANY($2::uuid[])`, [p.sellerId, ids]);
+      const found = await client.query<{ id: string; ready: boolean; state: string; shipped: boolean; awb: string | null; courier: string | null; ship_state: string | null }>(
+        `SELECT o.id, o.state::text AS state, ${READY_SQL} AS ready, (sh.id IS NOT NULL) AS shipped, sh.awb, cp.name AS courier, sh.state::text AS ship_state
+           FROM orders o JOIN customers c ON c.id = o.customer_id LEFT JOIN shipments sh ON sh.order_id = o.id LEFT JOIN courier_providers cp ON cp.id = sh.provider_id WHERE o.seller_id = $1 AND o.id = ANY($2::uuid[])`, [p.sellerId, ids]);
       const eligible = { rows: found.rows.filter((r) => !r.shipped && ['new', 'ready_to_ship'].includes(r.state)) };
       const known = new Set(found.rows.map((r) => r.id));
       notQueued = [
         ...ids.filter((x) => !known.has(x)).map((x) => ({ id: x, reason: 'Order not found.' })),
-        ...found.rows.filter((r) => r.shipped || !['new', 'ready_to_ship'].includes(r.state)).map((r) => ({ id: r.id, reason: r.shipped || r.state === 'booked' ? 'This order already has a courier.' : `This order is ${r.state}.` })),
+        ...found.rows.filter((r) => r.shipped || !['new', 'ready_to_ship'].includes(r.state)).map((r) => (r.shipped && r.ship_state !== 'cancelled' ? { id: r.id, reason: 'This order already has a courier.', awb: r.awb ?? undefined, courier: r.courier ?? undefined } : { id: r.id, reason: r.state === 'booked' ? 'This order already has a courier.' : `This order is ${r.state}.` })),
         ...eligible.rows.filter((r) => !r.ready).map((r) => ({ id: r.id, reason: 'Order details are incomplete. Fix it in Track > Needs fixing, then assign again.' })),
       ];
       // Incomplete orders are NOT queued (the booking would refuse them anyway): they come back as `notReady` so the seller can fix them (ORD-004).

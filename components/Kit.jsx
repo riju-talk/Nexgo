@@ -7,6 +7,7 @@ import { FORMATS, saveRows } from '@/lib/exportFile';
 import * as T from '@/lib/theme';
 import { useAutoLoad } from '@/lib/useInfiniteList';
 import { usePageNav } from '@/lib/usePageNav';
+import { useClientPages } from '@/lib/useClientPages';
 
 export const CARD = { background: 'var(--nx-surface)', border: `1px solid ${T.BORDER}`, borderRadius: 12 };
 export const FIELD = { height: 38, boxSizing: 'border-box', border: `1px solid ${T.INPUT_BORDER}`, borderRadius: 8, background: T.SURFACE, color: T.TEXT, padding: '0 10px', fontSize: 13, outline: 'none' };
@@ -126,7 +127,14 @@ export function Pager({ page, pages, total, pageSize, onPage, loading }) {
   );
 }
 
-export function Table({ columns, rows, loading, error, empty = 'Nothing to show yet.', minWidth = 760, rowKey }) {
+/** `paged="name"` shows the rows a page at a time with the usual page control (for lists whose rows are all here already). */
+export function Table({ rows, paged, noun, ...rest }) {
+  const { items, pager } = useClientPages(rows, paged || 'table');
+  if (!paged) return <TableRows rows={rows} {...rest} />;
+  return <><TableRows rows={items} {...rest} />{rows.length > 0 && !rest.loading && !rest.error && <Pagination {...pager} noun={noun} />}</>;
+}
+
+function TableRows({ columns, rows, loading, error, empty = 'Nothing to show yet.', minWidth = 760, rowKey }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', minWidth, borderCollapse: 'collapse' }}>
