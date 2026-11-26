@@ -181,6 +181,10 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
                             <option value="">Courier</option>
                             {services.filter((x) => !modeBy[s.key] || x.type === modeBy[s.key] || x.id === s.serviceId).map((x) => <option key={x.id} value={x.id}>{x.provider_name} · {x.name}{x.aggregator ? ` · via ${x.aggregator}` : ""}</option>)}
                           </select>
+                          {/* Kept next to the courier (it used to sit in the collapsed section below, so couriers were saved as prepaid only by mistake). */}
+                          {svc && (svc.supports_cod
+                            ? <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, marginTop: 6, cursor: 'pointer', fontWeight: 700, color: offered[svc.id]?.cod ? '#137D50' : '#9B6500' }}><input type="checkbox" checked={!!offered[svc.id]?.cod} onChange={(e) => setOffered((o) => ({ ...o, [svc.id]: { ...o[svc.id], on: true, cod: e.target.checked } }))} /> {offered[svc.id]?.cod ? 'COD allowed' : 'Prepaid only: tick to allow COD'}</label>
+                            : <small style={{ display: 'block', marginTop: 6, fontSize: 11.5, color: '#9B6500' }}>This courier does not take COD (prepaid only)</small>)}
                         </td>
                         <td rowSpan={2} style={{ padding: '6px 10px', verticalAlign: 'middle' }}><select aria-label="Air or surface" title="Pick Air or Surface to narrow the courier list" style={{ ...IN, fontSize: 12, width: 92, margin: '0 auto', display: 'block' }} value={modeBy[s.key] ?? svc?.type ?? ''} onChange={(e) => setModeBy((m) => ({ ...m, [s.key]: e.target.value }))}><option value="">All modes</option>{[...new Set(['surface', 'air', ...services.map((x) => x.type)])].map((t) => <option key={t} value={t}>{String(t).replace(/^./, (c) => c.toUpperCase())}</option>)}</select></td>
                         <td rowSpan={2} style={{ padding: '6px 10px', verticalAlign: 'middle' }}><input aria-label="Weight in kg" style={{ ...IN, width: 110, margin: '0 auto', display: 'block' }} inputMode="decimal" value={s.baseKg} onChange={(e) => patchSlab(s.key, { baseKg: e.target.value })} /></td>
@@ -205,7 +209,6 @@ export default function AdminRateAssign({ sellerId, mode, mobile }) {
                     <Label>COD charge (₹)<input style={{ ...FIELD, width: 110 }} inputMode="decimal" value={s.codFee} onChange={(e) => patchSlab(s.key, { codFee: e.target.value })} /></Label>
                     <Label>COD (% of order value)<input style={{ ...FIELD, width: 150 }} inputMode="decimal" value={s.codPct} onChange={(e) => patchSlab(s.key, { codPct: e.target.value })} /></Label>
                     <Label>Slab starts at (kg)<input style={{ ...FIELD, width: 110 }} inputMode="decimal" value={s.fromKg} onChange={(e) => patchSlab(s.key, { fromKg: e.target.value })} /></Label>
-                    <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, paddingBottom: 8, cursor: 'pointer' }}><input type="checkbox" checked={!!svc && !!offered[svc.id]?.cod} disabled={!svc || !svc.supports_cod} onChange={(e) => svc && setOffered((o) => ({ ...o, [svc.id]: { ...o[svc.id], on: true, cod: e.target.checked } }))} /> Allow COD for this courier</label>
                   </div>
                 </details>
               </div>
