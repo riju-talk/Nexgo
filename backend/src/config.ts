@@ -77,6 +77,7 @@ const schema = z.object({
   LORRIGO_API_KEY: z.string().optional(),
   LORRIGO_BASE_URL: z.string().url().default('https://app.lorrigo.com/api/v2'),
   LORRIGO_WEBHOOK_TOKEN: z.string().min(24).optional(),
+  ADMIN_OTP_MINUTES: z.coerce.number().int().min(1).max(60).default(10), // how long an e-mailed admin sign-in code stays valid
   // TEST ONLY. A fixed 6-digit code that is accepted as the e-mailed admin code for ONE account (the e-mail below), for a test mailbox that cannot receive mail.
   // Both must be set. Delete both variables to remove it. Every use is written to the audit log.
   MASTER_OTP_EMAIL: z.string().trim().toLowerCase().email().optional().or(z.literal('')),

@@ -55,6 +55,23 @@ a = await login('admin@nexgo.in');
 T("With a verification inbox set, the code goes there, not to the sign-in email", a.s === 202 && a.j.sentTo === 'p•••@gmail.com', JSON.stringify(a.j?.sentTo));
 await db.query("UPDATE platform_admins SET otp_email = NULL WHERE user_id = (SELECT id FROM users WHERE email = 'admin@nexgo.in')");
 
+// ---- code time limit (ADMIN_OTP_MINUTES, default 10): the page gets the seconds left, an expired code is refused, Resend gives a fresh full-length one
+{
+  const c = client();
+  await db.query("DELETE FROM admin_email_otps WHERE user_id = (SELECT id FROM users WHERE email = 'admin@nexgo.in')");
+  const first = await c('POST', '/v1/admin/auth/login', { email: 'admin@nexgo.in', password: 'Admin@456' });
+  T('Sign-in tells the page how long the code lasts (10 minutes by default)', first.s === 202 && first.j.expiresInSeconds > 590 && first.j.expiresInSeconds <= 600, String(first.j?.expiresInSeconds));
+  await db.query("UPDATE admin_email_otps SET expires_at = now() - interval '1 second' WHERE user_id = (SELECT id FROM users WHERE email = 'admin@nexgo.in')");
+  const late = await c('POST', '/v1/admin/auth/verify-otp', { otpToken: first.j.otpToken, code: first.j.devCode || '000000' });
+  T('A code used after its time limit is refused as expired', late.s === 401 && late.j?.error === 'CODE_EXPIRED', `${late.s} ${late.j?.error}`);
+  const again = await c('POST', '/v1/admin/auth/resend-otp', { otpToken: first.j.otpToken });
+  T('Resend after expiry gives a new code with the full time limit', again.s === 200 && again.j.expiresInSeconds > 590, `${again.s} ${JSON.stringify(again.j)}`);
+  if (again.j?.devCode) {
+    const ok = await c('POST', '/v1/admin/auth/verify-otp', { otpToken: first.j.otpToken, code: again.j.devCode });
+    T('The new code signs in', ok.s === 200 || (ok.s === 202 && ok.j?.requiresMfa), `${ok.s} ${JSON.stringify(ok.j)}`);
+  }
+}
+
 console.log(out.join('\n'));
 console.log(`\n${out.filter((x) => x.startsWith('PASS')).length}/${out.length} passed`);
 await db.end();

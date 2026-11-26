@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'motion/react';
 import { useAppState } from '@/lib/AppStateContext';
@@ -20,10 +20,16 @@ export default function AdminLogin() {
   const [password, setPassword] = useState('');
   const [mfaToken, setMfaToken] = useState(null);
   const [mfaCode, setMfaCode] = useState('');
-  const [otp, setOtp] = useState(null); // e-mailed code step: { token, sentTo }
+  const [otp, setOtp] = useState(null); // e-mailed code step: { token, sentTo, until } (until = when the code stops working, by this browser's clock)
+  const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  // Ticks once a second while a code is waiting, for the countdown; the server enforces the same limit.
+  useEffect(() => { if (!otp?.until) return undefined; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [otp?.until]);
+  const otpLeft = otp?.until ? Math.max(0, Math.ceil((otp.until - now) / 1000)) : null;
+  const otpExpired = otpLeft === 0;
+  const untilFrom = (secs) => (Number(secs) > 0 ? Date.now() + Number(secs) * 1000 : null);
   const mobile = vw <= T.MOBILE_BREAK;
   const dark = theme === 'dark';
   
@@ -33,7 +39,7 @@ export default function AdminLogin() {
     try {
       const result = await adminApi.login(email, password);
       if (result.requiresMfa) { setMfaToken(result.mfaToken); return; }
-      if (result.requiresEmailOtp) { setOtp({ token: result.otpToken, sentTo: result.sentTo }); setNotice((result.emailed ? 'We sent a 6-digit code to ' + result.sentTo + '.' : 'The code email could not be sent. Press Resend code.') + (result.devCode ? ' (local development code: ' + result.devCode + ')' : '')); return; }
+      if (result.requiresEmailOtp) { setOtp({ token: result.otpToken, sentTo: result.sentTo, until: untilFrom(result.expiresInSeconds) }); setNow(Date.now()); setNotice((result.emailed ? 'We sent a 6-digit code to ' + result.sentTo + '.' : 'The code email could not be sent. Press Resend code.') + (result.devCode ? ' (local development code: ' + result.devCode + ')' : '')); return; }
       // Signed in with the e-mailed temporary password: go straight to choosing a new one.
       if (result.mustChangePassword) { router.push(`/reset-password?token=${encodeURIComponent(result.resetToken)}&admin=1`); return; }
       nav('a-overview');
@@ -56,7 +62,7 @@ export default function AdminLogin() {
 
   async function resendOtp() {
     setError(''); setNotice(''); setBusy(true);
-    try { const r = await adminApi.resendEmailOtp(otp.token); setNotice(r.sent ? 'A new code was sent to ' + otp.sentTo + '. The old one no longer works.' : 'The email could not be sent. Try again in a minute.'); }
+    try { const r = await adminApi.resendEmailOtp(otp.token); if (r.sent) { setOtp((o) => ({ ...o, until: untilFrom(r.expiresInSeconds) })); setNow(Date.now()); setMfaCode(''); } setNotice(r.sent ? 'A new code was sent to ' + otp.sentTo + '. The old one no longer works.' : 'The email could not be sent. Try again in a minute.'); }
     catch (err) { setError(err instanceof ApiError && err.status === 429 ? 'Wait a minute before asking for another code.' : err instanceof ApiError && err.status === 401 ? err.message : 'Something went wrong. Try again.'); }
     finally { setBusy(false); }
   }
@@ -116,7 +122,8 @@ export default function AdminLogin() {
           {mfaToken || otp ? (
             <form onSubmit={submitMfa} style={{ display: 'grid', gap: 15, marginTop: 20 }}>
               <label style={{ display: 'grid', gap: 6 }}><span style={{ color: T.TEXT_LABEL, fontSize: 12.5, fontWeight: 650 }}>6-digit code <span style={{ color: T.RED }}>*</span></span><input aria-label="Verification code" value={mfaCode} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="000000" autoFocus autoComplete="one-time-code" style={{ ...field, fontVariantNumeric: 'tabular-nums', letterSpacing: '.3em', textAlign: 'center' }} /></label>
-              <motion.button whileTap={{ scale: .98 }} type="submit" disabled={busy || mfaCode.length !== 6} style={{ height: 41, marginTop: 2, border: 0, borderRadius: 8, background: '#1a6aa3', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy || mfaCode.length !== 6 ? .6 : 1, fontSize: 14, fontWeight: 700, boxShadow: '0 9px 18px rgba(15,31,61,.2)' }}>{busy ? 'Verifying…' : 'Verify and sign in'}</motion.button>
+              {otp && otpLeft !== null && <div role="status" style={{ textAlign: 'center', fontSize: 12.5, fontWeight: 700, color: otpExpired ? T.RED : otpLeft <= 60 ? '#B45309' : T.TEXT_SECONDARY }}>{otpExpired ? 'This code has expired. Press Resend code for a new one.' : `Code expires in ${Math.floor(otpLeft / 60)}:${String(otpLeft % 60).padStart(2, '0')}`}</div>}
+              <motion.button whileTap={{ scale: .98 }} type="submit" disabled={busy || mfaCode.length !== 6 || (!!otp && otpExpired)} style={{ height: 41, marginTop: 2, border: 0, borderRadius: 8, background: '#1a6aa3', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy || mfaCode.length !== 6 || (!!otp && otpExpired) ? .6 : 1, fontSize: 14, fontWeight: 700, boxShadow: '0 9px 18px rgba(15,31,61,.2)' }}>{busy ? 'Verifying…' : 'Verify and sign in'}</motion.button>
               {otp && <button type="button" onClick={resendOtp} disabled={busy} style={{ border: 0, background: 'transparent', color: '#1a6aa3', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Resend code</button>}
               <div onClick={() => { setMfaToken(null); setOtp(null); setMfaCode(''); setError(''); setNotice(''); }} style={{ textAlign: 'center', color: T.TEXT_SECONDARY, fontSize: 12, cursor: 'pointer' }}>← Back to password</div>
             </form>

@@ -99,7 +99,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const codeEmail = (admin.otp_email || input.email).toLowerCase();
     const challenge = await startAdminOtpChallenge(admin.user_id, codeEmail);
     const hint = config.NODE_ENV === 'development' && challenge.code ? { devCode: challenge.code } : {}; // local development only, never in production
-    return reply.code(202).send({ requiresEmailOtp: true, otpToken: challenge.otpToken, sentTo: maskEmail(codeEmail), emailed: challenge.emailed, ...hint });
+    return reply.code(202).send({ requiresEmailOtp: true, otpToken: challenge.otpToken, sentTo: maskEmail(codeEmail), emailed: challenge.emailed, expiresInSeconds: challenge.expiresInSeconds, ...hint });
   });
 
   // Registered platform admins only. Always answers 202 so the form never reveals who is an admin.

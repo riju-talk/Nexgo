@@ -41,7 +41,7 @@ export async function adminMfaRoutes(app: FastifyInstance) {
     if (!result.ok) {
       if (result.reason === 'wrong') return reply.code(401).send({ error: 'INVALID_CODE', message: 'That code is not right. Check the email and try again.' });
       if (result.reason === 'locked') return reply.code(401).send({ error: 'CODE_LOCKED', message: 'Too many wrong codes. Go back and sign in again to get a new code.' });
-      return reply.code(401).send({ error: 'CODE_EXPIRED', message: 'This code has expired. Go back and sign in again to get a new code.' });
+      return reply.code(401).send({ error: 'CODE_EXPIRED', message: 'This code has expired. Press Resend code for a new one, or go back and sign in again.' });
     }
     if (result.needsMfa) return reply.code(202).send({ requiresMfa: true, mfaToken: result.mfaToken });
     reply.setCookie('nx_session', result.token, sessionCookieOptions());
@@ -57,7 +57,7 @@ export async function adminMfaRoutes(app: FastifyInstance) {
       'SELECT o.user_id, COALESCE(pa.otp_email, u.email) AS email FROM admin_email_otps o JOIN users u ON u.id = o.user_id LEFT JOIN platform_admins pa ON pa.user_id = o.user_id WHERE o.token_hash = $1', [hashToken(otpToken)])).rows[0];
     if (!row) return reply.code(401).send({ error: 'CODE_EXPIRED', message: 'This sign-in has expired. Go back and sign in again.' });
     const result = await sendAdminOtp(row.user_id, row.email, 'sign-in');
-    return { sent: result.sent, ...(config.NODE_ENV === 'development' ? { devCode: result.code } : {}) };
+    return { sent: result.sent, expiresInSeconds: result.expiresInSeconds, ...(config.NODE_ENV === 'development' ? { devCode: result.code } : {}) };
   });
 
   // Step two of login when MFA is required and enrolled: exchange the

@@ -5,7 +5,7 @@ import { db } from '../db/client.js';
 import { sendMail } from './mailer.js';
 import { hashSessionToken, newSessionToken } from './session.js';
 
-export const OTP_MINUTES = 10;
+export const OTP_MINUTES = config.ADMIN_OTP_MINUTES; // env ADMIN_OTP_MINUTES, 1-60, default 10
 export const OTP_MAX_ATTEMPTS = 5;
 
 const hashCode = (userId: string, code: string) => createHmac('sha256', config.CSRF_SECRET).update(`admin-otp:${userId}:${code}`).digest('hex');
@@ -16,9 +16,10 @@ export const maskEmail = (email: string) => email.replace(/^(.).*(@.*)$/, '$1•
 export async function sendAdminOtp(userId: string, email: string, reason: 'registration' | 'sign-in', client?: PoolClient) {
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   const run = (client ?? db).query.bind(client ?? db);
-  await run(
+  const stored = await run(
     `INSERT INTO admin_email_otps (user_id, code_hash, attempts, expires_at) VALUES ($1,$2,0, now() + ($3 || ' minutes')::interval)
-     ON CONFLICT (user_id) DO UPDATE SET code_hash = EXCLUDED.code_hash, attempts = 0, expires_at = EXCLUDED.expires_at, created_at = now()`,
+     ON CONFLICT (user_id) DO UPDATE SET code_hash = EXCLUDED.code_hash, attempts = 0, expires_at = EXCLUDED.expires_at, created_at = now()
+     RETURNING GREATEST(0, ceil(extract(epoch FROM expires_at - now())))::int AS left`,
     [userId, hashCode(userId, code), String(OTP_MINUTES)],
   );
   const lead = reason === 'registration'
@@ -26,17 +27,18 @@ export async function sendAdminOtp(userId: string, email: string, reason: 'regis
     : 'Use the code below to finish signing in to the NEXGO admin panel.';
   const sent = await sendMail(email, 'Your NEXGO admin verification code',
     `${lead}\n\nYour code: ${code}\n\nIt is valid for ${OTP_MINUTES} minutes and works once. Enter it on ${config.FRONTEND_ORIGIN}/admin/login after your email and password.\n\nIf you did not try to sign in, do not share this code. Change your password.`);
-  return { sent, code };
+  return { sent, code, expiresInSeconds: (stored.rows[0] as { left: number } | undefined)?.left ?? OTP_MINUTES * 60 };
 }
 
 /** After a correct password: hands back a one-time token that the code must be sent with. A code that is still valid (for example the registration one) is kept, otherwise a new one is e-mailed. */
 export async function startAdminOtpChallenge(userId: string, email: string) {
-  const live = await db.query('SELECT 1 FROM admin_email_otps WHERE user_id = $1 AND expires_at > now() AND attempts < $2', [userId, OTP_MAX_ATTEMPTS]);
+  const live = await db.query<{ left: number }>('SELECT GREATEST(0, ceil(extract(epoch FROM expires_at - now())))::int AS left FROM admin_email_otps WHERE user_id = $1 AND expires_at > now() AND attempts < $2', [userId, OTP_MAX_ATTEMPTS]);
   const fresh = live.rows[0] ? null : await sendAdminOtp(userId, email, 'sign-in');
   const emailed = fresh ? fresh.sent : true;
   const otpToken = newSessionToken();
   await db.query('UPDATE admin_email_otps SET token_hash = $2 WHERE user_id = $1', [userId, hashSessionToken(otpToken)]);
-  return { otpToken, emailed, code: fresh?.code ?? null };
+  // Seconds the code has left, so the sign-in page can count down (a code kept from registration has less than the full time).
+  return { otpToken, emailed, code: fresh?.code ?? null, expiresInSeconds: fresh ? fresh.expiresInSeconds : live.rows[0].left };
 }
 
 export type OtpCheck = { ok: true; userId: string; master?: boolean } | { ok: false; reason: 'expired' | 'locked' | 'wrong' };
