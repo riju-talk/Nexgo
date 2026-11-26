@@ -333,9 +333,9 @@ export class LorrigoAdapter implements CourierAdapter {
     const awb = after.awb ?? firstString(shipment, ['awb', 'awb_number', 'awbNumber', 'shipment.awb', 'data.awb', 'data.shipment.awb']) ?? findByKey(shipment, /^(awb|awb_?number|waybill|tracking_?(number|id))$/i);
     if (!awb) throw new LorrigoError('Lorrigo did not return an AWB for this shipment. Check the shipment in the Lorrigo dashboard before booking again.', 502);
     const shipmentId = after.id ?? firstString(shipment, ['shipment.id', 'shipment_id', 'shipmentId', 'data.shipment.id']);
-    // The order record rarely has the routing code; the shipment record does. One extra call, best effort (the label can fetch it later).
-    const routing = after.routing ?? (shipmentId ? await this.routingCode(shipmentId).catch(() => null) : null);
-    return result(awb, shipmentId, routing);
+    // The routing code (on the shipment record, rarely on the order) is NOT fetched here: that was one more courier call while the seller waited.
+    // recordBooking fetches it in the background right after the booking is saved, and the label page fills any that are still missing.
+    return result(awb, shipmentId, after.routing);
   }
 
   // POST /ndr/action, verified live by validation errors: body { ndrId, actionType, comment }; ndrId is the AWB (a wrong one answers "Shipment not found for AWB"),

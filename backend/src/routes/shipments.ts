@@ -156,6 +156,9 @@ export async function recordBooking(p: ReturnType<typeof principal>, requestId: 
   try {
     const done = await withSellerTransaction(p.sellerId, (client) => completeBooking(client, p, requestId, ctx, booking, attemptId));
     invalidateMetrics(p.sellerId); // the new booking shows in this seller's figures at once
+    // The label's routing code is fetched AFTER the booking is answered (one courier call fewer while the seller waits); the label page also fills it if this misses.
+    const shipmentId = (done as { shipment?: { id?: string } })?.shipment?.id;
+    if (!booking.routingCode && shipmentId) void fillRoutingCodes(p.sellerId, [shipmentId]);
     return done;
   } catch (e) {
     if ((e as { undoCourier?: boolean }).undoCourier) {
