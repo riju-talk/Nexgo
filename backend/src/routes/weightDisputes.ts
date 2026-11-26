@@ -36,7 +36,7 @@ export async function weightDisputeRoutes(app: FastifyInstance) {
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       page: z.coerce.number().int().min(1).default(1),
-      pageSize: z.coerce.number().int().min(1).max(100).default(8),
+      pageSize: z.coerce.number().int().min(1).max(1000).default(8),
     }).parse(request.query);
 
     return withSellerTransaction(p.sellerId, async (client) => {

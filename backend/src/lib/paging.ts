@@ -53,7 +53,7 @@ export function pageRows<T>(rows: T[], limit: number): { items: T[]; hasMore: bo
 }
 
 /** Which rows a numbered list asks for: `page` + `pageSize` (the pagination control) or `limit` + `offset`. Anything invalid falls back to the first page. */
-export function pageOf(query: unknown, fallback = 50, max = 200): { limit: number; offset: number } {
+export function pageOf(query: unknown, fallback = 50, max = 1000): { limit: number; offset: number } {
   const q = (query ?? {}) as Record<string, unknown>;
   const whole = (v: unknown, min: number) => { const n = Number(v); return v !== undefined && v !== '' && Number.isInteger(n) && n >= min ? n : undefined; };
   const limit = Math.min(whole(q.pageSize, 1) ?? whole(q.limit, 1) ?? fallback, max);

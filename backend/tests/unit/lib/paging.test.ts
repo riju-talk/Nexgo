@@ -4,7 +4,7 @@ import { pageOf, pageWithTotal } from '../../../src/lib/paging.js';
 describe('pageOf', () => {
   it('page + pageSize', () => expect(pageOf({ page: '3', pageSize: '25' })).toEqual({ limit: 25, offset: 50 }));
   it('limit + offset still work', () => expect(pageOf({ limit: '10', offset: '30' })).toEqual({ limit: 10, offset: 30 }));
-  it('caps the size and falls back on rubbish', () => { expect(pageOf({ pageSize: '9999' }).limit).toBe(200); expect(pageOf({ page: '-2', pageSize: 'x' })).toEqual({ limit: 50, offset: 0 }); });
+  it('caps the size and falls back on rubbish', () => { expect(pageOf({ pageSize: '9999' }).limit).toBe(1000); expect(pageOf({ page: '-2', pageSize: 'x' })).toEqual({ limit: 50, offset: 0 }); });
 });
 
 describe('pageWithTotal', () => {

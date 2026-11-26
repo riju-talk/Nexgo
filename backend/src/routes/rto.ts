@@ -25,7 +25,7 @@ export async function rtoRoutes(app: FastifyInstance) {
       ...shipmentFilterFields,
       q: z.string().trim().max(80).optional(), courier: z.string().trim().max(64).optional(),
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(500).default(8),
+      page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(1000).default(8),
     }).parse(request.query);
     return withSellerTransaction(p.sellerId, async (client) => {
       const where = [`s.seller_id = $1`, `s.state IN ('rto','rto_in_transit')`]; const params: unknown[] = [p.sellerId];

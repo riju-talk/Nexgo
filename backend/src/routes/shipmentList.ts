@@ -127,23 +127,35 @@ export async function shipmentListRoutes(app: FastifyInstance) {
   app.get('/v1/shipments/list', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
     const q = listQuery.parse(request.query);
-    const limit = parseLimit(q.limit, 50, 200); const cursor = decodeCursor(q.cursor);
+    const limit = parseLimit(q.limit, 50, 1000); const cursor = decodeCursor(q.cursor);
     return withSellerTransaction(p.sellerId, async (client) => {
       const wantShip = SHIPMENT_TABS.includes(q.tab); const wantOrder = ORDER_TABS.includes(q.tab);
       // Page mode (page + pageSize): the numbered pagination under the table. Answers { items, total, page, pages, pageSize }.
       if (q.page) {
-        const size = parseLimit(q.pageSize, 25, 200); const page = Math.max(1, Math.floor(Number(q.page)) || 1); const offset = (page - 1) * size;
+        const size = parseLimit(q.pageSize, 25, 1000); const page = Math.max(1, Math.floor(Number(q.page)) || 1); const offset = (page - 1) * size;
         const total = (wantShip ? await countSource(client, p.sellerId, 'shipment', q.tab, q) : 0) + (wantOrder ? await countSource(client, p.sellerId, 'order', q.tab, q) : 0);
         // Only pages that can really be opened are offered; `reachable` says how many rows that is, so the screen can tell the seller to filter for older ones (DATA-003).
         const reachable = Math.min(total, MAX_DEPTH); const pages = Math.max(1, Math.ceil(reachable / size));
         if (offset >= MAX_DEPTH) return { items: [], total, reachable, page, pages, pageSize: size };
         const mixed = wantShip && wantOrder; // shipments and unshipped orders share one newest-first list: merge, then cut the page out of it
-        const take = mixed ? offset + size : size; const skip = mixed ? 0 : offset;
+        // Mixed lists: work out which rows fall on this page from ids and times only (cheap), then load the full rows of just that page.
+        // Each source's rows on the page are one contiguous run of that source's own newest-first order, so `skip` = how many of it came before the page.
+        let shipSkip = offset; let shipTake = size; let orderSkip = offset; let orderTake = size;
+        if (mixed && offset > 0) {
+          const [mShips, mOrders] = await Promise.all([
+            fetchSource(client, p.sellerId, 'shipment', q.tab, q, null, offset + size, true),
+            fetchSource(client, p.sellerId, 'order', q.tab, q, null, offset + size, true),
+          ]);
+          const merged = mergeNewestFirst([mShips, mOrders], offset + size);
+          const before = merged.slice(0, offset); const onPage = merged.slice(offset);
+          shipSkip = before.filter((r) => r.kind === 'shipment').length; shipTake = onPage.filter((r) => r.kind === 'shipment').length;
+          orderSkip = before.length - shipSkip; orderTake = onPage.length - shipTake;
+        } else if (mixed) { shipSkip = 0; orderSkip = 0; }
         const [pShips, pOrders] = await Promise.all([
-          wantShip ? fetchSource(client, p.sellerId, 'shipment', q.tab, q, null, take, false, skip) : Promise.resolve([]),
-          wantOrder ? fetchSource(client, p.sellerId, 'order', q.tab, q, null, take, false, skip) : Promise.resolve([]),
+          wantShip && shipTake > 0 ? fetchSource(client, p.sellerId, 'shipment', q.tab, q, null, shipTake, false, shipSkip) : Promise.resolve([]),
+          wantOrder && orderTake > 0 ? fetchSource(client, p.sellerId, 'order', q.tab, q, null, orderTake, false, orderSkip) : Promise.resolve([]),
         ]);
-        const rows = mixed ? mergeNewestFirst([pShips, pOrders], offset + size).slice(offset, offset + size) : mergeNewestFirst([pShips, pOrders], size);
+        const rows = mergeNewestFirst([pShips, pOrders], size);
         const shipMasked = new Map(maskCustomerRows(rows.filter((r) => r.kind === 'shipment').map((r) => publicShipment(r) as Row), p, 'shipments.view_customer').map((r) => [r.id, r]));
         const orderMasked = new Map(maskCustomerRows(rows.filter((r) => r.kind === 'order'), p, 'orders.view_customer').map((r) => [r.id, r]));
         return { items: rows.map((r) => (r.kind === 'shipment' ? shipMasked.get(r.id) : orderMasked.get(r.id)) as Row), total, reachable, page, pages, pageSize: size };

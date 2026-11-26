@@ -303,12 +303,12 @@ export default function LiveTrack({ mobile }) {
   useEffect(() => { setPicked(new Map()); }, [tab, qf]); // eslint-disable-line react-hooks/set-state-in-effect -- a selection belongs to one tab and filter set
   const set = (k) => (e) => { setF((x) => ({ ...x, [k]: e.target.value })); };
 
-  // Walks the list endpoint (200 per request) to gather every row matching the tab and filters, for exports, manifests and fixing orders.
+  // Walks the list endpoint (1000 per request) to gather every row matching the tab and filters, for exports, manifests and fixing orders.
   const fetchAll = async ({ tab: wantedTab = tab, filters = qf, cap = 100000 } = {}) => {
     const out = []; let cursor = null;
     do {
       setWorking(`Collecting shipments… ${out.length.toLocaleString('en-IN')}`);
-      const x = await apiFetch(`/v1/shipments/list?${qs({ tab: wantedTab, limit: 200, cursor }, filters)}`);
+      const x = await apiFetch(`/v1/shipments/list?${qs({ tab: wantedTab, limit: 1000, cursor }, filters)}`);
       out.push(...(x.items || []).map(norm)); cursor = x.nextCursor;
     } while (cursor && out.length < cap);
     setWorking('');

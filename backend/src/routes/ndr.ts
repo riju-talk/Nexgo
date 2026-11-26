@@ -55,7 +55,7 @@ export async function ndrRoutes(app: FastifyInstance) {
       attemptNumber: z.coerce.number().int().min(1).max(3).optional(),
       ...shipmentFilterFields,
       page: z.coerce.number().int().min(1).default(1),
-      pageSize: z.coerce.number().int().min(1).max(50).default(8),
+      pageSize: z.coerce.number().int().min(1).max(1000).default(8),
     }).parse(request.query);
 
     return withSellerTransaction(p.sellerId, async (client) => {

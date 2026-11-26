@@ -13,7 +13,7 @@ export async function adminDisputeRoutes(app: FastifyInstance) {
   app.get('/v1/admin/weight-disputes', { preHandler: requirePlatformAdmin }, async (request) => {
     const q = z.object({
       status: z.enum(['open', 'disputed', 'accepted', 'won', 'lost', 'withdrawn']).optional(), q: z.string().trim().max(80).optional(), sellerId: z.string().uuid().optional(),
-      page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(10),
+      page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(1000).default(10),
     }).parse(request.query);
     const where: string[] = []; const params: unknown[] = [];
     const add = (sql: string, v: unknown) => { params.push(v); where.push(sql.replaceAll('?', `$${params.length}`)); };

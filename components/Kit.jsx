@@ -80,7 +80,7 @@ const pageWindow = (page, pages) => {
   out.push(pages);
   return out;
 };
-export function Pagination({ page, pages, size, total, reachable, onPage, onSize, sizes = [15, 25, 50, 100], loading, noun = 'results' }) {
+export function Pagination({ page, pages, size, total, reachable, onPage, onSize, sizes = [15, 25, 50, 100, 1000], loading, noun = 'results' }) {
   if (total === undefined || total === null) return null;
   const from = total === 0 ? 0 : (page - 1) * size + 1; const to = Math.min(page * size, total);
   const btn = (label, target, { on = false, off = false, aria } = {}) => (

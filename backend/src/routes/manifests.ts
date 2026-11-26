@@ -56,7 +56,7 @@ export async function manifestRoutes(app: FastifyInstance) {
 
   app.get('/v1/manifests', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
-    const q = z.object({ q: z.string().trim().max(60).optional(), from: day.optional(), to: day.optional(), status: z.enum(['pending', 'in_progress', 'completed']).optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(15) }).parse(request.query);
+    const q = z.object({ q: z.string().trim().max(60).optional(), from: day.optional(), to: day.optional(), status: z.enum(['pending', 'in_progress', 'completed']).optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(1000).default(15) }).parse(request.query);
     const offset = (q.page - 1) * q.pageSize;
     return withSellerTransaction(p.sellerId, async (client) => {
       const base = `FROM pickup_manifests m

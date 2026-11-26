@@ -116,6 +116,23 @@ T('/ids for the Ready tab equals the walked list (every row an order)', ids.item
 const idsCap = (await call('GET', '/v1/shipments/ids?tab=all&limit=100')).j;
 T('/ids honours a limit and says when it cut the list', idsCap.items.length === 100 && idsCap.truncated === true);
 
+// ---- numbered pages (page + pageSize, up to 1000): every page of every mixed / single tab is exactly the matching slice of the cursor walk
+for (const tab of ['all', 'cancelled', 'failed', 'delivered', 'ready']) {
+  const w = await walk({ tab }, 1000);
+  for (const size of [100, 333, 1000]) {
+    const got = []; let pages = 1; let bad = '';
+    for (let pg = 1; pg <= pages; pg++) {
+      const r = await call('GET', `/v1/shipments/list?${qs({ tab, page: pg, pageSize: size })}`);
+      if (r.s !== 200) { bad = `HTTP ${r.s} on page ${pg}`; break; }
+      pages = r.j.pages; got.push(...r.j.items.map((x) => x.id));
+      if (r.j.items.length > size || r.j.pageSize !== size) { bad = `page ${pg} has ${r.j.items.length} rows / pageSize ${r.j.pageSize}`; break; }
+    }
+    T(`Tab ${tab}, ${size} per page: the pages in order equal the cursor walk`, !bad && got.length === w.ids.length && got.every((id, i) => id === w.ids[i]), bad || `${got.length} vs ${w.ids.length}`);
+  }
+}
+const deep = Date.now(); const deepPage = await call('GET', '/v1/shipments/list?tab=all&page=2&pageSize=1000'); const deepMs = Date.now() - deep;
+T(`A deep 1000-row page of the All tab answers in ${deepMs} ms`, deepPage.s === 200 && deepPage.j?.items?.length > 0 && deepMs < 3000, `HTTP ${deepPage.s}, ${deepPage.j?.items?.length} rows, ${deepPage.bytes} bytes`);
+
 // ---- the first screen is small and fast
 const first = await call('GET', '/v1/shipments/list?tab=all&limit=50');
 const t0 = Date.now(); const firstAgain = await call('GET', '/v1/shipments/list?tab=all&limit=50'); const firstMs = Date.now() - t0;

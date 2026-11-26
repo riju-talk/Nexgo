@@ -7,7 +7,7 @@ import { codPending } from '../lib/metrics.js';
 
 function principal(request: FastifyRequest) { if (!request.principal) throw Object.assign(new Error('Authentication required'), { statusCode: 401 }); return request.principal; }
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const page = { page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(10) };
+const page = { page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(1000).default(10) };
 // "AWB no(s) separated by comma" search box.
 const refList = (q?: string) => (q ? q.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean).slice(0, 50) : []);
 

@@ -32,7 +32,7 @@ export async function notificationRoutes(app: FastifyInstance) {
 
   app.get('/v1/notifications', { preHandler: requireSeller }, async (request) => {
     const p = principal(request);
-    const q = z.object({ kind: z.enum(KINDS).optional(), group: z.enum(['parcels', 'money', 'account']).optional(), unread: z.coerce.boolean().optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(20) }).parse(request.query);
+    const q = z.object({ kind: z.enum(KINDS).optional(), group: z.enum(['parcels', 'money', 'account']).optional(), unread: z.coerce.boolean().optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(1000).default(20) }).parse(request.query);
     return withSellerTransaction(p.sellerId, async (client) => {
       const where = ['seller_id = $1']; const params: unknown[] = [p.sellerId];
       if (q.kind) { params.push(q.kind); where.push(`kind = $${params.length}`); }
