@@ -136,18 +136,42 @@ export class ShiprocketAdapter implements CourierAdapter {
   }
 
   /** The courier services this aggregator offers, read from the serviceability call on a few typical lanes (Shiprocket has no plain list of courier ids). */
+  /**
+   * Every courier service this Shiprocket account can book. Two sources, merged by Shiprocket's courier_company_id:
+   *  1. the account's courier list (GET /courier/courierListWithCounts): every courier company switched on for the account;
+   *  2. rate checks over many lanes, both payment modes and several weights: a courier shows up there only for lanes and weights it serves,
+   *     so a narrow scan (it used to be 4 lanes, prepaid, 0.5 kg) misses most of them. This also catches couriers the list endpoint leaves out.
+   * Inactive, reverse (return pickup) and international services are left out.
+   */
   async listServices(): Promise<{ id: string; name: string; type: string }[]> {
-    const lanes: [string, string][] = [['110001', '400001'], ['400001', '560001'], ['700001', '110001'], ['600001', '500001']];
     const seen = new Map<string, { id: string; name: string; type: string }>();
+    const add = (id: unknown, name: unknown, type: unknown) => {
+      const key = String(id ?? '').trim(); const label = String(name ?? '').trim();
+      if (!key || !label || seen.has(key) || /reverse|rvp|return|international|intl/i.test(label)) return;
+      seen.set(key, { id: key, name: label, type: String(type ?? '').toLowerCase() });
+    };
     let firstError: unknown = null;
-    for (const [from, to] of lanes) {
-      try {
-        const res = await this.call('GET', `/courier/serviceability/?pickup_postcode=${from}&delivery_postcode=${to}&weight=0.5&cod=0`);
-        for (const c of availableCouriers(res)) { const id = String(c.courier_company_id ?? ''); const name = String(c.courier_name ?? '').trim(); if (id && name && !seen.has(id)) seen.set(id, { id, name, type: String(c.mode ?? c.type ?? '').toLowerCase() }); }
-      } catch (e) { firstError = firstError ?? e; }
+    try {
+      const body = await this.call('GET', '/courier/courierListWithCounts');
+      for (const c of courierList(body)) {
+        const active = c.status ?? c.is_active ?? c.active;
+        if (active !== undefined && active !== null && !(active === true || active === 1 || String(active).toLowerCase() === 'active' || String(active) === '1')) continue;
+        if (c.is_reverse === true || c.is_reverse === 1) continue;
+        add(c.id ?? c.courier_company_id, c.name ?? c.courier_name, c.mode ?? c.courier_type ?? c.type);
+      }
+    } catch (e) { firstError = e; }
+    // Metro, tier-2, North-East, J&K and remote lanes; prepaid and COD; light and heavy parcels.
+    const lanes: [string, string][] = [['110001', '400001'], ['400001', '560001'], ['700001', '110001'], ['600001', '500001'], ['380001', '302001'], ['226001', '781001'], ['411001', '180001'], ['560001', '682001'], ['122001', '744101'], ['452001', '831001']];
+    const checks: string[] = [];
+    for (const [from, to] of lanes) for (const cod of [0, 1]) for (const weight of [0.5, 2, 10]) checks.push(`/courier/serviceability/?pickup_postcode=${from}&delivery_postcode=${to}&weight=${weight}&cod=${cod}`);
+    for (let k = 0; k < checks.length; k += 6) {
+      await Promise.all(checks.slice(k, k + 6).map(async (path) => {
+        try { for (const c of availableCouriers(await this.call('GET', path))) add(c.courier_company_id, c.courier_name, c.mode ?? c.type); }
+        catch (e) { firstError = firstError ?? e; }
+      }));
     }
     if (!seen.size && firstError) throw firstError;
-    return [...seen.values()];
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** The platform's wallet with Shiprocket in rupees (GET /account/details/wallet-balance). Null when the answer carries no balance. */
@@ -332,6 +356,12 @@ async function outOfBalance(): Promise<ShiprocketError> {
   console.error('Shiprocket refused a booking for balance: top the wallet up to resume bookings.');
   await markRefused('shiprocket'); // awaited: the hold is recorded for every process BEFORE this booking reports its failure (no race with the next attempt)
   return new ShiprocketError(BOOKING_PAUSED, 503, 402); // every courier on this aggregator shares that balance: stop at once, the queue keeps the orders and books them after a top-up
+}
+/** GET /courier/courierListWithCounts: the list sits under courier_data (or data / data.courier_data, read defensively: the exact envelope is not pinned down). */
+function courierList(res: unknown): Json[] {
+  const candidates = [isObj(res) ? res.courier_data : null, isObj(res) ? res.data : null, isObj(res) && isObj(res.data) ? res.data.courier_data : null, res];
+  for (const c of candidates) if (Array.isArray(c)) return c.filter(isObj);
+  return [];
 }
 function availableCouriers(res: unknown): Json[] {
   const list = isObj(res) && isObj(res.data) && Array.isArray(res.data.available_courier_companies) ? res.data.available_courier_companies : [];
