@@ -160,10 +160,10 @@ export class ShiprocketAdapter implements CourierAdapter {
         add(c.id ?? c.courier_company_id, c.name ?? c.courier_name, c.mode ?? c.courier_type ?? c.type);
       }
     } catch (e) { firstError = e; }
-    // Metro, tier-2, North-East, J&K and remote lanes; prepaid and COD; light and heavy parcels.
+    // Metro, tier-2, North-East, J&K and remote lanes; prepaid and COD; every common weight band (Shiprocket lists couriers such as "Amazon Shipping Surface 5kg" only for parcels in their band).
     const lanes: [string, string][] = [['110001', '400001'], ['400001', '560001'], ['700001', '110001'], ['600001', '500001'], ['380001', '302001'], ['226001', '781001'], ['411001', '180001'], ['560001', '682001'], ['122001', '744101'], ['452001', '831001']];
     const checks: string[] = [];
-    for (const [from, to] of lanes) for (const cod of [0, 1]) for (const weight of [0.5, 2, 10]) checks.push(`/courier/serviceability/?pickup_postcode=${from}&delivery_postcode=${to}&weight=${weight}&cod=${cod}`);
+    for (const [from, to] of lanes) for (const cod of [0, 1]) for (const weight of [0.5, 1, 2, 5, 10]) checks.push(`/courier/serviceability/?pickup_postcode=${from}&delivery_postcode=${to}&weight=${weight}&cod=${cod}`);
     for (let k = 0; k < checks.length; k += 6) {
       await Promise.all(checks.slice(k, k + 6).map(async (path) => {
         try { for (const c of availableCouriers(await this.call('GET', path))) add(c.courier_company_id, c.courier_name, c.mode ?? c.type); }
