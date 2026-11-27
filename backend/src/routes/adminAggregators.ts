@@ -87,38 +87,6 @@ export async function adminAggregatorRoutes(app: FastifyInstance) {
     if (!adapter.listServices) return { aggregator: plugin.id, items: [] };
     return { aggregator: plugin.id, items: await adapter.listServices() };
   });
-
-  // One click: creates a courier + service row for every courier service the aggregator offers (the lists in Assign courier & rates, Add courier and the rate card read these rows).
-  // Safe to repeat: existing rows are only refreshed. Nothing is offered to a seller until an admin gives them access and a rate card.
-  app.post('/v1/admin/aggregators/:aggregator/import-couriers', { preHandler: [requirePlatformAdmin, requireCommercialAdmin], config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const plugin = idParam(request);
-    const adapter = aggregatorAdapter(plugin.id);
-    if (!adapter.listServices) return reply.code(400).send({ error: 'NOT_SUPPORTED', message: `${plugin.label} cannot list its couriers.` });
-    let offered: { id: string; name: string; type: string }[];
-    try { offered = await adapter.listServices(); }
-    catch (e) { return reply.code(502).send({ error: 'LIST_FAILED', message: (((e as { detail?: string }).detail ?? (e as Error).message) || 'The courier list could not be read.').slice(0, 300) }); }
-    const slug = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    let providers = 0; let services = 0;
-    for (const c of offered) {
-      if (/reverse|rvp|return/i.test(c.name) || c.type === 'reverse') continue; // forward bookings only
-      const brand = c.name.trim().split(/\s+/)[0]; const providerCode = `${slug(brand)}-${plugin.id}`.slice(0, 64);
-      if (providerCode.length < 2) continue;
-      const serviceType = /air/i.test(c.name) || c.type === 'air' ? 'air' : /express/i.test(c.name) || c.type === 'express' ? 'express' : 'surface';
-      const provider = await db.query<{ id: string; inserted: boolean }>(
-        `INSERT INTO courier_providers (code, name, integration_state, supports_cod, supports_reverse, aggregator) VALUES ($1, $2, 'live', true, false, $3)
-         ON CONFLICT (code) DO UPDATE SET aggregator = EXCLUDED.aggregator RETURNING id, (xmax = 0) AS inserted`, [providerCode, brand, plugin.id]);
-      if (provider.rows[0].inserted) providers += 1;
-      const code = `${slug(c.name)}-${slug(c.id)}`.slice(0, 64);
-      const svc = await db.query<{ inserted: boolean }>(
-        `INSERT INTO courier_services (provider_id, code, display_name, service_type, service_provider, external_service_id) VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (provider_id, code) DO UPDATE SET external_service_id = EXCLUDED.external_service_id, display_name = EXCLUDED.display_name, is_active = true RETURNING (xmax = 0) AS inserted`,
-        [provider.rows[0].id, code, c.name.slice(0, 120), serviceType, plugin.label, c.id]);
-      if (svc.rows[0].inserted) services += 1;
-    }
-    await db.query(`INSERT INTO audit_events (actor_user_id, action, target_type, target_id, request_id, metadata) VALUES ($1, 'aggregator.couriers_imported', 'aggregator', $4, $2, $3)`,
-      [request.adminPrincipal!.userId, request.id, JSON.stringify({ aggregator: plugin.id, offered: offered.length, newProviders: providers, newServices: services }), plugin.id]);
-    return { aggregator: plugin.id, offered: offered.length, newProviders: providers, newServices: services };
-  });
 }
 
 /** Called once at start-up: makes sure every plugin has its row in courier_aggregators, so adding a plugin needs no migration. */

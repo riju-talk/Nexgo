@@ -125,43 +125,6 @@ pb = await until(pausedBatch, (x) => !!x.finished_at, 60000);
 T('After the top-up all 8 are booked automatically', pb && pb.assigned === 8 && pb.failed === 0, JSON.stringify(pb && { assigned: pb.assigned, failed: pb.failed, paused: pb.paused }));
 T('Each of the 8 was ordered once at Shiprocket (a retry reuses the order, no duplicates) and charged once', (await db.query(`SELECT count(*)::int AS n FROM (SELECT order_id FROM shipments WHERE seller_id = $1 GROUP BY order_id HAVING count(*) > 1) x`, [sellerId])).rows[0].n === 0 && (await wallet()) < wPaused);
 
-// ---- Admin > Integrations > Import couriers: the aggregator's courier list becomes courier + service rows (safe to repeat)
-const adminClient = (() => {
-const client = () => {
-  let jar = ''; let csrf = '';
-  return async (m, p, b) => {
-    const r = await fetch(API + p, { method: m, headers: { 'content-type': 'application/json', ...(jar ? { cookie: jar } : {}), ...(m !== 'GET' && csrf ? { 'x-csrf-token': csrf } : {}) }, body: b ? JSON.stringify(b) : undefined });
-    const sc = r.headers.getSetCookie?.() ?? [];
-    if (sc.length) {
-      const kv = Object.fromEntries(jar.split('; ').filter(Boolean).map((x) => x.split(/=(.*)/s).slice(0, 2)));
-      for (const c of sc) { const [k, v] = c.split(';')[0].split(/=(.*)/s); kv[k] = v; }
-      jar = Object.entries(kv).map(([k, v]) => `${k}=${v}`).join('; '); csrf = decodeURIComponent(kv.nx_csrf || '');
-    }
-    let j = null; try { j = await r.json(); } catch { /* empty body */ }
-    return { s: r.status, j };
-  };
-};
-async function adminLogin(email, password) {
-  await db.query('DELETE FROM admin_email_otps'); // a still-valid code from an earlier run would be reused and not returned to this test (local database only)
-  const c = client();
-  const a = await c('POST', '/v1/admin/auth/login', { email, password });
-  if (a.s === 202 && a.j?.otpToken) {
-    const code = a.j.devCode;
-    const b = await c('POST', '/v1/admin/auth/verify-otp', { otpToken: a.j.otpToken, code });
-    return { c, step: b.s };
-  }
-  return { c, step: a.s, body: a.j };
-}
-
-return { adminLogin };
-})();
-const adm = await adminClient.adminLogin('admin@nexgo.in', 'Admin@456');
-const imp1 = await adm.c('POST', '/v1/admin/aggregators/shiprocket/import-couriers', {});
-const rows = (await db.query("SELECT s.external_service_id, s.service_provider FROM courier_services s JOIN courier_providers p ON p.id = s.provider_id WHERE p.aggregator = 'shiprocket' AND s.display_name LIKE 'Fake Courier%'")).rows;
-T('Import couriers creates the Shiprocket courier services (labelled Shiprocket, id = courier_company_id)', imp1.s === 200 && imp1.j.offered >= 1 && rows.length >= 1 && rows.every((r) => r.service_provider === 'Shiprocket'), JSON.stringify([imp1.s, imp1.j, rows.length]));
-const imp2 = await adm.c('POST', '/v1/admin/aggregators/shiprocket/import-couriers', {});
-T('Importing again adds nothing new', imp2.s === 200 && imp2.j.newServices === 0 && imp2.j.newProviders === 0, JSON.stringify(imp2.j));
-
 console.log(out.join('\n'));
 console.log(`\n${out.filter((x) => x.startsWith('PASS')).length}/${out.length} passed`);
 await db.end(); fake.close(); process.exit(0);

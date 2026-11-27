@@ -31,12 +31,6 @@ function Aggregator({ a, onChanged }) {
     try { const r = await apiFetch(`/v1/admin/aggregators/${a.id}/sync-tracking`, { method: 'POST', body: {} }); setResult({ ok: true, message: `Asked ${a.label} about ${r.asked} parcel${r.asked === 1 ? '' : 's'} still on the way: ${r.updated} had news and ${r.updated === 1 ? 'was' : 'were'} updated.` }); }
     catch (e) { setResult({ ok: false, message: e.message || 'The tracking sync could not run' }); } finally { setBusy(''); }
   };
-  // Creates the courier rows (Delhivery, Xpressbees ...) this aggregator offers, so they appear in Assign courier & rates and Add courier.
-  const importCouriers = async () => {
-    setBusy('import'); setResult(null);
-    try { const r = await apiFetch(`/v1/admin/aggregators/${a.id}/import-couriers`, { method: 'POST', body: {} }); setResult({ ok: true, message: `${a.label} offers ${r.offered} courier service${r.offered === 1 ? '' : 's'}: ${r.newServices} added (${r.newProviders} new courier${r.newProviders === 1 ? '' : 's'}), the rest were already there. Give a seller access and a rate card to use them.` }); onChanged(); }
-    catch (e) { setResult({ ok: false, message: e.message || 'The couriers could not be imported' }); } finally { setBusy(''); }
-  };
   const copy = () => navigator.clipboard?.writeText(a.webhookUrl).then(() => showToast('Webhook URL copied')).catch(() => showToast('Copy is not available in this browser', 'error'));
   const last = a.lastWebhookAt ? dateTime(a.lastWebhookAt) : 'never';
 
@@ -84,7 +78,6 @@ function Aggregator({ a, onChanged }) {
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <Btn primary disabled={!dirty || !!busy} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save'}</Btn>
         {a.capabilities.listServices && <Btn disabled={!!busy} onClick={test}>{busy === 'test' ? 'Testing…' : 'Test connection'}</Btn>}
-        {a.capabilities.listServices && a.configured && <Btn disabled={!!busy} onClick={importCouriers}>{busy === 'import' ? 'Importing�' : 'Import couriers'}</Btn>}
         {a.capabilities.track && a.configured && <Btn disabled={!!busy} onClick={syncTracking}>{busy === 'sync' ? 'Syncing…' : 'Sync tracking now'}</Btn>}
         {a.lastTestedAt && !result && <small style={{ color: a.lastTestOk ? T.GREEN : T.RED }}>Last test {dateTime(a.lastTestedAt)}: {a.lastTestMessage}</small>}
       </div>
