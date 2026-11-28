@@ -101,8 +101,8 @@ export async function adminAggregatorRoutes(app: FastifyInstance) {
     let providers = 0; let services = 0;
     for (const c of offered) {
       if (/reverse|rvp|return/i.test(c.name) || c.type === 'reverse') continue; // forward bookings only
-      // The courier's brand is the name before its service words: "Blue Dart Air" -> Blue Dart, "DTDC Air 500gm" -> DTDC, "Amazon Shipping 5Kg" -> Amazon Shipping.
-      const brand = c.name.trim().split(/\s+(?=(?:surface|air|express|lite|standard|premium|prime|economy|priority|plus|sdd|ndd|same|next|\d+(?:\.\d+)?\s*(?:kg|kgs|gm|gms|g)\b|\d))/i)[0].trim() || c.name.trim().split(/\s+/)[0]; const providerCode = `${slug(brand)}-${plugin.id}`.slice(0, 64);
+      // One courier per company (courierBrand): "Blue Dart Air" and "BlueDart Surface 2KG" both sit under Blue Dart.
+      const brand = courierBrand(c.name); const providerCode = `${slug(brand)}-${plugin.id}`.slice(0, 64);
       if (providerCode.length < 2) continue;
       const serviceType = /air/i.test(c.name) || c.type === 'air' ? 'air' : /express/i.test(c.name) || c.type === 'express' ? 'express' : 'surface';
       const provider = await db.query<{ id: string; inserted: boolean }>(
@@ -120,6 +120,17 @@ export async function adminAggregatorRoutes(app: FastifyInstance) {
       [request.adminPrincipal!.userId, request.id, JSON.stringify({ aggregator: plugin.id, offered: offered.length, newProviders: providers, newServices: services }), plugin.id]);
     return { aggregator: plugin.id, offered: offered.length, newProviders: providers, newServices: services };
   });
+}
+
+/** The courier company behind a service name, so every service of one company sits under one courier:
+ *  "Blue Dart Air" / "BlueDart Surface 2KG" -> Blue Dart, "DTDC Air 500gm" -> DTDC, "Ekart Logistics Surface" -> Ekart,
+ *  "Shadowfax Heavy 5Kg" -> Shadowfax, "Amazon COD Surface 500gm" / "Amazon Shipping Surface 1kg" -> Amazon, "India Post-Speed Post Air" -> India Post. */
+export function courierBrand(name: string): string {
+  const n = name.trim();
+  const head = n.split(/\s+(?=(?:surface|air|express|lite|standard|premium|prime|economy|priority|plus|sdd|ndd|same|next|\d+(?:\.\d+)?\s*(?:kg|kgs|gm|gms|g)\b|\d))/i)[0].trim() || n.split(/\s+/)[0];
+  const known: [RegExp, string][] = [[/^blue\s*dart\b/i, 'Blue Dart'], [/^ekart\b/i, 'Ekart'], [/^shadowfax\b/i, 'Shadowfax'], [/^amazon\b/i, 'Amazon'], [/^india\s*post\b/i, 'India Post'], [/^ecom\b/i, 'Ecom Express'], [/^delhivery\b/i, 'Delhivery'], [/^dtdc\b/i, 'DTDC'], [/^xpress\s*bees\b/i, 'Xpressbees']];
+  for (const [re, label] of known) if (re.test(n)) return label;
+  return head;
 }
 
 /** Called once at start-up: makes sure every plugin has its row in courier_aggregators, so adding a plugin needs no migration. */
