@@ -163,7 +163,7 @@ const imp2 = await adm.c('POST', '/v1/admin/aggregators/shiprocket/import-courie
 T('Importing again adds nothing new', imp2.s === 200 && imp2.j.newServices === 0 && imp2.j.newProviders === 0, JSON.stringify(imp2.j));
 const listed = (await db.query("SELECT p.name AS provider, s.service_type, s.external_service_id AS ext FROM courier_services s JOIN courier_providers p ON p.id = s.provider_id WHERE p.aggregator = 'shiprocket' AND s.external_service_id IN ('900','901','902')")).rows;
 T("Fetch couriers reads the account's full courier list: Blue Dart Air is added under the courier Blue Dart (air)", listed.some((r) => r.ext === '900' && r.provider === 'Blue Dart' && r.service_type === 'air'), JSON.stringify(listed));
-T('A courier switched off on the account and a reverse (return) service are not added', !listed.some((r) => r.ext === '901' || r.ext === '902'), JSON.stringify(listed));
+T('An international service and a reverse (return) service are not added, whatever their status field says', !listed.some((r) => r.ext === '901' || r.ext === '902'), JSON.stringify(listed));
 
 console.log(out.join('\n'));
 console.log(`\n${out.filter((x) => x.startsWith('PASS')).length}/${out.length} passed`);

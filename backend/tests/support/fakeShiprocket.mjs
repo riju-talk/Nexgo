@@ -39,9 +39,9 @@ export function startFakeShiprocket({ port = 4666, latencyMs = 100, courierIds =
         const id = ++seq; const shipmentId = ++seq; orders.set(String(id), { id, shipmentId, ref: body.order_id, awb: null }); stats.ordersCreated += 1;
         return send(res, 200, { order_id: id, shipment_id: shipmentId, status: 'NEW', status_code: 1, awb_code: '', courier_company_id: '', courier_name: '' });
       }
-      if (method === 'GET' && path === '/courier/courierListWithCounts') { // the account's courier list: one active, one switched off, one reverse service
+      if (method === 'GET' && path === '/courier/courierListWithCounts') { // shaped like the live answer: status 0 on real domestic couriers, service_type 1 domestic / 0 international / 2 reverse, mode 1 = air
         count('GET /courier/courierListWithCounts');
-        return send(res, 200, { courier_data: [{ id: 900, name: 'Blue Dart Air', status: 1, mode: 'air' }, { id: 901, name: 'Gone Courier Surface', status: 0 }, { id: 902, name: 'Delhivery Reverse', status: 1 }], total_courier_count: 3 });
+        return send(res, 200, { courier_data: [{ id: 900, name: 'Blue Dart Air', status: 0, mode: 1, service_type: 1, is_hyperlocal: 0 }, { id: 901, name: 'Aramex Worldwide', status: 1, mode: 1, service_type: 0, is_hyperlocal: 0 }, { id: 902, name: 'Delhivery Back Surface', status: 0, mode: 0, service_type: 2, is_hyperlocal: 0 }], total_courier_count: 3 });
       }
       if (method === 'GET' && path === '/courier/serviceability/') {
         count('GET /courier/serviceability/');

@@ -141,7 +141,7 @@ export class ShiprocketAdapter implements CourierAdapter {
    *  1. the account's courier list (GET /courier/courierListWithCounts): every courier company switched on for the account;
    *  2. rate checks over many lanes, both payment modes and several weights: a courier shows up there only for lanes and weights it serves,
    *     so a narrow scan (it used to be 4 lanes, prepaid, 0.5 kg) misses most of them. This also catches couriers the list endpoint leaves out.
-   * Inactive, reverse (return pickup) and international services are left out.
+   * Reverse (return pickup), hyperlocal and international services are left out.
    */
   async listServices(): Promise<{ id: string; name: string; type: string }[]> {
     const seen = new Map<string, { id: string; name: string; type: string }>();
@@ -154,10 +154,12 @@ export class ShiprocketAdapter implements CourierAdapter {
     try {
       const body = await this.call('GET', '/courier/courierListWithCounts');
       for (const c of courierList(body)) {
-        const active = c.status ?? c.is_active ?? c.active;
-        if (active !== undefined && active !== null && !(active === true || active === 1 || String(active).toLowerCase() === 'active' || String(active) === '1')) continue;
-        if (c.is_reverse === true || c.is_reverse === 1) continue;
-        add(c.id ?? c.courier_company_id, c.name ?? c.courier_name, c.mode ?? c.courier_type ?? c.type);
+        // Seen live (2026-11-28, 172 entries): service_type 1 = domestic forward, 0 = international / SRX, 2 = reverse, 3 = hyperlocal;
+        // mode 1 = air, 0 = surface. `status` is NOT "switched on": Delhivery, DTDC, Amazon etc. all came back with status 0, so it is ignored.
+        const st = c.service_type;
+        if (st !== undefined && st !== null && Number(st) !== 1) continue;
+        if (c.is_hyperlocal === 1 || c.is_hyperlocal === true || c.is_reverse === true || c.is_reverse === 1) continue;
+        add(c.id ?? c.courier_company_id, c.name ?? c.courier_name, Number(c.mode) === 1 ? 'air' : 'surface');
       }
     } catch (e) { firstError = e; }
     // Metro, tier-2, North-East, J&K and remote lanes; prepaid and COD; every common weight band (Shiprocket lists couriers such as "Amazon Shipping Surface 5kg" only for parcels in their band).
